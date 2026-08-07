@@ -40,6 +40,19 @@ func TestRequireBasicAuth_RejectsWrongCredentials(t *testing.T) {
 	}
 }
 
+func TestRequireBasicAuth_RejectsWrongUsername(t *testing.T) {
+	handler := RequireBasicAuth("user", "pass", stubHandler())
+
+	req := httptest.NewRequest(http.MethodGet, "/git/repo.git/info/refs", nil)
+	req.SetBasicAuth("wrong-user", "pass")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
 func TestRequireBasicAuth_AllowsCorrectCredentials(t *testing.T) {
 	handler := RequireBasicAuth("user", "pass", stubHandler())
 

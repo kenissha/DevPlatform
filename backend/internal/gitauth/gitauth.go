@@ -16,7 +16,16 @@ import (
 func RequireBasicAuth(username, password string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, pass, ok := r.BasicAuth()
-		if !ok || !constantTimeEqual(user, username) || !constantTimeEqual(pass, password) {
+		// Evaluate both comparisons unconditionally (no short-circuiting)
+		// so a rejection does the same amount of constant-time work
+		// regardless of which field failed. If `||` short-circuited here,
+		// a wrong username would skip the password comparison entirely,
+		// producing a measurable timing difference between "bad username"
+		// and "good username, bad password" — letting an attacker probe
+		// for a valid username before ever attacking the password.
+		userOK := constantTimeEqual(user, username)
+		passOK := constantTimeEqual(pass, password)
+		if !ok || !userOK || !passOK {
 			w.Header().Set("WWW-Authenticate", `Basic realm="DevPlatform Git"`)
 			http.Error(w, "401 Unauthorized", http.StatusUnauthorized)
 			return
