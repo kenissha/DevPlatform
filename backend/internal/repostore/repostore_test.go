@@ -2,7 +2,9 @@ package repostore
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -53,6 +55,59 @@ func TestCreate_RejectsDuplicateName(t *testing.T) {
 	_, err := store.Create("intranet-backend")
 	if err != ErrAlreadyExists {
 		t.Fatalf("err = %v, want ErrAlreadyExists", err)
+	}
+}
+
+// TestCreate_CleansUpDirectoryWhenPlainInitFails forces git.PlainInit to
+// fail after os.Mkdir has already created the target directory, by denying
+// "create files / write data" rights (inherited) on the store root. NTFS
+// treats "create folders" (needed by os.Mkdir) and "create files" (needed
+// by PlainInit's internal writes) as distinct rights, so os.Mkdir still
+// succeeds while PlainInit's writes inside the new directory fail — exactly
+// the scenario the fix in Create addresses. It then verifies the orphaned
+// directory was removed and the name can be reused.
+func TestCreate_CleansUpDirectoryWhenPlainInitFails(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("ACL-based PlainInit-failure simulation is Windows-specific")
+	}
+
+	dir := t.TempDir()
+	store := New(dir)
+
+	principal := os.Getenv("USERDOMAIN") + "\\" + os.Getenv("USERNAME")
+
+	denyCmd := exec.Command("icacls", dir, "/deny", principal+":(OI)(CI)(WD)")
+	if out, err := denyCmd.CombinedOutput(); err != nil {
+		t.Fatalf("icacls deny setup failed: %v: %s", err, out)
+	}
+	t.Cleanup(func() {
+		exec.Command("icacls", dir, "/remove:d", principal).Run() //nolint:errcheck // best-effort cleanup
+	})
+
+	path, err := store.Create("intranet-backend")
+	if err == nil {
+		t.Fatalf("expected Create to fail when PlainInit cannot write, got path %q", path)
+	}
+	if err == ErrAlreadyExists {
+		t.Fatalf("Create returned ErrAlreadyExists instead of the underlying PlainInit failure")
+	}
+
+	wantPath := filepath.Join(dir, "intranet-backend.git")
+	if _, statErr := os.Stat(wantPath); !os.IsNotExist(statErr) {
+		t.Fatalf("expected orphaned directory to be cleaned up after PlainInit failure, os.Stat err = %v", statErr)
+	}
+
+	removeCmd := exec.Command("icacls", dir, "/remove:d", principal)
+	if out, err := removeCmd.CombinedOutput(); err != nil {
+		t.Fatalf("icacls remove deny failed: %v: %s", err, out)
+	}
+
+	retryPath, err := store.Create("intranet-backend")
+	if err != nil {
+		t.Fatalf("retry Create failed; name should be reusable after cleanup: %v", err)
+	}
+	if retryPath != wantPath {
+		t.Errorf("retry path = %q, want %q", retryPath, wantPath)
 	}
 }
 

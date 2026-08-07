@@ -47,6 +47,11 @@ func (s *Store) Create(name string) (string, error) {
 	}
 
 	if _, err := git.PlainInit(path, true); err != nil {
+		// Best-effort cleanup: remove the directory os.Mkdir just created so
+		// the name stays reusable for a future Create call. If cleanup
+		// itself fails, there's nothing more productive to do than still
+		// return the original PlainInit error to the caller.
+		_ = os.RemoveAll(path)
 		return "", err
 	}
 
