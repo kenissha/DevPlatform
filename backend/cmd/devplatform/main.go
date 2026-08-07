@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/kenissha/DevPlatform/backend/internal/config"
+	"github.com/kenissha/DevPlatform/backend/internal/gitauth"
 	"github.com/kenissha/DevPlatform/backend/internal/gitserver"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 	"github.com/kenissha/DevPlatform/backend/internal/server"
@@ -26,7 +27,8 @@ func main() {
 	log.Printf("repository store ready at %s (%d repos)", cfg.DataDir, len(repos))
 
 	gitHandler := gitserver.NewHandler(cfg.DataDir)
-	router := server.NewRouter(gitHandler)
+	authedGitHandler := gitauth.RequireBasicAuth(cfg.GitUsername, cfg.GitPassword, gitHandler)
+	router := server.NewRouter(authedGitHandler)
 
 	log.Printf("devplatform listening on %s", cfg.ListenAddr)
 	if err := http.ListenAndServe(cfg.ListenAddr, router); err != nil {
