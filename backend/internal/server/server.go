@@ -6,11 +6,15 @@ import (
 	"net/http"
 )
 
-// NewRouter builds the top-level HTTP router. Later packages extend this
-// with additional routes (git smart-HTTP, task API, ...).
-func NewRouter() *http.ServeMux {
+// NewRouter builds the top-level HTTP router. gitHandler serves the git
+// smart-HTTP protocol under its own prefix (see internal/gitserver). Later
+// packages extend this with additional routes (task API, ...).
+func NewRouter(gitHandler http.Handler) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealth)
+	// The "/git/" prefix here must stay in sync with gitserver.Prefix
+	// ("/git") — see internal/gitserver.NewHandler's doc comment.
+	mux.Handle("/git/", gitHandler)
 	return mux
 }
 

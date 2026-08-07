@@ -7,7 +7,7 @@ import (
 )
 
 func TestHealthz_ReturnsOK(t *testing.T) {
-	router := NewRouter()
+	router := NewRouter(http.NotFoundHandler())
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 
