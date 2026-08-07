@@ -11,7 +11,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v6"
+	"github.com/go-git/go-git/v6/plumbing"
 )
 
 var (
@@ -63,7 +64,7 @@ func (s *Store) Create(name string) (string, error) {
 		return "", err
 	}
 
-	if _, err := git.PlainInit(path, true); err != nil {
+	if _, err := git.PlainInit(path, true, git.WithDefaultBranch(plumbing.NewBranchReferenceName("main"))); err != nil {
 		// Best-effort cleanup: remove the directory os.Mkdir just created so
 		// the name stays reusable for a future Create call. If cleanup
 		// itself fails, there's nothing more productive to do than still

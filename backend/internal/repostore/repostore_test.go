@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -149,6 +150,26 @@ func TestCreate_CleansUpDirectoryWhenPlainInitFails(t *testing.T) {
 	}
 	if retryPath != wantPath {
 		t.Errorf("retry path = %q, want %q", retryPath, wantPath)
+	}
+}
+
+func TestCreate_SetsMainAsDefaultBranch(t *testing.T) {
+	dir := t.TempDir()
+	store := New(dir)
+
+	path, err := store.Create("branch-check")
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	headBytes, err := os.ReadFile(filepath.Join(path, "HEAD"))
+	if err != nil {
+		t.Fatalf("failed to read HEAD: %v", err)
+	}
+
+	head := strings.TrimSpace(string(headBytes))
+	if head != "ref: refs/heads/main" {
+		t.Errorf("HEAD = %q, want %q", head, "ref: refs/heads/main")
 	}
 }
 
