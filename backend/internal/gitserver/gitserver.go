@@ -23,6 +23,10 @@ const Prefix = "/git"
 // dataDir via the git smart-HTTP protocol. Repository names are resolved
 // the same way repostore.Store names them (e.g. "foo" on disk as
 // "foo.git"); callers must request "/foo.git/...", not "/foo/...".
+//
+// The returned handler is wrapped with withReceivePackAuthShim, a
+// temporary go-git v6-alpha auth-header workaround (see that function's
+// doc comment) — revisit it when real authentication is added.
 func NewHandler(dataDir string) http.Handler {
 	loader := transport.NewFilesystemLoader(osfs.New(dataDir), false)
 	b := backend.New(loader)
@@ -30,6 +34,7 @@ func NewHandler(dataDir string) http.Handler {
 	return withReceivePackAuthShim(b)
 }
 
+// TODO(task-3): remove this shim once real authentication is wired in.
 // withReceivePackAuthShim works around a gap in go-git v6-alpha.5's
 // backend.Backend.ServeHTTP: it unconditionally returns 401 for any
 // git-receive-pack (push) request that lacks an Authorization header, but
