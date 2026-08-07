@@ -45,6 +45,47 @@ func TestCreate_RejectsNameWithSlash(t *testing.T) {
 	}
 }
 
+func TestCreate_RejectsEmptyName(t *testing.T) {
+	store := New(t.TempDir())
+
+	_, err := store.Create("")
+	if err != ErrInvalidName {
+		t.Fatalf("err = %v, want ErrInvalidName", err)
+	}
+}
+
+func TestCreate_RejectsNameWithBackslash(t *testing.T) {
+	store := New(t.TempDir())
+
+	_, err := store.Create("back\\slash")
+	if err != ErrInvalidName {
+		t.Fatalf("err = %v, want ErrInvalidName", err)
+	}
+}
+
+func TestCreate_RejectsNameWithNullByte(t *testing.T) {
+	store := New(t.TempDir())
+
+	_, err := store.Create("null\x00byte")
+	if err != ErrInvalidName {
+		t.Fatalf("err = %v, want ErrInvalidName", err)
+	}
+}
+
+func TestCreate_RejectsWindowsReservedNames(t *testing.T) {
+	store := New(t.TempDir())
+
+	for _, name := range []string{
+		"CON", "con", "Con", "PRN", "AUX", "NUL",
+		"COM1", "COM9", "com5", "LPT1", "LPT9", "lpt3",
+	} {
+		_, err := store.Create(name)
+		if err != ErrInvalidName {
+			t.Errorf("Create(%q) err = %v, want ErrInvalidName", name, err)
+		}
+	}
+}
+
 func TestCreate_RejectsDuplicateName(t *testing.T) {
 	store := New(t.TempDir())
 
@@ -124,6 +165,35 @@ func TestList_ReturnsCreatedRepoNames(t *testing.T) {
 
 	if len(names) != 2 {
 		t.Fatalf("got %d names, want 2: %v", len(names), names)
+	}
+}
+
+func TestList_SkipsBareDotGitDirectory(t *testing.T) {
+	dir := t.TempDir()
+	store := New(dir)
+
+	if _, err := store.Create("intranet-backend"); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	// A directory literally named ".git" (not "something.git") can't be
+	// produced via Create, but simulate it being created some other way to
+	// exercise List's defensive skip of the resulting empty stripped name.
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o750); err != nil {
+		t.Fatalf("failed to create bare .git directory: %v", err)
+	}
+
+	names, err := store.List()
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+
+	for _, n := range names {
+		if n == "" {
+			t.Fatalf("List returned an empty name entry: %v", names)
+		}
+	}
+	if len(names) != 1 || names[0] != "intranet-backend" {
+		t.Fatalf("names = %v, want [intranet-backend]", names)
 	}
 }
 

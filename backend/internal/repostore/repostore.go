@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/go-git/go-git/v5"
 )
@@ -19,6 +20,19 @@ var (
 )
 
 var validName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// reservedNames are Windows-reserved device names. They are not valid file
+// or directory names on Windows regardless of extension (e.g. "CON.git" is
+// just as reserved as "CON"), so they are rejected up front rather than
+// being handed to os.Mkdir where the resulting failure would be an opaque
+// OS error instead of ErrInvalidName.
+var reservedNames = map[string]bool{
+	"CON": true, "PRN": true, "AUX": true, "NUL": true,
+	"COM1": true, "COM2": true, "COM3": true, "COM4": true, "COM5": true,
+	"COM6": true, "COM7": true, "COM8": true, "COM9": true,
+	"LPT1": true, "LPT2": true, "LPT3": true, "LPT4": true, "LPT5": true,
+	"LPT6": true, "LPT7": true, "LPT8": true, "LPT9": true,
+}
 
 // Store manages bare git repositories rooted at a single directory on disk.
 type Store struct {
@@ -35,6 +49,9 @@ func New(rootDir string) *Store {
 // underscore) — anything else is rejected before it reaches the filesystem.
 func (s *Store) Create(name string) (string, error) {
 	if !validName.MatchString(name) {
+		return "", ErrInvalidName
+	}
+	if reservedNames[strings.ToUpper(name)] {
 		return "", ErrInvalidName
 	}
 
@@ -71,7 +88,16 @@ func (s *Store) List() ([]string, error) {
 	names := []string{}
 	for _, e := range entries {
 		if e.IsDir() && filepath.Ext(e.Name()) == ".git" {
-			names = append(names, e.Name()[:len(e.Name())-len(".git")])
+			stripped := e.Name()[:len(e.Name())-len(".git")]
+			if stripped == "" {
+				// A directory literally named ".git" (not "something.git")
+				// would otherwise strip down to an empty string. Create
+				// can't produce this (the regex requires at least one
+				// character before the suffix), but skip it defensively in
+				// case such a directory is ever created some other way.
+				continue
+			}
+			names = append(names, stripped)
 		}
 	}
 	return names, nil
