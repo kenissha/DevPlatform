@@ -79,8 +79,14 @@ Bu tasarımın çalışabilmesi için, geliştirilen asıl projelerin (örn. mev
 
 Bu değişiklik bu platformun kapsamı dışında ama önkoşuludur; ayrı bir iş olarak ele alınmalıdır.
 
+## Repo Yapısı ve Frontend
+
+- Proje adı **DevPlatform**, tek repo (monorepo) olarak `https://github.com/kenissha/DevPlatform` üzerinde tutulur.
+- Repo kökünde `backend/` (Go) ve `frontend/` (React) ayrı klasörler olarak durur.
+- Gerekçe: Frontend ve backend bağımsız sürümlenmiyor — frontend build çıktısı backend binary'sine gömülüyor (bkz. Genel Mimari), tek ürün olarak birlikte geliştirilip birlikte sürüm alınıyor. İki repo açmak bu proje için ekstra karmaşıklık, gerçek bir fayda getirmiyor.
+- Frontend: **React**. Backend'in embed ettiği statik dosya çıktısını üretir (build sonrası `frontend/dist` gibi bir klasör, Go tarafından `embed` ile binary'ye gömülür).
+
 ## Açık Kararlar / Notlar
 
-- Proje adı ve bu yeni platformun klasör/repo konumu henüz kesinleşmedi (bu doküman `DevPlatform` klasöründe başlatıldı, yeniden adlandırılabilir).
 - Test ortamı için gerekli ayrı veritabanları (IntranetDB test, vb.) zaten mevcut; ek kurulum gerekmiyor.
 - Rol → izin eşlemesi şu an elle yapılacak (AD grubundan otomatik türetme değil).
