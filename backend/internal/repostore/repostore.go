@@ -39,8 +39,11 @@ func (s *Store) Create(name string) (string, error) {
 	}
 
 	path := filepath.Join(s.rootDir, name+".git")
-	if _, err := os.Stat(path); err == nil {
-		return "", ErrAlreadyExists
+	if err := os.Mkdir(path, 0o750); err != nil {
+		if os.IsExist(err) {
+			return "", ErrAlreadyExists
+		}
+		return "", err
 	}
 
 	if _, err := git.PlainInit(path, true); err != nil {
