@@ -86,6 +86,14 @@ Bu değişiklik bu platformun kapsamı dışında ama önkoşuludur; ayrı bir i
 - Gerekçe: Frontend ve backend bağımsız sürümlenmiyor — frontend build çıktısı backend binary'sine gömülüyor (bkz. Genel Mimari), tek ürün olarak birlikte geliştirilip birlikte sürüm alınıyor. İki repo açmak bu proje için ekstra karmaşıklık, gerçek bir fayda getirmiyor.
 - Frontend: **React**. Backend'in embed ettiği statik dosya çıktısını üretir (build sonrası `frontend/dist` gibi bir klasör, Go tarafından `embed` ile binary'ye gömülür).
 
+## Git Sunucusu — Teknoloji Kararı (2026-08-07)
+
+Git barındırma modülü (Faz 1) için `go-git` kütüphanesinin **v6 alfa sürümü** kullanılacak — spesifik olarak `backend` paketi, hazır bir HTTP git sunucusu (smart + dumb protokol, kimlik doğrulama için hazır bağlantı noktası) sunuyor. Alternatif olan "v5 stabil sürümde kal, HTTP protokol çerçevelemesini elle yaz" seçeneği kullanıcıya sunuldu; kullanıcı hazır/uzman modülü tercih etti (gerekçe: daha sağlam kod, daha hızlı ilerleme; risk: "alfa" etiketi, ileride küçük API değişiklikleri gerekebilir — spesifik bir sürüme sabitlenip v6 stabil çıkınca gözden geçirilecek). Geçmiş go-git güvenlik açıkları (SSH RCE, path validation, HTTP credential leak) hem v5.19.2'de hem v6 alfa.4+'ta zaten yamalı, bu kararı etkilemedi.
+
+Branch koruması, protokolü elle ayrıştırmadan, `storage.Storer` arayüzünü saran bir "decorator" ile uygulanacak: gerçek dosya sistemi storer'ı bir struct içine gömülü arayüz olarak alınır (Go'nun interface embedding'i sayesinde tüm metodlar otomatik devredilir), sadece `SetReference`/`CheckAndSetReference` override edilip korumalı branch'lere (örn. `refs/heads/main`) yazma reddedilir. Bu, wire-protokol seviyesinde kod yazmaktan çok daha düşük riskli bir yaklaşım.
+
+**Kapsam dışı bırakılıp isim verilen gelecek plana ertelenen:** Push anında secret taraması (bkz. Faz 1'deki "push anında secret taraması" maddesi) bu git-sunucusu planının kapsamına alınmadı — ayrı bir sonraki plan olarak ele alınacak, sessizce düşürülmedi.
+
 ## Açık Kararlar / Notlar
 
 - Test ortamı için gerekli ayrı veritabanları (IntranetDB test, vb.) zaten mevcut; ek kurulum gerekmiyor.
