@@ -3,16 +3,30 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/kenissha/DevPlatform/backend/internal/config"
+	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 	"github.com/kenissha/DevPlatform/backend/internal/server"
 )
 
 func main() {
 	cfg := config.Load()
+
+	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
+		log.Fatalf("failed to create data dir %s: %v", cfg.DataDir, err)
+	}
+
+	store := repostore.New(cfg.DataDir)
+	repos, err := store.List()
+	if err != nil {
+		log.Fatalf("failed to list repositories: %v", err)
+	}
+	log.Printf("repository store ready at %s (%d repos)", cfg.DataDir, len(repos))
+
 	router := server.NewRouter()
 
-	log.Printf("devplatform listening on %s (data dir: %s)", cfg.ListenAddr, cfg.DataDir)
+	log.Printf("devplatform listening on %s", cfg.ListenAddr)
 	if err := http.ListenAndServe(cfg.ListenAddr, router); err != nil {
 		log.Fatal(err)
 	}
