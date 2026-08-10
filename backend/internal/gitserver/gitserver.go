@@ -25,8 +25,10 @@ const Prefix = "/git"
 // "foo.git"); callers must request "/foo.git/...", not "/foo/...".
 //
 // The returned handler is wrapped with withReceivePackAuthShim, a
-// temporary go-git v6-alpha auth-header workaround (see that function's
-// doc comment) — revisit it when real authentication is added.
+// permanent go-git v6-alpha workaround (see that function's doc comment)
+// — it stays regardless of DevPlatform's own auth, since this constructor
+// has no guarantee callers wrap it with gitauth.RequireBasicAuth (this
+// package's own tests call it directly, unwrapped).
 func NewHandler(dataDir string) http.Handler {
 	loader := transport.NewFilesystemLoader(osfs.New(dataDir), false)
 	protected := newProtectingLoader(loader)
@@ -35,7 +37,6 @@ func NewHandler(dataDir string) http.Handler {
 	return withReceivePackAuthShim(b)
 }
 
-// TODO(task-3): remove this shim once real authentication is wired in.
 // withReceivePackAuthShim works around a gap in go-git v6-alpha.5's
 // backend.Backend.ServeHTTP: it unconditionally returns 401 for any
 // git-receive-pack (push) request that lacks an Authorization header, but
@@ -47,14 +48,18 @@ func NewHandler(dataDir string) http.Handler {
 // (see its Loader/ErrorLog/Prefix field list) — it's simply not
 // configurable in this alpha release.
 //
-// DevPlatform has no authentication yet — real auth is a later task (see
-// docs/superpowers/sdd plan for this feature). Until then every push
-// should be allowed, which is what this handler is supposed to do without
-// this shim. This shim supplies a synthetic, unvalidated Authorization
-// header so go-git's internal sanity check doesn't block that intended
-// behavior; it performs no credential validation and grants no elevated
-// capability beyond what the handler already grants everyone. Remove this
-// once real authentication replaces it.
+// This is unrelated to DevPlatform's own auth (internal/gitauth), which
+// wraps this handler from the outside in main.go and rejects unauthorized
+// requests before they ever reach here — by the time a request reaches
+// this shim through that path, it already carries a real, validated
+// Authorization header, so the synthetic header below is never applied in
+// production. It only fires for callers that invoke NewHandler directly
+// without gitauth in front (this package's own integration tests), where
+// it supplies a synthetic, unvalidated Authorization header purely so
+// go-git's internal sanity check doesn't hang/reject the request; it
+// performs no credential validation of its own and grants no capability
+// beyond what the wrapping handler already allows. Remove only if a future
+// go-git release fixes the underlying 401/WWW-Authenticate gap.
 func withReceivePackAuthShim(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") == "" {
