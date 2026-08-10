@@ -41,12 +41,10 @@ func TestClone_AfterInitialPush(t *testing.T) {
 	// an experiment outside this test, not as a change to its assertion.
 	dataDir := t.TempDir()
 	store := repostore.New(dataDir)
-	if _, err := store.Create("hello"); err != nil {
+	bareRepoPath, err := store.Create("hello")
+	if err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
-
-	srv := httptest.NewServer(NewHandler(dataDir))
-	defer srv.Close()
 
 	seed := t.TempDir()
 	runGit(t, seed, "init", "-b", "main")
@@ -62,8 +60,15 @@ func TestClone_AfterInitialPush(t *testing.T) {
 	}
 	runGit(t, seed, "add", "README.md")
 	runGit(t, seed, "commit", "-m", "seed commit")
-	runGit(t, seed, "remote", "add", "origin", srv.URL+"/hello.git")
-	runGit(t, seed, "push", "origin", "main")
+	// Seed "main" via git's local file transport, bypassing the HTTP
+	// server: pushing to main over HTTP is correctly rejected by branch
+	// protection (see protectedloader_test.go), so this test — which only
+	// wants to check "can a client clone a repo that has content" — seeds
+	// the content directly on disk instead of exercising the protected path.
+	runGit(t, seed, "push", bareRepoPath, "main")
+
+	srv := httptest.NewServer(NewHandler(dataDir))
+	defer srv.Close()
 
 	cloneDir := t.TempDir()
 	cloneTarget := filepath.Join(cloneDir, "hello")

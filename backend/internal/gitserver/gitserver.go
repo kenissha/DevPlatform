@@ -29,7 +29,8 @@ const Prefix = "/git"
 // doc comment) — revisit it when real authentication is added.
 func NewHandler(dataDir string) http.Handler {
 	loader := transport.NewFilesystemLoader(osfs.New(dataDir), false)
-	b := backend.New(loader)
+	protected := newProtectingLoader(loader)
+	b := backend.New(protected)
 	b.Prefix = Prefix
 	return withReceivePackAuthShim(b)
 }
