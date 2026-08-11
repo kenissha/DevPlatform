@@ -210,6 +210,59 @@ code {
   text-decoration: none;
 }
 
+.task-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.task-list li {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.task-list li:last-child {
+  border-bottom: none;
+}
+
+.task-list li.task-urgent {
+  background: var(--danger-bg);
+}
+
+.task-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.task-title {
+  flex: 1;
+  font-weight: 500;
+}
+
+.urgent-flag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-right: 8px;
+}
+
+.task-description {
+  margin-top: 4px;
+}
+
+.task-meta {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
 .stat-add {
   color: var(--success);
   font-size: 12px;

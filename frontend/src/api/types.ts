@@ -1,7 +1,8 @@
 // Mirrors the JSON shapes served by the Go backend (see
 // backend/internal/auth, backend/internal/repoapi,
-// backend/internal/mergerequest). Keep these in sync by hand — there is no
-// codegen step, the backend is small enough that drift is easy to spot.
+// backend/internal/mergerequest, backend/internal/taskboard). Keep these
+// in sync by hand — there is no codegen step, the backend is small enough
+// that drift is easy to spot.
 
 export type Role = 'admin' | 'developer'
 
@@ -38,4 +39,18 @@ export interface DiffResult {
 
 export interface MergeRequestDetail extends MergeRequest {
   diff: DiffResult
+}
+
+export type TaskStatus = 'in_progress' | 'awaiting_test' | 'done'
+
+export interface Task {
+  id: string
+  repo: string
+  title: string
+  description: string
+  assignedTo: string
+  author: string
+  status: TaskStatus
+  urgent: boolean
+  createdAt: string
 }

@@ -1,18 +1,27 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
-import type { MergeRequest } from '../api/types'
+import type { MergeRequest, Task, TaskStatus } from '../api/types'
 
-const STATUS_LABELS: Record<MergeRequest['status'], string> = {
+const MR_STATUS_LABELS: Record<MergeRequest['status'], string> = {
   open: 'Açık',
   approved: 'Onaylandı',
   rejected: 'Reddedildi',
 }
 
+const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  in_progress: 'Yapılıyor',
+  awaiting_test: 'Test bekliyor',
+  done: 'Bitti',
+}
+
+const TASK_STATUSES: TaskStatus[] = ['in_progress', 'awaiting_test', 'done']
+
 export function RepoDetailPage() {
   const { repo = '' } = useParams<{ repo: string }>()
   const [branches, setBranches] = useState<string[] | null>(null)
   const [mergeRequests, setMergeRequests] = useState<MergeRequest[] | null>(null)
+  const [tasks, setTasks] = useState<Task[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const [title, setTitle] = useState('')
@@ -21,11 +30,18 @@ export function RepoDetailPage() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
+  const [taskTitle, setTaskTitle] = useState('')
+  const [taskDescription, setTaskDescription] = useState('')
+  const [taskAssignee, setTaskAssignee] = useState('')
+  const [creatingTask, setCreatingTask] = useState(false)
+  const [createTaskError, setCreateTaskError] = useState<string | null>(null)
+
   function reload() {
-    Promise.all([api.listBranches(repo), api.listMergeRequests(repo)])
-      .then(([b, mrs]) => {
+    Promise.all([api.listBranches(repo), api.listMergeRequests(repo), api.listTasks(repo)])
+      .then(([b, mrs, ts]) => {
         setBranches(b)
         setMergeRequests(mrs)
+        setTasks(ts)
         if (!sourceBranch && b.length > 0) setSourceBranch(b[0])
         if (!targetBranch && b.includes('main')) setTargetBranch('main')
       })
@@ -54,6 +70,42 @@ export function RepoDetailPage() {
     }
   }
 
+  async function handleCreateTask(e: FormEvent) {
+    e.preventDefault()
+    if (!taskTitle.trim()) return
+    setCreatingTask(true)
+    setCreateTaskError(null)
+    try {
+      await api.createTask(repo, taskTitle.trim(), taskDescription.trim(), taskAssignee.trim())
+      setTaskTitle('')
+      setTaskDescription('')
+      setTaskAssignee('')
+      reload()
+    } catch (err) {
+      setCreateTaskError(err instanceof ApiError ? err.message : 'Görev oluşturulamadı')
+    } finally {
+      setCreatingTask(false)
+    }
+  }
+
+  async function handleTaskStatusChange(task: Task, status: TaskStatus) {
+    try {
+      await api.updateTask(repo, task.id, { status })
+      reload()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Görev güncellenemedi')
+    }
+  }
+
+  async function handleTaskUrgentToggle(task: Task) {
+    try {
+      await api.updateTask(repo, task.id, { urgent: !task.urgent })
+      reload()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Görev güncellenemedi')
+    }
+  }
+
   return (
     <div className="page">
       <p>
@@ -79,6 +131,65 @@ export function RepoDetailPage() {
       </section>
 
       <section>
+        <h2>Görevler</h2>
+        {tasks === null && <p className="muted">Yükleniyor...</p>}
+        {tasks !== null && tasks.length === 0 && <p className="muted">Henüz görev yok.</p>}
+        {tasks !== null && tasks.length > 0 && (
+          <ul className="task-list">
+            {tasks.map((task) => (
+              <li key={task.id} className={task.urgent ? 'task-urgent' : undefined}>
+                <div className="task-row">
+                  <span className="task-title">
+                    {task.urgent && <span className="urgent-flag">ACİL</span>}
+                    {task.title}
+                  </span>
+                  <select
+                    value={task.status}
+                    onChange={(e) => handleTaskStatusChange(task, e.target.value as TaskStatus)}
+                  >
+                    {TASK_STATUSES.map((s) => (
+                      <option key={s} value={s}>
+                        {TASK_STATUS_LABELS[s]}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" className="link-button" onClick={() => handleTaskUrgentToggle(task)}>
+                    {task.urgent ? 'Acili kaldır' : 'Acil işaretle'}
+                  </button>
+                </div>
+                {task.description && <p className="muted task-description">{task.description}</p>}
+                <p className="muted task-meta">
+                  {task.assignedTo ? `${task.assignedTo} üzerinde` : 'Atanmamış'} · {task.author} tarafından açıldı
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form onSubmit={handleCreateTask} className="mr-form">
+          <h3>Yeni görev</h3>
+          <label htmlFor="task-title">Başlık</label>
+          <input id="task-title" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} required />
+
+          <label htmlFor="task-description">Açıklama</label>
+          <textarea
+            id="task-description"
+            value={taskDescription}
+            onChange={(e) => setTaskDescription(e.target.value)}
+            rows={2}
+          />
+
+          <label htmlFor="task-assignee">Atanan (opsiyonel)</label>
+          <input id="task-assignee" value={taskAssignee} onChange={(e) => setTaskAssignee(e.target.value)} />
+
+          <button type="submit" disabled={creatingTask || !taskTitle.trim()}>
+            {creatingTask ? 'Oluşturuluyor...' : 'Görev oluştur'}
+          </button>
+          {createTaskError && <p className="error">{createTaskError}</p>}
+        </form>
+      </section>
+
+      <section>
         <h2>Merge İstekleri</h2>
         {mergeRequests === null && <p className="muted">Yükleniyor...</p>}
         {mergeRequests !== null && mergeRequests.length === 0 && (
@@ -89,7 +200,7 @@ export function RepoDetailPage() {
             {mergeRequests.map((mr) => (
               <li key={mr.id}>
                 <Link to={`/repos/${encodeURIComponent(repo)}/merge-requests/${mr.id}`}>{mr.title}</Link>
-                <span className={`status-badge status-${mr.status}`}>{STATUS_LABELS[mr.status]}</span>
+                <span className={`status-badge status-${mr.status}`}>{MR_STATUS_LABELS[mr.status]}</span>
                 <span className="muted">
                   {mr.sourceBranch} → {mr.targetBranch}
                 </span>

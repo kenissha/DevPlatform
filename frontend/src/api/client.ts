@@ -1,4 +1,4 @@
-import type { DiffResult, MergeRequest, MergeRequestDetail, User } from './types'
+import type { DiffResult, MergeRequest, MergeRequestDetail, Task, TaskStatus, User } from './types'
 
 // Thrown by request() on any non-2xx response, so callers/pages can
 // distinguish "not logged in" (401) from "not allowed" (403) from
@@ -72,6 +72,22 @@ export const api = {
       `/api/repos/${encodeURIComponent(repo)}/merge-requests/${encodeURIComponent(id)}/reject`,
       { method: 'POST' },
     ),
+
+  listTasks: (repo: string) => request<Task[]>(`/api/repos/${encodeURIComponent(repo)}/tasks`),
+  createTask: (repo: string, title: string, description: string, assignedTo: string) =>
+    request<Task>(`/api/repos/${encodeURIComponent(repo)}/tasks`, {
+      method: 'POST',
+      body: JSON.stringify({ title, description, assignedTo }),
+    }),
+  updateTask: (
+    repo: string,
+    id: string,
+    changes: Partial<{ status: TaskStatus; urgent: boolean; assignedTo: string }>,
+  ) =>
+    request<Task>(`/api/repos/${encodeURIComponent(repo)}/tasks/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(changes),
+    }),
 }
 
-export type { DiffResult, MergeRequest, MergeRequestDetail, User }
+export type { DiffResult, MergeRequest, MergeRequestDetail, Task, User }
