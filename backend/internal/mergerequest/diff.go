@@ -17,8 +17,17 @@ var ErrBranchNotFound = errors.New("mergerequest: branch not found")
 // diff text (what a Yönetici reads to decide approve/reject, matching the
 // design doc's "kör onay yoktur" requirement) plus a per-file summary.
 type DiffResult struct {
-	UnifiedDiff string
-	Stats       object.FileStats
+	UnifiedDiff string     `json:"unifiedDiff"`
+	Stats       []FileStat `json:"stats"`
+}
+
+// FileStat mirrors go-git's object.FileStat with JSON tags — go-git's own
+// type has none, which would otherwise leak PascalCase field names into an
+// API whose every other field is camelCase.
+type FileStat struct {
+	Name     string `json:"name"`
+	Addition int    `json:"addition"`
+	Deletion int    `json:"deletion"`
 }
 
 // Diff computes the changes that merging sourceBranch into targetBranch
@@ -39,9 +48,15 @@ func Diff(repo *git.Repository, targetBranch, sourceBranch string) (DiffResult, 
 		return DiffResult{}, fmt.Errorf("mergerequest: computing diff: %w", err)
 	}
 
+	goGitStats := patch.Stats()
+	stats := make([]FileStat, len(goGitStats))
+	for i, s := range goGitStats {
+		stats[i] = FileStat{Name: s.Name, Addition: s.Addition, Deletion: s.Deletion}
+	}
+
 	return DiffResult{
 		UnifiedDiff: patch.String(),
-		Stats:       patch.Stats(),
+		Stats:       stats,
 	}, nil
 }
 
