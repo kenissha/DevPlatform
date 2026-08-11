@@ -14,6 +14,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 	"github.com/kenissha/DevPlatform/backend/internal/server"
+	"github.com/kenissha/DevPlatform/backend/internal/taskboard"
 )
 
 func main() {
@@ -41,7 +42,11 @@ func main() {
 		Repos: store,
 	}
 	repoHandlers := &repoapi.Handlers{Repos: store}
-	router := server.NewRouter(authedGitHandler, authMiddleware, mrHandlers, repoHandlers)
+	taskHandlers := &taskboard.Handlers{
+		Store: taskboard.NewStore(filepath.Join(cfg.DataDir, "tasks")),
+		Repos: store,
+	}
+	router := server.NewRouter(authedGitHandler, authMiddleware, mrHandlers, repoHandlers, taskHandlers)
 
 	log.Printf("devplatform listening on %s", cfg.ListenAddr)
 	if err := http.ListenAndServe(cfg.ListenAddr, router); err != nil {

@@ -8,6 +8,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
+	"github.com/kenissha/DevPlatform/backend/internal/taskboard"
 )
 
 // NewRouter builds the top-level HTTP router. gitHandler serves the git
@@ -15,13 +16,14 @@ import (
 // authMiddleware wraps routes that require a valid JWT (see internal/auth);
 // /healthz and the git routes are unaffected by it. mr provides the merge
 // request review API (see internal/mergerequest); repos provides the
-// repository listing/creation/branches API (see internal/repoapi). Later
-// packages extend this with additional routes (task board, ...).
+// repository listing/creation/branches API (see internal/repoapi); tasks
+// provides the task board API (see internal/taskboard).
 func NewRouter(
 	gitHandler http.Handler,
 	authMiddleware func(http.Handler) http.Handler,
 	mr *mergerequest.Handlers,
 	repos *repoapi.Handlers,
+	tasks *taskboard.Handlers,
 ) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealth)
@@ -50,6 +52,14 @@ func NewRouter(
 		authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(mr.Approve))))
 	mux.Handle("POST /api/repos/{repo}/merge-requests/{id}/reject",
 		authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(mr.Reject))))
+
+	// The task board has no Admin-only actions — see taskboard.Store.Update's
+	// doc comment for why it's deliberately lighter-weight than merge
+	// request review.
+	mux.Handle("POST /api/repos/{repo}/tasks", authMiddleware(http.HandlerFunc(tasks.Create)))
+	mux.Handle("GET /api/repos/{repo}/tasks", authMiddleware(http.HandlerFunc(tasks.List)))
+	mux.Handle("GET /api/repos/{repo}/tasks/{id}", authMiddleware(http.HandlerFunc(tasks.Get)))
+	mux.Handle("PATCH /api/repos/{repo}/tasks/{id}", authMiddleware(http.HandlerFunc(tasks.Update)))
 
 	return mux
 }

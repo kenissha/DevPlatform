@@ -14,6 +14,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
+	"github.com/kenissha/DevPlatform/backend/internal/taskboard"
 )
 
 const testSecret = "test-secret"
@@ -38,6 +39,15 @@ func testRepoAPIHandlers(t *testing.T) *repoapi.Handlers {
 	return &repoapi.Handlers{Repos: repostore.New(t.TempDir())}
 }
 
+func testTaskBoardHandlers(t *testing.T) *taskboard.Handlers {
+	t.Helper()
+	dataDir := t.TempDir()
+	return &taskboard.Handlers{
+		Store: taskboard.NewStore(dataDir + "/tasks"),
+		Repos: repostore.New(dataDir),
+	}
+}
+
 func signTestToken(t *testing.T, subject, role string) string {
 	t.Helper()
 	c := jwt.MapClaims{
@@ -55,7 +65,7 @@ func signTestToken(t *testing.T, subject, role string) string {
 }
 
 func TestHealthz_ReturnsOK(t *testing.T) {
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t))
+	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t), testTaskBoardHandlers(t))
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 
@@ -73,7 +83,7 @@ func TestHealthz_ReturnsOK(t *testing.T) {
 }
 
 func TestMe_RejectsUnauthenticatedRequest(t *testing.T) {
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t))
+	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t), testTaskBoardHandlers(t))
 	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
 	rec := httptest.NewRecorder()
 
@@ -85,7 +95,7 @@ func TestMe_RejectsUnauthenticatedRequest(t *testing.T) {
 }
 
 func TestMe_ReturnsAuthenticatedUser(t *testing.T) {
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t))
+	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t), testTaskBoardHandlers(t))
 	token := signTestToken(t, "user-1", "developer")
 	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -106,7 +116,7 @@ func TestMe_ReturnsAuthenticatedUser(t *testing.T) {
 }
 
 func TestReposCreate_RejectsNonAdminThroughRouter(t *testing.T) {
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t))
+	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t), testTaskBoardHandlers(t))
 	token := signTestToken(t, "dev-1", "developer")
 	body, _ := json.Marshal(map[string]string{"name": "intranet-backend"})
 	req := httptest.NewRequest(http.MethodPost, "/api/repos", bytes.NewReader(body))
@@ -121,7 +131,7 @@ func TestReposCreate_RejectsNonAdminThroughRouter(t *testing.T) {
 }
 
 func TestReposCreate_AllowsAdminThenListReturnsIt(t *testing.T) {
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t))
+	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t), testTaskBoardHandlers(t))
 	adminToken := signTestToken(t, "admin-1", "admin")
 
 	body, _ := json.Marshal(map[string]string{"name": "intranet-backend"})
@@ -150,7 +160,7 @@ func TestReposCreate_AllowsAdminThenListReturnsIt(t *testing.T) {
 }
 
 func TestMergeRequestApprove_RejectsNonAdminThroughRouter(t *testing.T) {
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t))
+	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t), testTaskBoardHandlers(t))
 	token := signTestToken(t, "dev-1", "developer")
 	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/merge-requests/0123456789abcdef/approve", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -164,7 +174,7 @@ func TestMergeRequestApprove_RejectsNonAdminThroughRouter(t *testing.T) {
 }
 
 func TestMergeRequestList_ReturnsNotFoundForUnknownRepo(t *testing.T) {
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t))
+	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t), testTaskBoardHandlers(t))
 	token := signTestToken(t, "dev-1", "developer")
 	req := httptest.NewRequest(http.MethodGet, "/api/repos/does-not-exist/merge-requests", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -174,5 +184,27 @@ func TestMergeRequestList_ReturnsNotFoundForUnknownRepo(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestTasksCreate_AllowsAnyAuthenticatedUserThroughRouter(t *testing.T) {
+	dataDir := t.TempDir()
+	repos := repostore.New(dataDir)
+	if _, err := repos.Create("sample"); err != nil {
+		t.Fatalf("failed to create test repo: %v", err)
+	}
+	taskHandlers := &taskboard.Handlers{Store: taskboard.NewStore(dataDir + "/tasks"), Repos: repos}
+	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t), taskHandlers)
+
+	token := signTestToken(t, "dev-1", "developer")
+	body, _ := json.Marshal(map[string]string{"title": "Fix login bug"})
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/tasks", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
 	}
 }
