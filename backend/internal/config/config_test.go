@@ -50,3 +50,14 @@ func TestLoad_ReadsGitCredentialsFromEnv(t *testing.T) {
 		t.Errorf("GitPassword = %q, want %q", cfg.GitPassword, "devpass")
 	}
 }
+
+func TestLoad_ReadsJWTSecretFromEnv(t *testing.T) {
+	os.Setenv("DEVPLATFORM_JWT_SECRET", "super-secret")
+	defer os.Unsetenv("DEVPLATFORM_JWT_SECRET")
+
+	cfg := Load()
+
+	if cfg.JWTSecret != "super-secret" {
+		t.Errorf("JWTSecret = %q, want %q", cfg.JWTSecret, "super-secret")
+	}
+}

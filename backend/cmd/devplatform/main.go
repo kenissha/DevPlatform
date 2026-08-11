@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/config"
 	"github.com/kenissha/DevPlatform/backend/internal/gitauth"
 	"github.com/kenissha/DevPlatform/backend/internal/gitserver"
@@ -28,7 +29,11 @@ func main() {
 
 	gitHandler := gitserver.NewHandler(cfg.DataDir)
 	authedGitHandler := gitauth.RequireBasicAuth(cfg.GitUsername, cfg.GitPassword, gitHandler)
-	router := server.NewRouter(authedGitHandler)
+	jwtSecret := []byte(cfg.JWTSecret)
+	authMiddleware := func(next http.Handler) http.Handler {
+		return auth.RequireAuth(jwtSecret, next)
+	}
+	router := server.NewRouter(authedGitHandler, authMiddleware)
 
 	log.Printf("devplatform listening on %s", cfg.ListenAddr)
 	if err := http.ListenAndServe(cfg.ListenAddr, router); err != nil {
