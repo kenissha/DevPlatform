@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
+	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
 	"github.com/kenissha/DevPlatform/backend/internal/taskboard"
@@ -17,13 +18,15 @@ import (
 // /healthz and the git routes are unaffected by it. mr provides the merge
 // request review API (see internal/mergerequest); repos provides the
 // repository listing/creation/branches API (see internal/repoapi); tasks
-// provides the task board API (see internal/taskboard).
+// provides the task board API (see internal/taskboard); stats provides
+// read-only repository insight (see internal/gitstats).
 func NewRouter(
 	gitHandler http.Handler,
 	authMiddleware func(http.Handler) http.Handler,
 	mr *mergerequest.Handlers,
 	repos *repoapi.Handlers,
 	tasks *taskboard.Handlers,
+	stats *gitstats.Handlers,
 ) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealth)
@@ -60,6 +63,18 @@ func NewRouter(
 	mux.Handle("GET /api/repos/{repo}/tasks", authMiddleware(http.HandlerFunc(tasks.List)))
 	mux.Handle("GET /api/repos/{repo}/tasks/{id}", authMiddleware(http.HandlerFunc(tasks.Get)))
 	mux.Handle("PATCH /api/repos/{repo}/tasks/{id}", authMiddleware(http.HandlerFunc(tasks.Update)))
+
+	// Cross-repo views. These back the dashboard, which answers "who is
+	// working on what" and "what is waiting on me" across every repository
+	// at once — questions the per-repo endpoints above can't answer without
+	// the client fanning out a request per repo.
+	mux.Handle("GET /api/tasks", authMiddleware(http.HandlerFunc(tasks.ListAll)))
+	mux.Handle("GET /api/merge-requests", authMiddleware(http.HandlerFunc(mr.ListAll)))
+
+	// Repository insight: read-only, so not role-gated.
+	mux.Handle("GET /api/repos/{repo}/commits", authMiddleware(http.HandlerFunc(stats.Commits)))
+	mux.Handle("GET /api/repos/{repo}/contributors", authMiddleware(http.HandlerFunc(stats.Contributors)))
+	mux.Handle("GET /api/repos/{repo}/activity", authMiddleware(http.HandlerFunc(stats.Activity)))
 
 	return mux
 }

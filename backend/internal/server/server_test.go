@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
+	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
@@ -25,27 +27,30 @@ func testAuthMiddleware() func(http.Handler) http.Handler {
 	}
 }
 
-func testMergeRequestHandlers(t *testing.T) *mergerequest.Handlers {
+// newTestRouter wires every handler against one shared repostore, the way
+// main.go does. Sharing the store matters: a repo created through POST
+// /api/repos has to be visible to the task and merge request handlers in
+// the same test, which separate per-handler stores would silently break.
+func newTestRouter(t *testing.T) (*http.ServeMux, *repostore.Store) {
 	t.Helper()
 	dataDir := t.TempDir()
-	return &mergerequest.Handlers{
-		Store: mergerequest.NewStore(dataDir + "/merge-requests"),
-		Repos: repostore.New(dataDir),
-	}
-}
+	store := repostore.New(dataDir)
 
-func testRepoAPIHandlers(t *testing.T) *repoapi.Handlers {
-	t.Helper()
-	return &repoapi.Handlers{Repos: repostore.New(t.TempDir())}
-}
-
-func testTaskBoardHandlers(t *testing.T) *taskboard.Handlers {
-	t.Helper()
-	dataDir := t.TempDir()
-	return &taskboard.Handlers{
-		Store: taskboard.NewStore(dataDir + "/tasks"),
-		Repos: repostore.New(dataDir),
+	mrHandlers := &mergerequest.Handlers{
+		Store: mergerequest.NewStore(filepath.Join(dataDir, "merge-requests")),
+		Repos: store,
 	}
+	repoHandlers := &repoapi.Handlers{Repos: store}
+	taskHandlers := &taskboard.Handlers{
+		Store: taskboard.NewStore(filepath.Join(dataDir, "tasks")),
+		Repos: store,
+	}
+	statsHandlers := &gitstats.Handlers{Repos: store}
+
+	router := NewRouter(
+		http.NotFoundHandler(), testAuthMiddleware(), mrHandlers, repoHandlers, taskHandlers, statsHandlers,
+	)
+	return router, store
 }
 
 func signTestToken(t *testing.T, subject, role string) string {
@@ -64,8 +69,30 @@ func signTestToken(t *testing.T, subject, role string) string {
 	return s
 }
 
+// do issues an authenticated request through the router and returns the
+// recorder.
+func do(t *testing.T, router *http.ServeMux, method, path, subject, role string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	var reader *bytes.Reader
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("failed to encode request body: %v", err)
+		}
+		reader = bytes.NewReader(encoded)
+	} else {
+		reader = bytes.NewReader(nil)
+	}
+
+	req := httptest.NewRequest(method, path, reader)
+	req.Header.Set("Authorization", "Bearer "+signTestToken(t, subject, role))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	return rec
+}
+
 func TestHealthz_ReturnsOK(t *testing.T) {
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t), testTaskBoardHandlers(t))
+	router, _ := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 
@@ -83,7 +110,7 @@ func TestHealthz_ReturnsOK(t *testing.T) {
 }
 
 func TestMe_RejectsUnauthenticatedRequest(t *testing.T) {
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t), testTaskBoardHandlers(t))
+	router, _ := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
 	rec := httptest.NewRecorder()
 
@@ -95,13 +122,8 @@ func TestMe_RejectsUnauthenticatedRequest(t *testing.T) {
 }
 
 func TestMe_ReturnsAuthenticatedUser(t *testing.T) {
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t), testTaskBoardHandlers(t))
-	token := signTestToken(t, "user-1", "developer")
-	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
+	router, _ := newTestRouter(t)
+	rec := do(t, router, http.MethodGet, "/api/me", "user-1", "developer", nil)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -116,14 +138,9 @@ func TestMe_ReturnsAuthenticatedUser(t *testing.T) {
 }
 
 func TestReposCreate_RejectsNonAdminThroughRouter(t *testing.T) {
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t), testTaskBoardHandlers(t))
-	token := signTestToken(t, "dev-1", "developer")
-	body, _ := json.Marshal(map[string]string{"name": "intranet-backend"})
-	req := httptest.NewRequest(http.MethodPost, "/api/repos", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+token)
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
+	router, _ := newTestRouter(t)
+	rec := do(t, router, http.MethodPost, "/api/repos", "dev-1", "developer",
+		map[string]string{"name": "intranet-backend"})
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
@@ -131,22 +148,15 @@ func TestReposCreate_RejectsNonAdminThroughRouter(t *testing.T) {
 }
 
 func TestReposCreate_AllowsAdminThenListReturnsIt(t *testing.T) {
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t), testTaskBoardHandlers(t))
-	adminToken := signTestToken(t, "admin-1", "admin")
+	router, _ := newTestRouter(t)
 
-	body, _ := json.Marshal(map[string]string{"name": "intranet-backend"})
-	createReq := httptest.NewRequest(http.MethodPost, "/api/repos", bytes.NewReader(body))
-	createReq.Header.Set("Authorization", "Bearer "+adminToken)
-	createRec := httptest.NewRecorder()
-	router.ServeHTTP(createRec, createReq)
+	createRec := do(t, router, http.MethodPost, "/api/repos", "admin-1", "admin",
+		map[string]string{"name": "intranet-backend"})
 	if createRec.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, want %d, body: %s", createRec.Code, http.StatusCreated, createRec.Body.String())
 	}
 
-	listReq := httptest.NewRequest(http.MethodGet, "/api/repos", nil)
-	listReq.Header.Set("Authorization", "Bearer "+adminToken)
-	listRec := httptest.NewRecorder()
-	router.ServeHTTP(listRec, listReq)
+	listRec := do(t, router, http.MethodGet, "/api/repos", "admin-1", "admin", nil)
 	if listRec.Code != http.StatusOK {
 		t.Fatalf("list status = %d, want %d", listRec.Code, http.StatusOK)
 	}
@@ -160,13 +170,9 @@ func TestReposCreate_AllowsAdminThenListReturnsIt(t *testing.T) {
 }
 
 func TestMergeRequestApprove_RejectsNonAdminThroughRouter(t *testing.T) {
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t), testTaskBoardHandlers(t))
-	token := signTestToken(t, "dev-1", "developer")
-	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/merge-requests/0123456789abcdef/approve", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
+	router, _ := newTestRouter(t)
+	rec := do(t, router, http.MethodPost,
+		"/api/repos/sample/merge-requests/0123456789abcdef/approve", "dev-1", "developer", nil)
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
@@ -174,13 +180,8 @@ func TestMergeRequestApprove_RejectsNonAdminThroughRouter(t *testing.T) {
 }
 
 func TestMergeRequestList_ReturnsNotFoundForUnknownRepo(t *testing.T) {
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t), testTaskBoardHandlers(t))
-	token := signTestToken(t, "dev-1", "developer")
-	req := httptest.NewRequest(http.MethodGet, "/api/repos/does-not-exist/merge-requests", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
+	router, _ := newTestRouter(t)
+	rec := do(t, router, http.MethodGet, "/api/repos/does-not-exist/merge-requests", "dev-1", "developer", nil)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
@@ -188,23 +189,91 @@ func TestMergeRequestList_ReturnsNotFoundForUnknownRepo(t *testing.T) {
 }
 
 func TestTasksCreate_AllowsAnyAuthenticatedUserThroughRouter(t *testing.T) {
-	dataDir := t.TempDir()
-	repos := repostore.New(dataDir)
-	if _, err := repos.Create("sample"); err != nil {
+	router, store := newTestRouter(t)
+	if _, err := store.Create("sample"); err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
-	taskHandlers := &taskboard.Handlers{Store: taskboard.NewStore(dataDir + "/tasks"), Repos: repos}
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t), testRepoAPIHandlers(t), taskHandlers)
 
-	token := signTestToken(t, "dev-1", "developer")
-	body, _ := json.Marshal(map[string]string{"title": "Fix login bug"})
-	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/tasks", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+token)
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
+	rec := do(t, router, http.MethodPost, "/api/repos/sample/tasks", "dev-1", "developer",
+		map[string]string{"title": "Fix login bug"})
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+}
+
+func TestTasksListAll_SpansReposAndFiltersByAssignee(t *testing.T) {
+	router, store := newTestRouter(t)
+	for _, name := range []string{"repo-a", "repo-b"} {
+		if _, err := store.Create(name); err != nil {
+			t.Fatalf("failed to create test repo: %v", err)
+		}
+	}
+
+	do(t, router, http.MethodPost, "/api/repos/repo-a/tasks", "dev-1", "developer",
+		map[string]string{"title": "A tarafi", "assignedTo": "dev-2"})
+	do(t, router, http.MethodPost, "/api/repos/repo-b/tasks", "dev-1", "developer",
+		map[string]string{"title": "B tarafi", "assignedTo": "dev-3"})
+
+	allRec := do(t, router, http.MethodGet, "/api/tasks", "dev-1", "developer", nil)
+	if allRec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", allRec.Code, http.StatusOK, allRec.Body.String())
+	}
+	var all []taskboard.Task
+	if err := json.Unmarshal(allRec.Body.Bytes(), &all); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("got %d tasks across repos, want 2", len(all))
+	}
+
+	filteredRec := do(t, router, http.MethodGet, "/api/tasks?assignedTo=dev-3", "dev-1", "developer", nil)
+	var filtered []taskboard.Task
+	if err := json.Unmarshal(filteredRec.Body.Bytes(), &filtered); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].AssignedTo != "dev-3" {
+		t.Fatalf("filtered = %+v, want a single task assigned to dev-3", filtered)
+	}
+}
+
+func TestMergeRequestsListAll_ReturnsEmptyArrayWhenNoRepos(t *testing.T) {
+	router, _ := newTestRouter(t)
+	rec := do(t, router, http.MethodGet, "/api/merge-requests", "dev-1", "developer", nil)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	// An empty JSON array, not null — the frontend maps over this directly.
+	if body := rec.Body.String(); body != "[]\n" {
+		t.Errorf("body = %q, want %q", body, "[]\n")
+	}
+}
+
+func TestActivity_ReturnsNotFoundForUnknownRepo(t *testing.T) {
+	router, _ := newTestRouter(t)
+	rec := do(t, router, http.MethodGet, "/api/repos/does-not-exist/activity", "dev-1", "developer", nil)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestActivity_ReturnsRequestedNumberOfDays(t *testing.T) {
+	router, store := newTestRouter(t)
+	if _, err := store.Create("sample"); err != nil {
+		t.Fatalf("failed to create test repo: %v", err)
+	}
+
+	rec := do(t, router, http.MethodGet, "/api/repos/sample/activity?days=5", "dev-1", "developer", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var days []gitstats.DayCount
+	if err := json.Unmarshal(rec.Body.Bytes(), &days); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(days) != 5 {
+		t.Fatalf("got %d days, want 5", len(days))
 	}
 }

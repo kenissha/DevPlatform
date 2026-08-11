@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"sort"
 
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
@@ -93,6 +94,42 @@ func (h *Handlers) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, mrs)
+}
+
+// ListAll handles GET /api/merge-requests — every repository's merge
+// requests in one response, newest first, optionally narrowed with
+// ?status=. Deliberately excludes the diff: this feeds the dashboard's
+// "bekleyen incelemeler" list, and computing a diff per merge request
+// across every repo would make an overview page pay for review-screen
+// work nobody asked for yet.
+func (h *Handlers) ListAll(w http.ResponseWriter, r *http.Request) {
+	repos, err := h.Repos.List()
+	if err != nil {
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	status := Status(r.URL.Query().Get("status"))
+
+	all := []MergeRequest{}
+	for _, repo := range repos {
+		mrs, err := h.Store.List(repo)
+		if err != nil {
+			http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		for _, mr := range mrs {
+			if status != "" && mr.Status != status {
+				continue
+			}
+			all = append(all, mr)
+		}
+	}
+
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].CreatedAt.After(all[j].CreatedAt)
+	})
+	writeJSON(w, http.StatusOK, all)
 }
 
 type mergeRequestDetail struct {

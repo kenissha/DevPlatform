@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"sort"
 
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
@@ -72,6 +73,42 @@ func (h *Handlers) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, tasks)
+}
+
+// ListAll handles GET /api/tasks — every repository's tasks in one
+// response, newest first, optionally narrowed with ?assignedTo=. This is
+// what the dashboard's per-person view reads: "kimin ne üzerinde
+// çalıştığını görebilmek" is a cross-repo question, and answering it from
+// the per-repo endpoint would mean the client fanning out one request per
+// repository.
+func (h *Handlers) ListAll(w http.ResponseWriter, r *http.Request) {
+	repos, err := h.Repos.List()
+	if err != nil {
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	assignedTo := r.URL.Query().Get("assignedTo")
+
+	all := []Task{}
+	for _, repo := range repos {
+		tasks, err := h.Store.List(repo)
+		if err != nil {
+			http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		for _, t := range tasks {
+			if assignedTo != "" && t.AssignedTo != assignedTo {
+				continue
+			}
+			all = append(all, t)
+		}
+	}
+
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].CreatedAt.After(all[j].CreatedAt)
+	})
+	writeJSON(w, http.StatusOK, all)
 }
 
 // Get handles GET /api/repos/{repo}/tasks/{id}.

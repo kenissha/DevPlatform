@@ -10,6 +10,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/config"
 	"github.com/kenissha/DevPlatform/backend/internal/gitauth"
 	"github.com/kenissha/DevPlatform/backend/internal/gitserver"
+	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
@@ -46,7 +47,10 @@ func main() {
 		Store: taskboard.NewStore(filepath.Join(cfg.DataDir, "tasks")),
 		Repos: store,
 	}
-	router := server.NewRouter(authedGitHandler, authMiddleware, mrHandlers, repoHandlers, taskHandlers)
+	statsHandlers := &gitstats.Handlers{Repos: store}
+	router := server.NewRouter(
+		authedGitHandler, authMiddleware, mrHandlers, repoHandlers, taskHandlers, statsHandlers,
+	)
 
 	log.Printf("devplatform listening on %s", cfg.ListenAddr)
 	if err := http.ListenAndServe(cfg.ListenAddr, router); err != nil {
