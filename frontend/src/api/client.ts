@@ -1,4 +1,15 @@
-import type { DiffResult, MergeRequest, MergeRequestDetail, Task, TaskStatus, User } from './types'
+import type {
+  Commit,
+  Contributor,
+  DayCount,
+  DiffResult,
+  MergeRequest,
+  MergeRequestDetail,
+  MergeRequestStatus,
+  Task,
+  TaskStatus,
+  User,
+} from './types'
 
 // Thrown by request() on any non-2xx response, so callers/pages can
 // distinguish "not logged in" (401) from "not allowed" (403) from
@@ -88,6 +99,20 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(changes),
     }),
+
+  // Cross-repo views, for the dashboard.
+  listAllTasks: (assignedTo?: string) =>
+    request<Task[]>(`/api/tasks${assignedTo ? `?assignedTo=${encodeURIComponent(assignedTo)}` : ''}`),
+  listAllMergeRequests: (status?: MergeRequestStatus) =>
+    request<MergeRequest[]>(`/api/merge-requests${status ? `?status=${status}` : ''}`),
+
+  // Repository insight.
+  listCommits: (repo: string, limit = 20) =>
+    request<Commit[]>(`/api/repos/${encodeURIComponent(repo)}/commits?limit=${limit}`),
+  listContributors: (repo: string) =>
+    request<Contributor[]>(`/api/repos/${encodeURIComponent(repo)}/contributors`),
+  activity: (repo: string, days = 30) =>
+    request<DayCount[]>(`/api/repos/${encodeURIComponent(repo)}/activity?days=${days}`),
 }
 
-export type { DiffResult, MergeRequest, MergeRequestDetail, Task, User }
+export type { Commit, Contributor, DayCount, DiffResult, MergeRequest, MergeRequestDetail, Task, User }

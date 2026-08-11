@@ -1,7 +1,7 @@
 import { Link, NavLink, Outlet, useMatch } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useRepos } from '../repos/ReposContext'
-import { BranchIcon, LogoMark, MergeIcon, OverviewIcon, RepoIcon, TaskIcon } from './icons'
+import { BranchIcon, ChartIcon, LogoMark, MergeIcon, OverviewIcon, RepoIcon, TaskIcon } from './icons'
 
 // AppLayout is the persistent chrome every authenticated page renders
 // inside: a top bar for identity and a left sidebar for navigation. The
@@ -48,6 +48,23 @@ export function AppLayout() {
 
       <div className="app-body">
         <nav className="sidebar">
+          <div className="sidebar-group">
+            <ul className="nav-list">
+              <li>
+                <NavLink end to="/" className={navClass}>
+                  <OverviewIcon />
+                  <span className="nav-label">Panel</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink end to="/repos" className={navClass}>
+                  <RepoIcon />
+                  <span className="nav-label">Tüm repolar</span>
+                </NavLink>
+              </li>
+            </ul>
+          </div>
+
           {repo && (
             <div className="sidebar-group">
               <div className="sidebar-heading">{repo}</div>
@@ -74,6 +91,12 @@ export function AppLayout() {
                   <NavLink to={`/repos/${encodeURIComponent(repo)}/branches`} className={navClass}>
                     <BranchIcon />
                     <span className="nav-label">Branch'ler</span>
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink to={`/repos/${encodeURIComponent(repo)}/insights`} className={navClass}>
+                    <ChartIcon />
+                    <span className="nav-label">İstatistikler</span>
                   </NavLink>
                 </li>
               </ul>

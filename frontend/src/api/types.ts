@@ -41,6 +41,27 @@ export interface MergeRequestDetail extends MergeRequest {
   diff: DiffResult
 }
 
+export interface Commit {
+  hash: string
+  shortHash: string
+  message: string
+  authorName: string
+  authorEmail: string
+  when: string
+}
+
+export interface Contributor {
+  name: string
+  email: string
+  commits: number
+  lastAt: string
+}
+
+export interface DayCount {
+  date: string
+  commits: number
+}
+
 export type TaskStatus = 'in_progress' | 'awaiting_test' | 'done'
 
 export interface Task {

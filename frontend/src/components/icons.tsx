@@ -81,6 +81,15 @@ export function MergeIcon({ className }: IconProps) {
   )
 }
 
+export function ChartIcon({ className }: IconProps) {
+  return (
+    <svg className={className} {...base} aria-hidden="true">
+      <path d="M2.5 13.5h11" />
+      <path d="M4.5 13.5v-4M8 13.5v-8M11.5 13.5v-5.5" />
+    </svg>
+  )
+}
+
 export function OverviewIcon({ className }: IconProps) {
   return (
     <svg className={className} {...base} aria-hidden="true">
