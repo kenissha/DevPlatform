@@ -173,6 +173,40 @@ func TestCreate_SetsMainAsDefaultBranch(t *testing.T) {
 	}
 }
 
+func TestOpen_ReturnsCreatedRepo(t *testing.T) {
+	dir := t.TempDir()
+	store := New(dir)
+	if _, err := store.Create("intranet-backend"); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	repo, err := store.Open("intranet-backend")
+	if err != nil {
+		t.Fatalf("Open returned error: %v", err)
+	}
+	if repo == nil {
+		t.Fatal("Open returned a nil repository")
+	}
+}
+
+func TestOpen_RejectsInvalidName(t *testing.T) {
+	store := New(t.TempDir())
+
+	_, err := store.Open("../escape")
+	if err != ErrInvalidName {
+		t.Fatalf("err = %v, want ErrInvalidName", err)
+	}
+}
+
+func TestOpen_ReturnsErrNotExistForMissingRepo(t *testing.T) {
+	store := New(t.TempDir())
+
+	_, err := store.Open("never-created")
+	if err != ErrNotExist {
+		t.Fatalf("err = %v, want ErrNotExist", err)
+	}
+}
+
 func TestList_ReturnsCreatedRepoNames(t *testing.T) {
 	dir := t.TempDir()
 	store := New(dir)

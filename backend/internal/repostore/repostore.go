@@ -18,6 +18,7 @@ import (
 var (
 	ErrInvalidName   = errors.New("repostore: invalid repository name")
 	ErrAlreadyExists = errors.New("repostore: repository already exists")
+	ErrNotExist      = errors.New("repostore: repository does not exist")
 )
 
 var validName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
@@ -74,6 +75,28 @@ func (s *Store) Create(name string) (string, error) {
 	}
 
 	return path, nil
+}
+
+// Open opens an existing repository named name for reading (e.g. computing
+// diffs, listing branches). It applies the same name validation as Create,
+// so a hostile name can never escape rootDir here either.
+func (s *Store) Open(name string) (*git.Repository, error) {
+	if !validName.MatchString(name) {
+		return nil, ErrInvalidName
+	}
+	if reservedNames[strings.ToUpper(name)] {
+		return nil, ErrInvalidName
+	}
+
+	path := filepath.Join(s.rootDir, name+".git")
+	repo, err := git.PlainOpen(path)
+	if err != nil {
+		if errors.Is(err, git.ErrRepositoryNotExists) {
+			return nil, ErrNotExist
+		}
+		return nil, err
+	}
+	return repo, nil
 }
 
 // List returns the names of all repositories currently in the store.

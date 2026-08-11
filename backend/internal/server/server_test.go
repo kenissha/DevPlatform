@@ -10,6 +10,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
+	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
+	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 )
 
 const testSecret = "test-secret"
@@ -17,6 +19,15 @@ const testSecret = "test-secret"
 func testAuthMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return auth.RequireAuth([]byte(testSecret), next)
+	}
+}
+
+func testMergeRequestHandlers(t *testing.T) *mergerequest.Handlers {
+	t.Helper()
+	dataDir := t.TempDir()
+	return &mergerequest.Handlers{
+		Store: mergerequest.NewStore(dataDir + "/merge-requests"),
+		Repos: repostore.New(dataDir),
 	}
 }
 
@@ -37,7 +48,7 @@ func signTestToken(t *testing.T, subject, role string) string {
 }
 
 func TestHealthz_ReturnsOK(t *testing.T) {
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware())
+	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t))
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 
@@ -55,7 +66,7 @@ func TestHealthz_ReturnsOK(t *testing.T) {
 }
 
 func TestMe_RejectsUnauthenticatedRequest(t *testing.T) {
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware())
+	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t))
 	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
 	rec := httptest.NewRecorder()
 
@@ -67,7 +78,7 @@ func TestMe_RejectsUnauthenticatedRequest(t *testing.T) {
 }
 
 func TestMe_ReturnsAuthenticatedUser(t *testing.T) {
-	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware())
+	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t))
 	token := signTestToken(t, "user-1", "developer")
 	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -84,5 +95,33 @@ func TestMe_ReturnsAuthenticatedUser(t *testing.T) {
 	}
 	if got.Subject != "user-1" || got.Email != "user-1@example.com" || got.Role != auth.RoleDeveloper {
 		t.Errorf("user = %+v, unexpected fields", got)
+	}
+}
+
+func TestMergeRequestApprove_RejectsNonAdminThroughRouter(t *testing.T) {
+	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t))
+	token := signTestToken(t, "dev-1", "developer")
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/merge-requests/0123456789abcdef/approve", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
+func TestMergeRequestList_ReturnsNotFoundForUnknownRepo(t *testing.T) {
+	router := NewRouter(http.NotFoundHandler(), testAuthMiddleware(), testMergeRequestHandlers(t))
+	token := signTestToken(t, "dev-1", "developer")
+	req := httptest.NewRequest(http.MethodGet, "/api/repos/does-not-exist/merge-requests", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
 	}
 }
