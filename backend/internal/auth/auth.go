@@ -42,9 +42,9 @@ const (
 // User is the authenticated identity attached to a request's context after
 // RequireAuth succeeds.
 type User struct {
-	Subject string
-	Email   string
-	Role    Role
+	Subject string `json:"subject"`
+	Email   string `json:"email"`
+	Role    Role   `json:"role"`
 }
 
 // claims is the expected shape of the external system's JWT payload.
