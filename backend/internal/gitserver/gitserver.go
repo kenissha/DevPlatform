@@ -32,7 +32,8 @@ const Prefix = "/git"
 func NewHandler(dataDir string) http.Handler {
 	loader := transport.NewFilesystemLoader(osfs.New(dataDir), false)
 	protected := newProtectingLoader(loader)
-	b := backend.New(protected)
+	scanned := newScanningLoader(protected)
+	b := backend.New(scanned)
 	b.Prefix = Prefix
 	return withReceivePackAuthShim(b)
 }
