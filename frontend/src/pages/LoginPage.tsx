@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { LogoMark } from '../components/icons'
 
 export function LoginPage() {
   const { status, login } = useAuth()
@@ -20,25 +21,34 @@ export function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-card">
-        <h1>DevPlatform</h1>
-        <p className="muted">
-          Normalde buraya, kurumsal girişinizi zaten yapmış olan sistemden bir{' '}
-          <code>?token=</code> bağlantısıyla yönlendirilirsiniz. Geliştirme/test için, aşağıya
-          geçerli bir JWT yapıştırarak da giriş yapabilirsiniz.
+        <div className="login-brand">
+          <LogoMark className="brand-mark" />
+          <span>DevPlatform</span>
+        </div>
+        <p className="login-note">
+          Kurumsal girişinizi zaten yaptığınız sistemden bu panele yönlendirilirsiniz; oturumunuz
+          oradan devredilir.
         </p>
+
+        <div className="login-divider">Geliştirme girişi</div>
+
         <form onSubmit={handleSubmit}>
-          <label htmlFor="token">JWT</label>
-          <textarea
-            id="token"
-            value={tokenInput}
-            onChange={(e) => setTokenInput(e.target.value)}
-            rows={4}
-            placeholder="eyJhbGciOi..."
-            spellCheck={false}
-          />
-          <button type="submit" disabled={!tokenInput.trim()}>
-            Giriş yap
-          </button>
+          <div className="field">
+            <label htmlFor="token">JWT</label>
+            <textarea
+              id="token"
+              value={tokenInput}
+              onChange={(e) => setTokenInput(e.target.value)}
+              rows={4}
+              placeholder="eyJhbGciOi..."
+              spellCheck={false}
+            />
+          </div>
+          <div className="form-actions">
+            <button type="submit" className="btn-primary" disabled={!tokenInput.trim()}>
+              Giriş yap
+            </button>
+          </div>
         </form>
       </div>
     </div>
