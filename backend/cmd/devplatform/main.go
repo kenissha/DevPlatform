@@ -11,6 +11,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/gitauth"
 	"github.com/kenissha/DevPlatform/backend/internal/gitserver"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
+	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 	"github.com/kenissha/DevPlatform/backend/internal/server"
 )
@@ -39,7 +40,8 @@ func main() {
 		Store: mergerequest.NewStore(filepath.Join(cfg.DataDir, "merge-requests")),
 		Repos: store,
 	}
-	router := server.NewRouter(authedGitHandler, authMiddleware, mrHandlers)
+	repoHandlers := &repoapi.Handlers{Repos: store}
+	router := server.NewRouter(authedGitHandler, authMiddleware, mrHandlers, repoHandlers)
 
 	log.Printf("devplatform listening on %s", cfg.ListenAddr)
 	if err := http.ListenAndServe(cfg.ListenAddr, router); err != nil {

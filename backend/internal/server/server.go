@@ -7,15 +7,22 @@ import (
 
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
+	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
 )
 
 // NewRouter builds the top-level HTTP router. gitHandler serves the git
 // smart-HTTP protocol under its own prefix (see internal/gitserver).
 // authMiddleware wraps routes that require a valid JWT (see internal/auth);
 // /healthz and the git routes are unaffected by it. mr provides the merge
-// request review API (see internal/mergerequest). Later packages extend
-// this with additional routes (task board, ...).
-func NewRouter(gitHandler http.Handler, authMiddleware func(http.Handler) http.Handler, mr *mergerequest.Handlers) *http.ServeMux {
+// request review API (see internal/mergerequest); repos provides the
+// repository listing/creation/branches API (see internal/repoapi). Later
+// packages extend this with additional routes (task board, ...).
+func NewRouter(
+	gitHandler http.Handler,
+	authMiddleware func(http.Handler) http.Handler,
+	mr *mergerequest.Handlers,
+	repos *repoapi.Handlers,
+) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealth)
 	// The "/git/" prefix here must stay in sync with gitserver.Prefix
@@ -25,6 +32,12 @@ func NewRouter(gitHandler http.Handler, authMiddleware func(http.Handler) http.H
 	// identity system round-trips correctly through internal/auth end to
 	// end.
 	mux.Handle("GET /api/me", authMiddleware(http.HandlerFunc(handleMe)))
+
+	// Any authenticated user can list repos and branches; creating a repo
+	// is an administrative action (project setup), so it's Admin-only.
+	mux.Handle("GET /api/repos", authMiddleware(http.HandlerFunc(repos.List)))
+	mux.Handle("POST /api/repos", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(repos.Create))))
+	mux.Handle("GET /api/repos/{repo}/branches", authMiddleware(http.HandlerFunc(repos.Branches)))
 
 	// Any authenticated user (Developer or Admin) can open a merge request
 	// or read its diff; only an Admin can approve/reject it — "kör onay
