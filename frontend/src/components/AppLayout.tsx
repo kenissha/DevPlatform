@@ -1,7 +1,16 @@
 import { Link, NavLink, Outlet, useMatch } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useRepos } from '../repos/ReposContext'
-import { BranchIcon, ChartIcon, LogoMark, MergeIcon, OverviewIcon, RepoIcon, TaskIcon } from './icons'
+import {
+  AuditIcon,
+  BranchIcon,
+  ChartIcon,
+  LogoMark,
+  MergeIcon,
+  OverviewIcon,
+  RepoIcon,
+  TaskIcon,
+} from './icons'
 
 // AppLayout is the persistent chrome every authenticated page renders
 // inside: a top bar for identity and a left sidebar for navigation. The
@@ -60,6 +69,12 @@ export function AppLayout() {
                 <NavLink end to="/repos" className={navClass}>
                   <RepoIcon />
                   <span className="nav-label">Tüm repolar</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink end to="/audit" className={navClass}>
+                  <AuditIcon />
+                  <span className="nav-label">Denetim kaydı</span>
                 </NavLink>
               </li>
             </ul>

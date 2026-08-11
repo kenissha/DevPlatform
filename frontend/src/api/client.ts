@@ -1,4 +1,5 @@
 import type {
+  AuditEvent,
   Commit,
   Contributor,
   DayCount,
@@ -113,6 +114,18 @@ export const api = {
     request<Contributor[]>(`/api/repos/${encodeURIComponent(repo)}/contributors`),
   activity: (repo: string, days = 30) =>
     request<DayCount[]>(`/api/repos/${encodeURIComponent(repo)}/activity?days=${days}`),
+
+  listAudit: (limit = 100) => request<AuditEvent[]>(`/api/audit?limit=${limit}`),
 }
 
-export type { Commit, Contributor, DayCount, DiffResult, MergeRequest, MergeRequestDetail, Task, User }
+export type {
+  AuditEvent,
+  Commit,
+  Contributor,
+  DayCount,
+  DiffResult,
+  MergeRequest,
+  MergeRequestDetail,
+  Task,
+  User,
+}

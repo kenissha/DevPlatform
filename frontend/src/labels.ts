@@ -1,4 +1,4 @@
-import type { MergeRequestStatus, TaskStatus } from './api/types'
+import type { AuditAction, MergeRequestStatus, TaskStatus } from './api/types'
 
 // Turkish display strings + which badge variant each status wears. Shared
 // so the same status never renders as two different labels/colours on two
@@ -28,6 +28,24 @@ export const MR_STATUS_BADGE: Record<MergeRequestStatus, string> = {
   open: 'badge-accent',
   approved: 'badge-success',
   rejected: 'badge-danger',
+}
+
+export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
+  'repo.created': 'Repo oluşturuldu',
+  'task.created': 'Görev açıldı',
+  'task.updated': 'Görev güncellendi',
+  'merge_request.opened': 'Merge isteği açıldı',
+  'merge_request.approved': 'Merge onaylandı',
+  'merge_request.rejected': 'Merge reddedildi',
+}
+
+export const AUDIT_ACTION_BADGE: Record<AuditAction, string> = {
+  'repo.created': 'badge-neutral',
+  'task.created': 'badge-neutral',
+  'task.updated': 'badge-neutral',
+  'merge_request.opened': 'badge-accent',
+  'merge_request.approved': 'badge-success',
+  'merge_request.rejected': 'badge-danger',
 }
 
 export function formatDate(iso: string): string {

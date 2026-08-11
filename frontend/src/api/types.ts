@@ -41,6 +41,23 @@ export interface MergeRequestDetail extends MergeRequest {
   diff: DiffResult
 }
 
+export type AuditAction =
+  | 'repo.created'
+  | 'task.created'
+  | 'task.updated'
+  | 'merge_request.opened'
+  | 'merge_request.approved'
+  | 'merge_request.rejected'
+
+export interface AuditEvent {
+  at: string
+  actor: string
+  action: AuditAction
+  repo?: string
+  target?: string
+  summary?: string
+}
+
 export interface Commit {
   hash: string
   shortHash: string

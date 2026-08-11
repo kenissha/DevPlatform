@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthContext'
 import { AppLayout } from './components/AppLayout'
 import { RequireAuth } from './components/RequireAuth'
+import { AuditPage } from './pages/AuditPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 import { MergeRequestDetailPage } from './pages/MergeRequestDetailPage'
@@ -32,6 +33,7 @@ export default function App() {
             >
               <Route path="/" element={<DashboardPage />} />
               <Route path="/repos" element={<ReposPage />} />
+              <Route path="/audit" element={<AuditPage />} />
               <Route path="/repos/:repo" element={<RepoOverviewPage />} />
               <Route path="/repos/:repo/tasks" element={<RepoTasksPage />} />
               <Route path="/repos/:repo/branches" element={<RepoBranchesPage />} />

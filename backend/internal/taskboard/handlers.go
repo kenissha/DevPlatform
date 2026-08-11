@@ -170,12 +170,25 @@ func (h *Handlers) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, task)
 }
 
+// statusLabels renders a Status the way the audit log reads it out. The
+// rest of the summary is Turkish prose, so the raw enum value ("awaiting_test")
+// would be the one untranslated token in the sentence.
+var statusLabels = map[Status]string{
+	StatusInProgress:   "yapılıyor",
+	StatusAwaitingTest: "test bekliyor",
+	StatusDone:         "bitti",
+}
+
 // describeUpdate summarises which fields a PATCH actually changed, so the
 // audit line says what happened rather than just "updated".
 func describeUpdate(req updateRequest) string {
 	parts := []string{}
 	if req.Status != nil {
-		parts = append(parts, "durum → "+string(*req.Status))
+		label, ok := statusLabels[*req.Status]
+		if !ok {
+			label = string(*req.Status)
+		}
+		parts = append(parts, "durum → "+label)
 	}
 	if req.Urgent != nil {
 		if *req.Urgent {

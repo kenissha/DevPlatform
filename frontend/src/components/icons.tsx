@@ -81,6 +81,15 @@ export function MergeIcon({ className }: IconProps) {
   )
 }
 
+export function AuditIcon({ className }: IconProps) {
+  return (
+    <svg className={className} {...base} aria-hidden="true">
+      <circle cx="8" cy="8" r="5.5" />
+      <path d="M8 5v3l2 1.5" />
+    </svg>
+  )
+}
+
 export function ChartIcon({ className }: IconProps) {
   return (
     <svg className={className} {...base} aria-hidden="true">
