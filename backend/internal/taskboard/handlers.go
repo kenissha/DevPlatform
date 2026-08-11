@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"slices"
 	"sort"
+	"strings"
 
+	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 )
@@ -18,6 +20,8 @@ import (
 type Handlers struct {
 	Store *Store
 	Repos *repostore.Store
+	// Audit is optional; a nil Logger records nothing (see internal/audit).
+	Audit *audit.Logger
 }
 
 type createRequest struct {
@@ -55,6 +59,8 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+
+	_ = h.Audit.Log(user.Subject, audit.ActionTaskCreated, repo, task.ID, "Görev açıldı: "+task.Title)
 
 	writeJSON(w, http.StatusCreated, task)
 }
@@ -155,7 +161,40 @@ func (h *Handlers) Update(w http.ResponseWriter, r *http.Request) {
 		h.writeStoreError(w, err)
 		return
 	}
+
+	if user, ok := auth.UserFromContext(r.Context()); ok {
+		_ = h.Audit.Log(user.Subject, audit.ActionTaskUpdated, repo, task.ID,
+			"Görev güncellendi: "+task.Title+" ("+describeUpdate(req)+")")
+	}
+
 	writeJSON(w, http.StatusOK, task)
+}
+
+// describeUpdate summarises which fields a PATCH actually changed, so the
+// audit line says what happened rather than just "updated".
+func describeUpdate(req updateRequest) string {
+	parts := []string{}
+	if req.Status != nil {
+		parts = append(parts, "durum → "+string(*req.Status))
+	}
+	if req.Urgent != nil {
+		if *req.Urgent {
+			parts = append(parts, "acil işaretlendi")
+		} else {
+			parts = append(parts, "acil kaldırıldı")
+		}
+	}
+	if req.AssignedTo != nil {
+		if *req.AssignedTo == "" {
+			parts = append(parts, "atama kaldırıldı")
+		} else {
+			parts = append(parts, "atandı → "+*req.AssignedTo)
+		}
+	}
+	if len(parts) == 0 {
+		return "değişiklik yok"
+	}
+	return strings.Join(parts, ", ")
 }
 
 func (h *Handlers) repoExists(repo string) bool {

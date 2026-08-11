@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 )
@@ -17,6 +18,8 @@ import (
 type Handlers struct {
 	Store *Store
 	Repos *repostore.Store
+	// Audit is optional; a nil Logger records nothing (see internal/audit).
+	Audit *audit.Logger
 }
 
 type createRequest struct {
@@ -76,6 +79,9 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+
+	_ = h.Audit.Log(user.Subject, audit.ActionMROpened, repo, mr.ID,
+		"Merge isteği açıldı: "+mr.Title+" ("+mr.SourceBranch+" → "+mr.TargetBranch+")")
 
 	writeJSON(w, http.StatusCreated, mr)
 }
@@ -213,6 +219,13 @@ func (h *Handlers) Approve(w http.ResponseWriter, r *http.Request) {
 		h.writeStoreError(w, err)
 		return
 	}
+
+	if user, ok := auth.UserFromContext(r.Context()); ok {
+		_ = h.Audit.Log(user.Subject, audit.ActionMRApproved, repo, updated.ID,
+			"Merge onaylandı ve birleştirildi: "+updated.Title+" → "+updated.TargetBranch+
+				" ("+mergedHash.String()[:8]+")")
+	}
+
 	writeJSON(w, http.StatusOK, updated)
 }
 
@@ -232,6 +245,11 @@ func (h *Handlers) Reject(w http.ResponseWriter, r *http.Request) {
 		h.writeStoreError(w, err)
 		return
 	}
+
+	if user, ok := auth.UserFromContext(r.Context()); ok {
+		_ = h.Audit.Log(user.Subject, audit.ActionMRRejected, repo, mr.ID, "Merge reddedildi: "+mr.Title)
+	}
+
 	writeJSON(w, http.StatusOK, mr)
 }
 

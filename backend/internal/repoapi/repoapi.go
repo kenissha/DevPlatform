@@ -14,6 +14,8 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 
+	"github.com/kenissha/DevPlatform/backend/internal/audit"
+	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 )
 
@@ -24,6 +26,8 @@ import (
 // project setup).
 type Handlers struct {
 	Repos *repostore.Store
+	// Audit is optional; a nil Logger records nothing (see internal/audit).
+	Audit *audit.Logger
 }
 
 // List handles GET /api/repos.
@@ -65,6 +69,13 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
 		}
 		return
+	}
+
+	// A failed audit write must not fail the action it records — the repo
+	// already exists on disk by this point, so erroring here would report
+	// a failure that didn't happen.
+	if user, ok := auth.UserFromContext(r.Context()); ok {
+		_ = h.Audit.Log(user.Subject, audit.ActionRepoCreated, req.Name, req.Name, "Repo oluşturuldu")
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]string{"name": req.Name})

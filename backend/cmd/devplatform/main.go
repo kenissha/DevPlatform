@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/config"
 	"github.com/kenissha/DevPlatform/backend/internal/gitauth"
@@ -38,18 +39,22 @@ func main() {
 	authMiddleware := func(next http.Handler) http.Handler {
 		return auth.RequireAuth(jwtSecret, next)
 	}
+	auditLogger := audit.New(filepath.Join(cfg.DataDir, "audit.jsonl"))
 	mrHandlers := &mergerequest.Handlers{
 		Store: mergerequest.NewStore(filepath.Join(cfg.DataDir, "merge-requests")),
 		Repos: store,
+		Audit: auditLogger,
 	}
-	repoHandlers := &repoapi.Handlers{Repos: store}
+	repoHandlers := &repoapi.Handlers{Repos: store, Audit: auditLogger}
 	taskHandlers := &taskboard.Handlers{
 		Store: taskboard.NewStore(filepath.Join(cfg.DataDir, "tasks")),
 		Repos: store,
+		Audit: auditLogger,
 	}
 	statsHandlers := &gitstats.Handlers{Repos: store}
+	auditHandlers := &audit.Handlers{Logger: auditLogger}
 	router := server.NewRouter(
-		authedGitHandler, authMiddleware, mrHandlers, repoHandlers, taskHandlers, statsHandlers,
+		authedGitHandler, authMiddleware, mrHandlers, repoHandlers, taskHandlers, statsHandlers, auditHandlers,
 	)
 
 	log.Printf("devplatform listening on %s", cfg.ListenAddr)

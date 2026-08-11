@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
@@ -19,7 +20,8 @@ import (
 // request review API (see internal/mergerequest); repos provides the
 // repository listing/creation/branches API (see internal/repoapi); tasks
 // provides the task board API (see internal/taskboard); stats provides
-// read-only repository insight (see internal/gitstats).
+// read-only repository insight (see internal/gitstats); auditLog serves
+// the recorded action history (see internal/audit).
 func NewRouter(
 	gitHandler http.Handler,
 	authMiddleware func(http.Handler) http.Handler,
@@ -27,6 +29,7 @@ func NewRouter(
 	repos *repoapi.Handlers,
 	tasks *taskboard.Handlers,
 	stats *gitstats.Handlers,
+	auditLog *audit.Handlers,
 ) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealth)
@@ -75,6 +78,10 @@ func NewRouter(
 	mux.Handle("GET /api/repos/{repo}/commits", authMiddleware(http.HandlerFunc(stats.Commits)))
 	mux.Handle("GET /api/repos/{repo}/contributors", authMiddleware(http.HandlerFunc(stats.Contributors)))
 	mux.Handle("GET /api/repos/{repo}/activity", authMiddleware(http.HandlerFunc(stats.Activity)))
+
+	// The audit log is readable by any authenticated user — see
+	// audit.Handlers' doc comment for why it isn't Admin-gated.
+	mux.Handle("GET /api/audit", authMiddleware(http.HandlerFunc(auditLog.List)))
 
 	return mux
 }

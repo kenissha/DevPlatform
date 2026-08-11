@@ -11,6 +11,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
@@ -35,20 +36,25 @@ func newTestRouter(t *testing.T) (*http.ServeMux, *repostore.Store) {
 	t.Helper()
 	dataDir := t.TempDir()
 	store := repostore.New(dataDir)
+	auditLogger := audit.New(filepath.Join(dataDir, "audit.jsonl"))
 
 	mrHandlers := &mergerequest.Handlers{
 		Store: mergerequest.NewStore(filepath.Join(dataDir, "merge-requests")),
 		Repos: store,
+		Audit: auditLogger,
 	}
-	repoHandlers := &repoapi.Handlers{Repos: store}
+	repoHandlers := &repoapi.Handlers{Repos: store, Audit: auditLogger}
 	taskHandlers := &taskboard.Handlers{
 		Store: taskboard.NewStore(filepath.Join(dataDir, "tasks")),
 		Repos: store,
+		Audit: auditLogger,
 	}
 	statsHandlers := &gitstats.Handlers{Repos: store}
+	auditHandlers := &audit.Handlers{Logger: auditLogger}
 
 	router := NewRouter(
-		http.NotFoundHandler(), testAuthMiddleware(), mrHandlers, repoHandlers, taskHandlers, statsHandlers,
+		http.NotFoundHandler(), testAuthMiddleware(), mrHandlers, repoHandlers, taskHandlers,
+		statsHandlers, auditHandlers,
 	)
 	return router, store
 }
@@ -245,6 +251,56 @@ func TestMergeRequestsListAll_ReturnsEmptyArrayWhenNoRepos(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 	// An empty JSON array, not null — the frontend maps over this directly.
+	if body := rec.Body.String(); body != "[]\n" {
+		t.Errorf("body = %q, want %q", body, "[]\n")
+	}
+}
+
+func TestAudit_RecordsActionsTakenThroughTheAPI(t *testing.T) {
+	router, _ := newTestRouter(t)
+
+	createRec := do(t, router, http.MethodPost, "/api/repos", "admin-1", "admin",
+		map[string]string{"name": "intranet-backend"})
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("repo create status = %d, want %d", createRec.Code, http.StatusCreated)
+	}
+	taskRec := do(t, router, http.MethodPost, "/api/repos/intranet-backend/tasks", "dev-1", "developer",
+		map[string]string{"title": "Login hatasi"})
+	if taskRec.Code != http.StatusCreated {
+		t.Fatalf("task create status = %d, want %d", taskRec.Code, http.StatusCreated)
+	}
+
+	rec := do(t, router, http.MethodGet, "/api/audit", "dev-1", "developer", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var events []audit.Event
+	if err := json.Unmarshal(rec.Body.Bytes(), &events); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("got %d events, want 2: %+v", len(events), events)
+	}
+
+	// Newest first: the task creation, then the repo creation.
+	if events[0].Action != audit.ActionTaskCreated || events[0].Actor != "dev-1" {
+		t.Errorf("newest event = %+v, want task.created by dev-1", events[0])
+	}
+	if events[1].Action != audit.ActionRepoCreated || events[1].Actor != "admin-1" {
+		t.Errorf("older event = %+v, want repo.created by admin-1", events[1])
+	}
+	if events[1].Repo != "intranet-backend" {
+		t.Errorf("repo = %q, want %q", events[1].Repo, "intranet-backend")
+	}
+}
+
+func TestAudit_ReturnsEmptyArrayBeforeAnythingHappens(t *testing.T) {
+	router, _ := newTestRouter(t)
+	rec := do(t, router, http.MethodGet, "/api/audit", "dev-1", "developer", nil)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
 	if body := rec.Body.String(); body != "[]\n" {
 		t.Errorf("body = %q, want %q", body, "[]\n")
 	}
