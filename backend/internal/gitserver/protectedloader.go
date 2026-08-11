@@ -36,7 +36,7 @@ func isProtectedRef(name plumbing.ReferenceName) bool {
 }
 
 // protectingLoader wraps a transport.Loader so every storer it returns
-// rejects reference updates to protectedRefs.
+// rejects reference updates to protectedRefNames.
 type protectingLoader struct {
 	inner transport.Loader
 }
