@@ -30,7 +30,7 @@ func TestScan_DetectsKnownPatterns(t *testing.T) {
 		},
 		{
 			name:    "aws secret access key",
-			content: "aws_secret_access_key = wJalrXUtnFEMIfakeSECRETfakeKEYfakeEXAMPLE",
+			content: "aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
 			want:    "aws-secret-access-key",
 		},
 		{
