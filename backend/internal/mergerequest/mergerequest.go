@@ -61,6 +61,10 @@ type MergeRequest struct {
 	Author       string    `json:"author"`
 	Status       Status    `json:"status"`
 	CreatedAt    time.Time `json:"createdAt"`
+	// MergedCommit is the commit TargetBranch was fast-forwarded to when
+	// this request was approved (see Handlers.Approve / FastForwardMerge).
+	// Empty until then.
+	MergedCommit string `json:"mergedCommit,omitempty"`
 }
 
 // Store persists merge requests as one JSON file per request under
@@ -189,11 +193,17 @@ func (s *Store) List(repo string) ([]MergeRequest, error) {
 	return mrs, nil
 }
 
-// SetStatus transitions the merge request identified by (repo, id) to
-// status. Only StatusApproved and StatusRejected are valid targets here —
-// a request is opened via Create, never transitioned back to StatusOpen.
+// ErrNotOpen is returned by SetStatus and MarkApproved when the merge
+// request has already left StatusOpen — a request can be approved or
+// rejected exactly once, not re-decided.
+var ErrNotOpen = errors.New("mergerequest: merge request is not open")
+
+// SetStatus transitions the merge request identified by (repo, id) from
+// StatusOpen to status. Only StatusRejected is a valid target here —
+// approval goes through MarkApproved instead, since it also has to record
+// the resulting merged commit in the same write.
 func (s *Store) SetStatus(repo, id string, status Status) (MergeRequest, error) {
-	if status != StatusApproved && status != StatusRejected {
+	if status != StatusRejected {
 		return MergeRequest{}, ErrInvalidStatus
 	}
 
@@ -201,25 +211,54 @@ func (s *Store) SetStatus(repo, id string, status Status) (MergeRequest, error) 
 	if err != nil {
 		return MergeRequest{}, err
 	}
+	if mr.Status != StatusOpen {
+		return MergeRequest{}, ErrNotOpen
+	}
 	mr.Status = status
 
-	path, err := s.path(repo, id)
+	if err := s.overwrite(repo, id, mr); err != nil {
+		return MergeRequest{}, err
+	}
+	return mr, nil
+}
+
+// MarkApproved transitions the merge request identified by (repo, id) from
+// StatusOpen to StatusApproved and records mergedCommit — the commit its
+// target branch was fast-forwarded to (see FastForwardMerge). Both fields
+// are written together so a request can never end up "approved" on disk
+// without also recording what it was actually merged to.
+func (s *Store) MarkApproved(repo, id, mergedCommit string) (MergeRequest, error) {
+	mr, err := s.Get(repo, id)
 	if err != nil {
 		return MergeRequest{}, err
 	}
+	if mr.Status != StatusOpen {
+		return MergeRequest{}, ErrNotOpen
+	}
+	mr.Status = StatusApproved
+	mr.MergedCommit = mergedCommit
+
+	if err := s.overwrite(repo, id, mr); err != nil {
+		return MergeRequest{}, err
+	}
+	return mr, nil
+}
+
+func (s *Store) overwrite(repo, id string, mr MergeRequest) error {
+	path, err := s.path(repo, id)
+	if err != nil {
+		return err
+	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0o640)
 	if err != nil {
-		return MergeRequest{}, err
+		return err
 	}
 	err = json.NewEncoder(f).Encode(mr)
 	closeErr := f.Close()
 	if err != nil {
-		return MergeRequest{}, err
+		return err
 	}
-	if closeErr != nil {
-		return MergeRequest{}, closeErr
-	}
-	return mr, nil
+	return closeErr
 }
 
 func (s *Store) path(repo, id string) (string, error) {

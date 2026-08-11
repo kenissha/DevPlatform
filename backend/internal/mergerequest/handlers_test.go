@@ -20,8 +20,10 @@ const testJWTSecret = "test-secret"
 
 // newTestHandlers sets up a repostore with one repo ("sample") that has
 // "main" and "feature-x" branches (feature-x one commit ahead), plus a
-// fresh mergerequest.Store, and returns Handlers wired to both.
-func newTestHandlers(t *testing.T) *Handlers {
+// fresh mergerequest.Store, and returns Handlers wired to both along with
+// the bare repo's on-disk path (so tests can verify ref state directly via
+// the git CLI, not just through the API's response body).
+func newTestHandlers(t *testing.T) (*Handlers, string) {
 	t.Helper()
 	requireGit(t)
 
@@ -52,10 +54,11 @@ func newTestHandlers(t *testing.T) *Handlers {
 	runGit(t, work, "commit", "-m", "add line two")
 	runGit(t, work, "push", "origin", "feature-x")
 
-	return &Handlers{
+	h := &Handlers{
 		Store: NewStore(filepath.Join(dataDir, "merge-requests")),
 		Repos: repos,
 	}
+	return h, repoPath
 }
 
 // signTestToken mints a JWT this test suite's mux will accept, so handler
@@ -97,7 +100,7 @@ func newMux(h *Handlers) *http.ServeMux {
 }
 
 func TestCreate_ReturnsCreatedRequest(t *testing.T) {
-	h := newTestHandlers(t)
+	h, _ := newTestHandlers(t)
 	mux := newMux(h)
 
 	body, _ := json.Marshal(map[string]string{
@@ -124,7 +127,7 @@ func TestCreate_ReturnsCreatedRequest(t *testing.T) {
 }
 
 func TestCreate_RejectsUnknownBranch(t *testing.T) {
-	h := newTestHandlers(t)
+	h, _ := newTestHandlers(t)
 	mux := newMux(h)
 
 	body, _ := json.Marshal(map[string]string{
@@ -144,7 +147,7 @@ func TestCreate_RejectsUnknownBranch(t *testing.T) {
 }
 
 func TestCreate_RejectsUnknownRepo(t *testing.T) {
-	h := newTestHandlers(t)
+	h, _ := newTestHandlers(t)
 	mux := newMux(h)
 
 	body, _ := json.Marshal(map[string]string{
@@ -164,7 +167,7 @@ func TestCreate_RejectsUnknownRepo(t *testing.T) {
 }
 
 func TestGet_ReturnsMergeRequestWithDiff(t *testing.T) {
-	h := newTestHandlers(t)
+	h, _ := newTestHandlers(t)
 	mux := newMux(h)
 
 	created, err := h.Store.Create("sample", "Add line two", "feature-x", "main", "dev-1")
@@ -194,7 +197,7 @@ func TestGet_ReturnsMergeRequestWithDiff(t *testing.T) {
 }
 
 func TestApprove_RejectsNonAdmin(t *testing.T) {
-	h := newTestHandlers(t)
+	h, _ := newTestHandlers(t)
 	mux := newMux(h)
 
 	created, err := h.Store.Create("sample", "Add line two", "feature-x", "main", "dev-1")
@@ -222,7 +225,7 @@ func TestApprove_RejectsNonAdmin(t *testing.T) {
 }
 
 func TestApprove_AllowsAdmin(t *testing.T) {
-	h := newTestHandlers(t)
+	h, repoPath := newTestHandlers(t)
 	mux := newMux(h)
 
 	created, err := h.Store.Create("sample", "Add line two", "feature-x", "main", "dev-1")
@@ -247,10 +250,41 @@ func TestApprove_AllowsAdmin(t *testing.T) {
 	if reread.Status != StatusApproved {
 		t.Errorf("Status = %q, want %q", reread.Status, StatusApproved)
 	}
+	if reread.MergedCommit == "" {
+		t.Error("expected MergedCommit to be recorded after a successful approval")
+	}
+
+	mainTip := runGit(t, repoPath, "rev-parse", "main")
+	if reread.MergedCommit+"\n" != mainTip {
+		t.Errorf("main tip after approval = %s, want %s", mainTip, reread.MergedCommit+"\n")
+	}
+}
+
+func TestApprove_RejectsAlreadyDecidedRequest(t *testing.T) {
+	h, _ := newTestHandlers(t)
+	mux := newMux(h)
+
+	created, err := h.Store.Create("sample", "Add line two", "feature-x", "main", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if _, err := h.Store.MarkApproved("sample", created.ID, "deadbeef"); err != nil {
+		t.Fatalf("MarkApproved setup failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/merge-requests/"+created.ID+"/approve", nil)
+	req = addAuth(req, t, "admin-1", "admin")
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusConflict, rec.Body.String())
+	}
 }
 
 func TestReject_AllowsAdmin(t *testing.T) {
-	h := newTestHandlers(t)
+	h, _ := newTestHandlers(t)
 	mux := newMux(h)
 
 	created, err := h.Store.Create("sample", "Add line two", "feature-x", "main", "dev-1")
@@ -278,7 +312,7 @@ func TestReject_AllowsAdmin(t *testing.T) {
 }
 
 func TestList_ReturnsCreatedRequests(t *testing.T) {
-	h := newTestHandlers(t)
+	h, _ := newTestHandlers(t)
 	mux := newMux(h)
 
 	if _, err := h.Store.Create("sample", "Add line two", "feature-x", "main", "dev-1"); err != nil {

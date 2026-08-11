@@ -127,21 +127,14 @@ func (h *Handlers) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, mergeRequestDetail{MergeRequest: mr, Diff: diff})
 }
 
-// Approve handles POST /api/repos/{repo}/merge-requests/{id}/approve.
-// Mount this behind auth.RequireRole(auth.RoleAdmin, ...) — this handler
-// itself does not check the caller's role.
+// Approve handles POST /api/repos/{repo}/merge-requests/{id}/approve. It
+// actually performs the merge (fast-forwarding TargetBranch to
+// SourceBranch's tip — see FastForwardMerge) before recording the
+// approval; if the merge can't be done, the request is left StatusOpen
+// rather than being marked approved without anything having actually
+// merged. Mount this behind auth.RequireRole(auth.RoleAdmin, ...) — this
+// handler itself does not check the caller's role.
 func (h *Handlers) Approve(w http.ResponseWriter, r *http.Request) {
-	h.setStatus(w, r, StatusApproved)
-}
-
-// Reject handles POST /api/repos/{repo}/merge-requests/{id}/reject.
-// Mount this behind auth.RequireRole(auth.RoleAdmin, ...) — this handler
-// itself does not check the caller's role.
-func (h *Handlers) Reject(w http.ResponseWriter, r *http.Request) {
-	h.setStatus(w, r, StatusRejected)
-}
-
-func (h *Handlers) setStatus(w http.ResponseWriter, r *http.Request, status Status) {
 	repo := r.PathValue("repo")
 	id := r.PathValue("id")
 	if !h.repoExists(repo) {
@@ -149,7 +142,51 @@ func (h *Handlers) setStatus(w http.ResponseWriter, r *http.Request, status Stat
 		return
 	}
 
-	mr, err := h.Store.SetStatus(repo, id, status)
+	mr, err := h.Store.Get(repo, id)
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	if mr.Status != StatusOpen {
+		http.Error(w, "409 merge request is not open", http.StatusConflict)
+		return
+	}
+
+	gitRepo, err := h.Repos.Open(repo)
+	if err != nil {
+		http.Error(w, "404 repository not found", http.StatusNotFound)
+		return
+	}
+	mergedHash, err := FastForwardMerge(gitRepo, mr.TargetBranch, mr.SourceBranch)
+	if err != nil {
+		if errors.Is(err, ErrNotFastForward) {
+			http.Error(w, "409 "+err.Error(), http.StatusConflict)
+			return
+		}
+		h.writeBranchError(w, err)
+		return
+	}
+
+	updated, err := h.Store.MarkApproved(repo, id, mergedHash.String())
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, updated)
+}
+
+// Reject handles POST /api/repos/{repo}/merge-requests/{id}/reject.
+// Mount this behind auth.RequireRole(auth.RoleAdmin, ...) — this handler
+// itself does not check the caller's role.
+func (h *Handlers) Reject(w http.ResponseWriter, r *http.Request) {
+	repo := r.PathValue("repo")
+	id := r.PathValue("id")
+	if !h.repoExists(repo) {
+		http.Error(w, "404 repository not found", http.StatusNotFound)
+		return
+	}
+
+	mr, err := h.Store.SetStatus(repo, id, StatusRejected)
 	if err != nil {
 		h.writeStoreError(w, err)
 		return
@@ -169,6 +206,8 @@ func (h *Handlers) writeStoreError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		http.Error(w, "404 merge request not found", http.StatusNotFound)
+	case errors.Is(err, ErrNotOpen):
+		http.Error(w, "409 merge request is not open", http.StatusConflict)
 	case errors.Is(err, ErrInvalidRepo), errors.Is(err, ErrInvalidID), errors.Is(err, ErrInvalidStatus):
 		http.Error(w, "400 Bad Request", http.StatusBadRequest)
 	default:

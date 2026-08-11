@@ -101,27 +101,86 @@ func TestList_ReturnsEmptySliceForRepoWithNoRequests(t *testing.T) {
 	}
 }
 
-func TestSetStatus_TransitionsToApproved(t *testing.T) {
+func TestSetStatus_TransitionsToRejected(t *testing.T) {
 	store := NewStore(t.TempDir())
 	created, err := store.Create("intranet-backend", "Fix login bug", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	updated, err := store.SetStatus("intranet-backend", created.ID, StatusApproved)
+	updated, err := store.SetStatus("intranet-backend", created.ID, StatusRejected)
 	if err != nil {
 		t.Fatalf("SetStatus returned error: %v", err)
 	}
-	if updated.Status != StatusApproved {
-		t.Errorf("Status = %q, want %q", updated.Status, StatusApproved)
+	if updated.Status != StatusRejected {
+		t.Errorf("Status = %q, want %q", updated.Status, StatusRejected)
 	}
 
 	reread, err := store.Get("intranet-backend", created.ID)
 	if err != nil {
 		t.Fatalf("Get after SetStatus failed: %v", err)
 	}
-	if reread.Status != StatusApproved {
-		t.Errorf("persisted Status = %q, want %q", reread.Status, StatusApproved)
+	if reread.Status != StatusRejected {
+		t.Errorf("persisted Status = %q, want %q", reread.Status, StatusRejected)
+	}
+}
+
+func TestSetStatus_RejectsAlreadyDecidedRequest(t *testing.T) {
+	store := NewStore(t.TempDir())
+	created, err := store.Create("intranet-backend", "Fix login bug", "feature-x", "main", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if _, err := store.SetStatus("intranet-backend", created.ID, StatusRejected); err != nil {
+		t.Fatalf("first SetStatus failed: %v", err)
+	}
+
+	_, err = store.SetStatus("intranet-backend", created.ID, StatusRejected)
+	if err != ErrNotOpen {
+		t.Fatalf("err = %v, want ErrNotOpen", err)
+	}
+}
+
+func TestMarkApproved_TransitionsAndRecordsMergedCommit(t *testing.T) {
+	store := NewStore(t.TempDir())
+	created, err := store.Create("intranet-backend", "Fix login bug", "feature-x", "main", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	updated, err := store.MarkApproved("intranet-backend", created.ID, "deadbeef")
+	if err != nil {
+		t.Fatalf("MarkApproved returned error: %v", err)
+	}
+	if updated.Status != StatusApproved {
+		t.Errorf("Status = %q, want %q", updated.Status, StatusApproved)
+	}
+	if updated.MergedCommit != "deadbeef" {
+		t.Errorf("MergedCommit = %q, want %q", updated.MergedCommit, "deadbeef")
+	}
+
+	reread, err := store.Get("intranet-backend", created.ID)
+	if err != nil {
+		t.Fatalf("Get after MarkApproved failed: %v", err)
+	}
+	if reread.Status != StatusApproved || reread.MergedCommit != "deadbeef" {
+		t.Errorf("persisted = %+v, want Status=approved MergedCommit=deadbeef", reread)
+	}
+}
+
+func TestMarkApproved_RejectsAlreadyDecidedRequest(t *testing.T) {
+	store := NewStore(t.TempDir())
+	created, err := store.Create("intranet-backend", "Fix login bug", "feature-x", "main", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if _, err := store.MarkApproved("intranet-backend", created.ID, "deadbeef"); err != nil {
+		t.Fatalf("first MarkApproved failed: %v", err)
+	}
+
+	_, err = store.MarkApproved("intranet-backend", created.ID, "cafebabe")
+	if err != ErrNotOpen {
+		t.Fatalf("err = %v, want ErrNotOpen", err)
 	}
 }
 
