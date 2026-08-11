@@ -61,7 +61,11 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 		h.writeBranchError(w, err)
 		return
 	}
-	if _, err := resolveBranchTip(gitRepo, req.TargetBranch); err != nil {
+	// TargetBranch is allowed not to exist yet — FastForwardMerge creates
+	// it on approval (see its doc comment). This is the only way a brand
+	// new repo's default branch ever gets a first commit, since direct
+	// pushes to it are rejected unconditionally.
+	if _, err := resolveBranchTip(gitRepo, req.TargetBranch); err != nil && !errors.Is(err, ErrBranchNotFound) {
 		h.writeBranchError(w, err)
 		return
 	}

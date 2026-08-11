@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -143,6 +144,91 @@ func TestCreate_RejectsUnknownBranch(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestCreate_AllowsNonexistentTargetBranch(t *testing.T) {
+	h, _ := newTestHandlers(t)
+	mux := newMux(h)
+
+	body, _ := json.Marshal(map[string]string{
+		"title":        "First commit onto main",
+		"sourceBranch": "feature-x",
+		"targetBranch": "brand-new-branch",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/merge-requests", bytes.NewReader(body))
+	req = addAuth(req, t, "dev-1", "developer")
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+}
+
+// TestApprove_CreatesRepoDefaultBranchOnFirstMerge covers the scenario the
+// smoke test caught: a freshly created repo has no commits at all, so
+// "main" doesn't exist as a ref yet, and protectingLoader rejects every
+// direct push to it unconditionally — meaning the merge-request flow is
+// the only way a first commit ever reaches it. This exercises that whole
+// path end to end: create, then approve.
+func TestApprove_CreatesRepoDefaultBranchOnFirstMerge(t *testing.T) {
+	requireGit(t)
+
+	dataDir := t.TempDir()
+	repos := repostore.New(dataDir)
+	repoPath, err := repos.Create("empty-repo")
+	if err != nil {
+		t.Fatalf("failed to create bare repo: %v", err)
+	}
+
+	work := t.TempDir()
+	runGit(t, work, "init", "-b", "feature-x")
+	runGit(t, work, "config", "user.email", "test@example.com")
+	runGit(t, work, "config", "user.name", "Test")
+	runGit(t, work, "remote", "add", "origin", repoPath)
+	if err := os.WriteFile(filepath.Join(work, "README.md"), []byte("line one\n"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	runGit(t, work, "add", "README.md")
+	runGit(t, work, "commit", "-m", "initial commit")
+	runGit(t, work, "push", "origin", "feature-x")
+
+	h := &Handlers{
+		Store: NewStore(filepath.Join(dataDir, "merge-requests")),
+		Repos: repos,
+	}
+	mux := newMux(h)
+
+	createBody, _ := json.Marshal(map[string]string{
+		"title":        "First commit onto main",
+		"sourceBranch": "feature-x",
+		"targetBranch": "main",
+	})
+	createReq := httptest.NewRequest(http.MethodPost, "/api/repos/empty-repo/merge-requests", bytes.NewReader(createBody))
+	createReq = addAuth(createReq, t, "dev-1", "developer")
+	createRec := httptest.NewRecorder()
+	mux.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d, body: %s", createRec.Code, http.StatusCreated, createRec.Body.String())
+	}
+	var created MergeRequest
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode create response: %v", err)
+	}
+
+	approveReq := httptest.NewRequest(http.MethodPost, "/api/repos/empty-repo/merge-requests/"+created.ID+"/approve", nil)
+	approveReq = addAuth(approveReq, t, "admin-1", "admin")
+	approveRec := httptest.NewRecorder()
+	mux.ServeHTTP(approveRec, approveReq)
+	if approveRec.Code != http.StatusOK {
+		t.Fatalf("approve status = %d, want %d, body: %s", approveRec.Code, http.StatusOK, approveRec.Body.String())
+	}
+
+	mainTip := runGit(t, repoPath, "rev-parse", "main")
+	if strings.TrimSpace(mainTip) == "" {
+		t.Fatal("expected main to exist on the server after approval, but rev-parse returned nothing")
 	}
 }
 

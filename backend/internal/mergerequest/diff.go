@@ -32,18 +32,37 @@ type FileStat struct {
 
 // Diff computes the changes that merging sourceBranch into targetBranch
 // would introduce, i.e. "what does source add on top of target" — the same
-// direction a GitHub-style base...compare view shows.
+// direction a GitHub-style base...compare view shows. If targetBranch
+// doesn't exist yet (see FastForwardMerge's doc comment — this is how a
+// repo's first commit reaches its default branch), the diff is computed
+// against an empty tree, so the review screen shows every file in
+// sourceBranch as newly added rather than erroring out.
 func Diff(repo *git.Repository, targetBranch, sourceBranch string) (DiffResult, error) {
-	targetCommit, err := resolveBranchTip(repo, targetBranch)
-	if err != nil {
-		return DiffResult{}, err
-	}
 	sourceCommit, err := resolveBranchTip(repo, sourceBranch)
 	if err != nil {
 		return DiffResult{}, err
 	}
 
-	patch, err := targetCommit.Patch(sourceCommit)
+	var targetTree *object.Tree
+	targetCommit, err := resolveBranchTip(repo, targetBranch)
+	switch {
+	case err == nil:
+		targetTree, err = targetCommit.Tree()
+		if err != nil {
+			return DiffResult{}, fmt.Errorf("mergerequest: resolving tree of %q: %w", targetBranch, err)
+		}
+	case errors.Is(err, ErrBranchNotFound):
+		targetTree = nil
+	default:
+		return DiffResult{}, err
+	}
+
+	sourceTree, err := sourceCommit.Tree()
+	if err != nil {
+		return DiffResult{}, fmt.Errorf("mergerequest: resolving tree of %q: %w", sourceBranch, err)
+	}
+
+	patch, err := targetTree.Patch(sourceTree)
 	if err != nil {
 		return DiffResult{}, fmt.Errorf("mergerequest: computing diff: %w", err)
 	}

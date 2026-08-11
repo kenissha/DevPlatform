@@ -33,13 +33,24 @@ var ErrNotFastForward = errors.New("mergerequest: target branch has diverged; fa
 // Handlers.Approve) — FastForwardMerge itself performs no authorization
 // check of its own.
 func FastForwardMerge(repo *git.Repository, targetBranch, sourceBranch string) (plumbing.Hash, error) {
-	targetCommit, err := resolveBranchTip(repo, targetBranch)
-	if err != nil {
-		return plumbing.ZeroHash, err
-	}
 	sourceCommit, err := resolveBranchTip(repo, sourceBranch)
 	if err != nil {
 		return plumbing.ZeroHash, err
+	}
+
+	targetCommit, err := resolveBranchTip(repo, targetBranch)
+	if err != nil {
+		if !errors.Is(err, ErrBranchNotFound) {
+			return plumbing.ZeroHash, err
+		}
+		// targetBranch doesn't exist yet: since protectingLoader rejects
+		// every direct push to it unconditionally (see its doc comment),
+		// this is the only way a brand new repository's default branch
+		// (or any other not-yet-created branch named as a merge target)
+		// ever gets its first commit — creating it pointing at source's
+		// tip is trivially a fast-forward, since there's nothing on
+		// targetBranch yet to lose.
+		return createBranch(repo, targetBranch, sourceCommit.Hash)
 	}
 
 	if targetCommit.Hash == sourceCommit.Hash {
@@ -54,9 +65,13 @@ func FastForwardMerge(repo *git.Repository, targetBranch, sourceBranch string) (
 		return plumbing.ZeroHash, ErrNotFastForward
 	}
 
-	newRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName(targetBranch), sourceCommit.Hash)
+	return createBranch(repo, targetBranch, sourceCommit.Hash)
+}
+
+func createBranch(repo *git.Repository, branch string, hash plumbing.Hash) (plumbing.Hash, error) {
+	newRef := plumbing.NewHashReference(plumbing.NewBranchReferenceName(branch), hash)
 	if err := repo.Storer.SetReference(newRef); err != nil {
-		return plumbing.ZeroHash, fmt.Errorf("mergerequest: updating %q: %w", targetBranch, err)
+		return plumbing.ZeroHash, fmt.Errorf("mergerequest: updating %q: %w", branch, err)
 	}
-	return sourceCommit.Hash, nil
+	return hash, nil
 }

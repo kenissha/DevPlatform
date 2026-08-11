@@ -152,3 +152,49 @@ func TestFastForwardMerge_NoOpWhenAlreadyUpToDate(t *testing.T) {
 		t.Fatalf("FastForwardMerge returned error for already-up-to-date branches: %v", err)
 	}
 }
+
+func TestFastForwardMerge_CreatesTargetBranchWhenItDoesNotExistYet(t *testing.T) {
+	requireGit(t)
+
+	// A freshly created bare repo has zero commits, so its default branch
+	// ("main") doesn't exist as a ref at all yet — and protectingLoader
+	// rejects every direct push to it unconditionally. This is the only
+	// path by which such a repo's first commit can reach "main".
+	dataDir := t.TempDir()
+	repoStore := repostore.New(dataDir)
+	repoPath, err := repoStore.Create("sample")
+	if err != nil {
+		t.Fatalf("failed to create bare repo: %v", err)
+	}
+
+	work := t.TempDir()
+	runGit(t, work, "init", "-b", "feature-x")
+	runGit(t, work, "config", "user.email", "test@example.com")
+	runGit(t, work, "config", "user.name", "Test")
+	runGit(t, work, "remote", "add", "origin", repoPath)
+	if err := os.WriteFile(filepath.Join(work, "README.md"), []byte("line one\n"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	runGit(t, work, "add", "README.md")
+	runGit(t, work, "commit", "-m", "initial commit")
+	runGit(t, work, "push", "origin", "feature-x")
+	featureTip := runGit(t, work, "rev-parse", "feature-x")
+
+	repo, err := repoStore.Open("sample")
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	mergedHash, err := FastForwardMerge(repo, "main", "feature-x")
+	if err != nil {
+		t.Fatalf("FastForwardMerge returned error: %v", err)
+	}
+	if mergedHash.String()+"\n" != featureTip {
+		t.Errorf("mergedHash = %s, want %s", mergedHash.String(), featureTip)
+	}
+
+	mainTip := runGit(t, repoPath, "rev-parse", "main")
+	if mergedHash.String()+"\n" != mainTip {
+		t.Errorf("main tip after merge = %s, want %s", mainTip, mergedHash.String()+"\n")
+	}
+}
