@@ -58,6 +58,62 @@ func TestPush_DirectlyToMain_IsRejected(t *testing.T) {
 	}
 }
 
+// TestPush_DirectlyToMainCaseVariant_IsRejected guards against a
+// case-insensitive-filesystem bypass: go-git's FilesystemLoader storer
+// resolves refs as filesystem paths, and on a case-insensitive filesystem
+// (this project's target OS, Windows) "refs/heads/Main" and
+// "refs/heads/main" resolve to the same on-disk location. An exact-string
+// guard would let a push to "Main" sail through un-blocked while still
+// colliding with and overwriting "main" on disk. The protection must
+// compare ref names case-insensitively to close this off.
+func TestPush_DirectlyToMainCaseVariant_IsRejected(t *testing.T) {
+	requireGit(t)
+
+	dataDir := t.TempDir()
+	store := repostore.New(dataDir)
+	if _, err := store.Create("protected4"); err != nil {
+		t.Fatalf("failed to create test repo: %v", err)
+	}
+
+	srv := httptest.NewServer(NewHandler(dataDir))
+	defer srv.Close()
+
+	work := t.TempDir()
+	runGit(t, work, "init", "-b", "main")
+	runGit(t, work, "config", "user.email", "test@example.com")
+	runGit(t, work, "config", "user.name", "Test")
+	runGit(t, work, "config", "core.autocrlf", "false")
+	if err := os.WriteFile(filepath.Join(work, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	runGit(t, work, "add", "README.md")
+	runGit(t, work, "commit", "-m", "initial commit")
+	runGit(t, work, "remote", "add", "origin", srv.URL+"/protected4.git")
+
+	cmd := exec.Command("git", "push", "origin", "HEAD:refs/heads/Main")
+	cmd.Dir = work
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected `git push origin HEAD:refs/heads/Main` to fail, but it succeeded. Output:\n%s", out)
+	}
+	t.Logf("git push to refs/heads/Main correctly failed with:\n%s", out)
+
+	// The real assertion: refs/heads/Main must NOT exist on the server
+	// afterward, regardless of exactly how git's CLI worded the rejection.
+	verifyDir := t.TempDir()
+	cloneTarget := filepath.Join(verifyDir, "protected4")
+	cmd = exec.Command("git", "clone", srv.URL+"/protected4.git", cloneTarget)
+	cmd.Dir = verifyDir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to clone for verification: %v\n%s", err, out)
+	}
+	cmd = exec.Command("git", "rev-parse", "--verify", "refs/remotes/origin/Main")
+	cmd.Dir = cloneTarget
+	if err := cmd.Run(); err == nil {
+		t.Fatal("refs/heads/Main exists on the server, but the push to it should have been rejected")
+	}
+}
+
 func TestPush_DeleteMain_IsRejected(t *testing.T) {
 	requireGit(t)
 

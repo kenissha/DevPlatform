@@ -58,8 +58,14 @@ func NewHandler(dataDir string) http.Handler {
 // it supplies a synthetic, unvalidated Authorization header purely so
 // go-git's internal sanity check doesn't hang/reject the request; it
 // performs no credential validation of its own and grants no capability
-// beyond what the wrapping handler already allows. Remove only if a future
-// go-git release fixes the underlying 401/WWW-Authenticate gap.
+// beyond what the wrapping handler already allows. WARNING: this means an
+// unwrapped NewHandler() (i.e. not behind gitauth.RequireBasicAuth or
+// equivalent) allows fully anonymous push — the shim removes go-git's own
+// incidental header-less-401 barrier, so any future caller that mounts
+// NewHandler's output directly (e.g. a second, intentionally read-only
+// route reusing this handler) must not skip real authentication. Remove
+// only if a future go-git release fixes the underlying 401/WWW-Authenticate
+// gap.
 func withReceivePackAuthShim(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") == "" {
