@@ -653,6 +653,22 @@ button:disabled {
   padding: 4px 8px;
 }
 
+/* A select that sits inline in a meta line — sized to its text so it
+   reads as part of the sentence, not as a form field. */
+.inline-select {
+  width: auto;
+  font-size: 12px;
+  padding: 1px 4px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.inline-select:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+}
+
 .task-desc {
   margin-top: 5px;
   font-size: 13px;

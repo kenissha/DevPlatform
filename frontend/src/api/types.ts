@@ -41,6 +41,17 @@ export interface MergeRequestDetail extends MergeRequest {
   diff: DiffResult
 }
 
+// A person the platform has seen. Created just-in-time on their first
+// authenticated request (see backend/internal/users), so this list is
+// "who has access", not "who was invited".
+export interface Person {
+  subject: string
+  email: string
+  role: Role
+  firstSeen: string
+  lastSeen: string
+}
+
 export type AuditAction =
   | 'repo.created'
   | 'task.created'

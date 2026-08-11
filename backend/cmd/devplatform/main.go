@@ -17,6 +17,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 	"github.com/kenissha/DevPlatform/backend/internal/server"
 	"github.com/kenissha/DevPlatform/backend/internal/taskboard"
+	"github.com/kenissha/DevPlatform/backend/internal/users"
 )
 
 func main() {
@@ -53,9 +54,16 @@ func main() {
 	}
 	statsHandlers := &gitstats.Handlers{Repos: store}
 	auditHandlers := &audit.Handlers{Logger: auditLogger}
-	router := server.NewRouter(
-		authedGitHandler, authMiddleware, mrHandlers, repoHandlers, taskHandlers, statsHandlers, auditHandlers,
-	)
+	router := server.NewRouter(server.Deps{
+		GitHandler:     authedGitHandler,
+		AuthMiddleware: authMiddleware,
+		MergeRequests:  mrHandlers,
+		Repos:          repoHandlers,
+		Tasks:          taskHandlers,
+		Stats:          statsHandlers,
+		Audit:          auditHandlers,
+		Users:          users.NewStore(filepath.Join(cfg.DataDir, "users.json")),
+	})
 
 	log.Printf("devplatform listening on %s", cfg.ListenAddr)
 	if err := http.ListenAndServe(cfg.ListenAddr, router); err != nil {

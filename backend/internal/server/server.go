@@ -11,35 +11,53 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
 	"github.com/kenissha/DevPlatform/backend/internal/taskboard"
+	"github.com/kenissha/DevPlatform/backend/internal/users"
 )
 
-// NewRouter builds the top-level HTTP router. gitHandler serves the git
-// smart-HTTP protocol under its own prefix (see internal/gitserver).
-// authMiddleware wraps routes that require a valid JWT (see internal/auth);
-// /healthz and the git routes are unaffected by it. mr provides the merge
-// request review API (see internal/mergerequest); repos provides the
-// repository listing/creation/branches API (see internal/repoapi); tasks
-// provides the task board API (see internal/taskboard); stats provides
-// read-only repository insight (see internal/gitstats); auditLog serves
-// the recorded action history (see internal/audit).
-func NewRouter(
-	gitHandler http.Handler,
-	authMiddleware func(http.Handler) http.Handler,
-	mr *mergerequest.Handlers,
-	repos *repoapi.Handlers,
-	tasks *taskboard.Handlers,
-	stats *gitstats.Handlers,
-	auditLog *audit.Handlers,
-) *http.ServeMux {
+// Deps are the collaborators NewRouter mounts. A struct rather than a
+// parameter list: this grew a new argument with almost every feature, and
+// each time every call site had to be edited even though nothing about
+// them changed. Adding a field here leaves existing construction sites
+// compiling untouched.
+type Deps struct {
+	// GitHandler serves the git smart-HTTP protocol under its own prefix
+	// (see internal/gitserver).
+	GitHandler http.Handler
+	// AuthMiddleware wraps routes requiring a valid JWT (see internal/auth).
+	// /healthz and the git routes are deliberately outside it.
+	AuthMiddleware func(http.Handler) http.Handler
+
+	MergeRequests *mergerequest.Handlers // merge request review API
+	Repos         *repoapi.Handlers      // repository listing/creation/branches
+	Tasks         *taskboard.Handlers    // task board
+	Stats         *gitstats.Handlers     // read-only repository insight
+	Audit         *audit.Handlers        // recorded action history
+	// Users is the people registry. Optional: when nil, /api/users returns
+	// an empty list and no just-in-time provisioning happens on /api/me.
+	Users *users.Store
+}
+
+// NewRouter builds the top-level HTTP router.
+func NewRouter(deps Deps) *http.ServeMux {
+	gitHandler := deps.GitHandler
+	authMiddleware := deps.AuthMiddleware
+	mr := deps.MergeRequests
+	repos := deps.Repos
+	tasks := deps.Tasks
+	stats := deps.Stats
+	auditLog := deps.Audit
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealth)
 	// The "/git/" prefix here must stay in sync with gitserver.Prefix
 	// ("/git") — see internal/gitserver.NewHandler's doc comment.
 	mux.Handle("/git/", gitHandler)
-	// /api/me is the minimal proof that a JWT issued by the external
-	// identity system round-trips correctly through internal/auth end to
-	// end.
-	mux.Handle("GET /api/me", authMiddleware(http.HandlerFunc(handleMe)))
+	// /api/me returns the caller's identity and, as a side effect, records
+	// them in the people registry (see internal/users) — that just-in-time
+	// provisioning is what keeps the assignee picker's list of colleagues
+	// accurate without anyone maintaining it by hand.
+	mux.Handle("GET /api/me", authMiddleware(handleMe(deps.Users)))
+	mux.Handle("GET /api/users", authMiddleware(handleUsers(deps.Users)))
 
 	// Any authenticated user can list repos and branches; creating a repo
 	// is an administrative action (project setup), so it's Admin-only.
@@ -86,17 +104,48 @@ func NewRouter(
 	return mux
 }
 
-func handleMe(w http.ResponseWriter, r *http.Request) {
-	user, ok := auth.UserFromContext(r.Context())
-	if !ok {
-		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(user); err != nil {
-		log.Printf("handleMe: failed to encode response: %v", err)
-	}
+func handleMe(registry *users.Store) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, ok := auth.UserFromContext(r.Context())
+		if !ok {
+			http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		// Just-in-time provisioning. A registry write failure must not fail
+		// the request: the caller is authenticated either way, and losing
+		// their entry costs an assignee-picker row, not access.
+		if registry != nil {
+			if _, err := registry.Upsert(user.Subject, user.Email, string(user.Role)); err != nil {
+				log.Printf("handleMe: failed to record user %q: %v", user.Subject, err)
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(user); err != nil {
+			log.Printf("handleMe: failed to encode response: %v", err)
+		}
+	})
+}
+
+func handleUsers(registry *users.Store) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		list := []users.User{}
+		if registry != nil {
+			var err error
+			list, err = registry.List()
+			if err != nil {
+				http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(list); err != nil {
+			log.Printf("handleUsers: failed to encode response: %v", err)
+		}
+	})
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {

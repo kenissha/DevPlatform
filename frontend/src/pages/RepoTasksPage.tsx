@@ -1,13 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
-import type { Task, TaskStatus } from '../api/types'
+import type { Person, Task, TaskStatus } from '../api/types'
 import { TASK_STATUSES, TASK_STATUS_LABELS } from '../labels'
 import { formatDate } from '../labels'
 
 export function RepoTasksPage() {
   const { repo = '' } = useParams<{ repo: string }>()
   const [tasks, setTasks] = useState<Task[] | null>(null)
+  const [people, setPeople] = useState<Person[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const [title, setTitle] = useState('')
@@ -24,6 +25,13 @@ export function RepoTasksPage() {
   }
 
   useEffect(reload, [repo])
+
+  // The assignee picker lists people the platform has actually seen, so a
+  // task can't be assigned to a misspelled name that then never shows up
+  // on anyone's dashboard.
+  useEffect(() => {
+    api.listPeople().then(setPeople).catch(() => setPeople([]))
+  }, [])
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault()
@@ -43,7 +51,10 @@ export function RepoTasksPage() {
     }
   }
 
-  async function patch(task: Task, changes: Partial<{ status: TaskStatus; urgent: boolean }>) {
+  async function patch(
+    task: Task,
+    changes: Partial<{ status: TaskStatus; urgent: boolean; assignedTo: string }>,
+  ) {
     try {
       await api.updateTask(repo, task.id, changes)
       reload()
@@ -95,7 +106,25 @@ export function RepoTasksPage() {
                 </div>
                 {task.description && <p className="task-desc">{task.description}</p>}
                 <p className="row-meta">
-                  {task.assignedTo ? `${task.assignedTo} üzerinde` : 'Atanmamış'}
+                  <select
+                    className="inline-select"
+                    aria-label="Atanan"
+                    value={task.assignedTo}
+                    onChange={(e) => patch(task, { assignedTo: e.target.value })}
+                  >
+                    <option value="">Atanmamış</option>
+                    {people.map((p) => (
+                      <option key={p.subject} value={p.subject}>
+                        {p.subject}
+                      </option>
+                    ))}
+                    {/* A task assigned before that person was known still
+                        shows its current value rather than snapping to
+                        "Atanmamış". */}
+                    {task.assignedTo && !people.some((p) => p.subject === task.assignedTo) && (
+                      <option value={task.assignedTo}>{task.assignedTo}</option>
+                    )}
+                  </select>
                   <span>·</span>
                   {task.author} açtı
                   <span>·</span>
@@ -127,8 +156,16 @@ export function RepoTasksPage() {
               />
             </div>
             <div className="field">
-              <label htmlFor="task-assignee">Atanan (opsiyonel)</label>
-              <input id="task-assignee" value={assignee} onChange={(e) => setAssignee(e.target.value)} />
+              <label htmlFor="task-assignee">Atanan</label>
+              <select id="task-assignee" value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+                <option value="">Atanmamış</option>
+                {people.map((p) => (
+                  <option key={p.subject} value={p.subject}>
+                    {p.subject}
+                    {p.email ? ` (${p.email})` : ''}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="form-actions">
               <button type="submit" className="btn-primary" disabled={creating || !title.trim()}>

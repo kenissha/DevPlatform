@@ -18,6 +18,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 	"github.com/kenissha/DevPlatform/backend/internal/taskboard"
+	"github.com/kenissha/DevPlatform/backend/internal/users"
 )
 
 const testSecret = "test-secret"
@@ -52,10 +53,16 @@ func newTestRouter(t *testing.T) (*http.ServeMux, *repostore.Store) {
 	statsHandlers := &gitstats.Handlers{Repos: store}
 	auditHandlers := &audit.Handlers{Logger: auditLogger}
 
-	router := NewRouter(
-		http.NotFoundHandler(), testAuthMiddleware(), mrHandlers, repoHandlers, taskHandlers,
-		statsHandlers, auditHandlers,
-	)
+	router := NewRouter(Deps{
+		GitHandler:     http.NotFoundHandler(),
+		AuthMiddleware: testAuthMiddleware(),
+		MergeRequests:  mrHandlers,
+		Repos:          repoHandlers,
+		Tasks:          taskHandlers,
+		Stats:          statsHandlers,
+		Audit:          auditHandlers,
+		Users:          users.NewStore(filepath.Join(dataDir, "users.json")),
+	})
 	return router, store
 }
 
@@ -253,6 +260,39 @@ func TestMergeRequestsListAll_ReturnsEmptyArrayWhenNoRepos(t *testing.T) {
 	// An empty JSON array, not null — the frontend maps over this directly.
 	if body := rec.Body.String(); body != "[]\n" {
 		t.Errorf("body = %q, want %q", body, "[]\n")
+	}
+}
+
+func TestUsers_AreRegisteredJustInTimeOnFirstCall(t *testing.T) {
+	router, _ := newTestRouter(t)
+
+	// Nobody has called /api/me yet, so the registry is empty.
+	before := do(t, router, http.MethodGet, "/api/users", "dev-1", "developer", nil)
+	if body := before.Body.String(); body != "[]\n" {
+		t.Fatalf("body = %q, want %q before anyone identifies themselves", body, "[]\n")
+	}
+
+	do(t, router, http.MethodGet, "/api/me", "dev-1", "developer", nil)
+	do(t, router, http.MethodGet, "/api/me", "admin-1", "admin", nil)
+
+	rec := do(t, router, http.MethodGet, "/api/users", "dev-1", "developer", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	var list []users.User
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("got %d users, want 2: %+v", len(list), list)
+	}
+
+	subjects := map[string]string{}
+	for _, u := range list {
+		subjects[u.Subject] = u.Role
+	}
+	if subjects["dev-1"] != "developer" || subjects["admin-1"] != "admin" {
+		t.Errorf("registry = %+v, want dev-1/developer and admin-1/admin", subjects)
 	}
 }
 

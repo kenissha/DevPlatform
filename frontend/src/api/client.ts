@@ -7,6 +7,7 @@ import type {
   MergeRequest,
   MergeRequestDetail,
   MergeRequestStatus,
+  Person,
   Task,
   TaskStatus,
   User,
@@ -56,6 +57,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   me: () => request<User>('/api/me'),
+  listPeople: () => request<Person[]>('/api/users'),
 
   listRepos: () => request<string[]>('/api/repos'),
   createRepo: (name: string) =>
@@ -126,6 +128,7 @@ export type {
   DiffResult,
   MergeRequest,
   MergeRequestDetail,
+  Person,
   Task,
   User,
 }
