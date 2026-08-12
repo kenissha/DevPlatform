@@ -10,6 +10,7 @@ import (
 
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
+	"github.com/kenissha/DevPlatform/backend/internal/notify"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 )
 
@@ -22,6 +23,10 @@ type Handlers struct {
 	Repos *repostore.Store
 	// Audit is optional; a nil Logger records nothing (see internal/audit).
 	Audit *audit.Logger
+	// Notify is optional; a nil Store creates no notifications (see
+	// internal/notify). Unlike Logger, notify.Store is not itself
+	// nil-receiver-safe, so call sites check h.Notify != nil before use.
+	Notify *notify.Store
 }
 
 type createRequest struct {
@@ -61,6 +66,12 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = h.Audit.Log(user.Subject, audit.ActionTaskCreated, repo, task.ID, "Görev açıldı: "+task.Title)
+
+	if task.AssignedTo != "" && h.Notify != nil {
+		_, _ = h.Notify.Create(task.AssignedTo, "task_assigned",
+			"Görev size atandı: "+task.Title+" ("+repo+")",
+			"/repos/"+repo+"/tasks/"+task.ID)
+	}
 
 	writeJSON(w, http.StatusCreated, task)
 }
@@ -165,6 +176,12 @@ func (h *Handlers) Update(w http.ResponseWriter, r *http.Request) {
 	if user, ok := auth.UserFromContext(r.Context()); ok {
 		_ = h.Audit.Log(user.Subject, audit.ActionTaskUpdated, repo, task.ID,
 			"Görev güncellendi: "+task.Title+" ("+describeUpdate(req)+")")
+	}
+
+	if req.AssignedTo != nil && *req.AssignedTo != "" && h.Notify != nil {
+		_, _ = h.Notify.Create(task.AssignedTo, "task_assigned",
+			"Bir görev size atandı: "+task.Title+" ("+repo+")",
+			"/repos/"+repo+"/tasks/"+task.ID)
 	}
 
 	writeJSON(w, http.StatusOK, task)

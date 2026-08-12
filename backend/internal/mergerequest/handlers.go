@@ -9,7 +9,9 @@ import (
 
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
+	"github.com/kenissha/DevPlatform/backend/internal/notify"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
+	"github.com/kenissha/DevPlatform/backend/internal/users"
 )
 
 // Handlers exposes the merge request API as http.HandlerFuncs, meant to be
@@ -20,6 +22,16 @@ type Handlers struct {
 	Repos *repostore.Store
 	// Audit is optional; a nil Logger records nothing (see internal/audit).
 	Audit *audit.Logger
+	// Notify is optional; a nil Store creates no notifications (see
+	// internal/notify). Unlike Logger, notify.Store is not itself
+	// nil-receiver-safe, so call sites check h.Notify != nil before use.
+	Notify *notify.Store
+	// Users resolves who the Admins are so a newly opened merge request
+	// can notify all of them. Optional in the same sense as Notify: a nil
+	// Users (or nil Notify) simply means no merge-request-opened
+	// notifications are created, rather than a panic — a repo can be
+	// used without notifications wired at all, same as without Audit.
+	Users *users.Store
 }
 
 type createRequest struct {
@@ -83,7 +95,38 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 	_ = h.Audit.Log(user.Subject, audit.ActionMROpened, repo, mr.ID,
 		"Merge isteği açıldı: "+mr.Title+" ("+mr.SourceBranch+" → "+mr.TargetBranch+")")
 
+	h.notifyAdmins(repo, mr)
+
 	writeJSON(w, http.StatusCreated, mr)
+}
+
+// notifyAdmins tells every Admin that mr was just opened. It is a no-op
+// unless both Notify and Users are wired (see their doc comments on
+// Handlers) — a merge request still opens successfully either way, since
+// notification is a side-effect of opening, not a precondition for it.
+func (h *Handlers) notifyAdmins(repo string, mr MergeRequest) {
+	if h.Notify == nil || h.Users == nil {
+		return
+	}
+
+	all, err := h.Users.List()
+	if err != nil {
+		return
+	}
+
+	message := "Yeni merge isteği açıldı: " + mr.Title + " (" + mr.SourceBranch + " → " + mr.TargetBranch + ") - " + repo
+	link := "/repos/" + repo + "/merge-requests/" + mr.ID
+	for _, u := range all {
+		// users.User.Role is a bare string (set straight from the JWT's
+		// "role" claim by users.Store.Upsert), not auth.Role, so it's
+		// compared against the string form of auth.RoleAdmin rather than
+		// auth.Role itself — this package already imports auth, so its
+		// constant is used here instead of a bare "admin" literal.
+		if u.Role != string(auth.RoleAdmin) {
+			continue
+		}
+		_, _ = h.Notify.Create(u.Subject, "merge_request_opened", message, link)
+	}
 }
 
 // List handles GET /api/repos/{repo}/merge-requests.

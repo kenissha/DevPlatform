@@ -42,21 +42,26 @@ func main() {
 		return auth.RequireAuth(jwtSecret, next)
 	}
 	auditLogger := audit.New(filepath.Join(cfg.DataDir, "audit.jsonl"))
+	notifyStore := notify.NewStore(filepath.Join(cfg.DataDir, "notifications"))
+	usersStore := users.NewStore(filepath.Join(cfg.DataDir, "users.json"))
 	mrHandlers := &mergerequest.Handlers{
-		Store: mergerequest.NewStore(filepath.Join(cfg.DataDir, "merge-requests")),
-		Repos: store,
-		Audit: auditLogger,
+		Store:  mergerequest.NewStore(filepath.Join(cfg.DataDir, "merge-requests")),
+		Repos:  store,
+		Audit:  auditLogger,
+		Notify: notifyStore,
+		Users:  usersStore,
 	}
 	repoHandlers := &repoapi.Handlers{Repos: store, Audit: auditLogger}
 	taskHandlers := &taskboard.Handlers{
-		Store: taskboard.NewStore(filepath.Join(cfg.DataDir, "tasks")),
-		Repos: store,
-		Audit: auditLogger,
+		Store:  taskboard.NewStore(filepath.Join(cfg.DataDir, "tasks")),
+		Repos:  store,
+		Audit:  auditLogger,
+		Notify: notifyStore,
 	}
 	statsHandlers := &gitstats.Handlers{Repos: store}
 	auditHandlers := &audit.Handlers{Logger: auditLogger}
 	notifyHandlers := &notify.Handlers{
-		Store: notify.NewStore(filepath.Join(cfg.DataDir, "notifications")),
+		Store: notifyStore,
 	}
 	router := server.NewRouter(server.Deps{
 		GitHandler:     authedGitHandler,
@@ -67,7 +72,7 @@ func main() {
 		Stats:          statsHandlers,
 		Audit:          auditHandlers,
 		Notifications:  notifyHandlers,
-		Users:          users.NewStore(filepath.Join(cfg.DataDir, "users.json")),
+		Users:          usersStore,
 	})
 
 	log.Printf("devplatform listening on %s", cfg.ListenAddr)

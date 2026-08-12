@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
+	"github.com/kenissha/DevPlatform/backend/internal/notify"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 )
 
@@ -49,6 +51,17 @@ func newTestHandlers(t *testing.T) *Handlers {
 		Store: NewStore(dataDir + "/tasks"),
 		Repos: repos,
 	}
+}
+
+// newTestHandlersWithNotify is like newTestHandlers but also wires a
+// notify.Store rooted at a fresh temp dir, so tests can assert on
+// notifications via notify.Store.ListForUser.
+func newTestHandlersWithNotify(t *testing.T) (*Handlers, *notify.Store) {
+	t.Helper()
+	h := newTestHandlers(t)
+	n := notify.NewStore(t.TempDir())
+	h.Notify = n
+	return h, n
 }
 
 func newMux(h *Handlers) *http.ServeMux {
@@ -220,5 +233,112 @@ func TestUpdateHandler_RejectsInvalidStatus(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestCreate_NotifiesAssignee(t *testing.T) {
+	h, n := newTestHandlersWithNotify(t)
+	mux := newMux(h)
+
+	body, _ := json.Marshal(map[string]string{
+		"title":      "Fix login bug",
+		"assignedTo": "dev-2",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/tasks", bytes.NewReader(body))
+	req = addAuth(req, t, "dev-1", "developer")
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	notifications, err := n.ListForUser("dev-2")
+	if err != nil {
+		t.Fatalf("ListForUser failed: %v", err)
+	}
+	if len(notifications) != 1 {
+		t.Fatalf("got %d notifications for dev-2, want 1", len(notifications))
+	}
+	if notifications[0].Kind != "task_assigned" {
+		t.Errorf("Kind = %q, want %q", notifications[0].Kind, "task_assigned")
+	}
+	if !strings.Contains(notifications[0].Message, "Fix login bug") {
+		t.Errorf("Message = %q, want it to mention the task title", notifications[0].Message)
+	}
+
+	// The author must not also be notified — only the assignee.
+	authorNotifications, err := n.ListForUser("dev-1")
+	if err != nil {
+		t.Fatalf("ListForUser failed: %v", err)
+	}
+	if len(authorNotifications) != 0 {
+		t.Errorf("author got %d notifications, want 0", len(authorNotifications))
+	}
+}
+
+func TestCreate_DoesNotNotifyWhenUnassigned(t *testing.T) {
+	h, n := newTestHandlersWithNotify(t)
+	mux := newMux(h)
+
+	body, _ := json.Marshal(map[string]string{"title": "Unassigned task"})
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/tasks", bytes.NewReader(body))
+	req = addAuth(req, t, "dev-1", "developer")
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	notifications, err := n.ListForUser("dev-1")
+	if err != nil {
+		t.Fatalf("ListForUser failed: %v", err)
+	}
+	if len(notifications) != 0 {
+		t.Errorf("got %d notifications, want 0 for an unassigned task", len(notifications))
+	}
+}
+
+func TestUpdate_NotifiesNewAssigneeOnReassignment(t *testing.T) {
+	h, n := newTestHandlersWithNotify(t)
+	mux := newMux(h)
+
+	created, err := h.Store.Create("sample", "Fix login bug", "d", "dev-1", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{"assignedTo": "dev-3"})
+	req := httptest.NewRequest(http.MethodPatch, "/api/repos/sample/tasks/"+created.ID, bytes.NewReader(body))
+	req = addAuth(req, t, "dev-2", "developer")
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	newAssigneeNotifications, err := n.ListForUser("dev-3")
+	if err != nil {
+		t.Fatalf("ListForUser failed: %v", err)
+	}
+	if len(newAssigneeNotifications) != 1 {
+		t.Fatalf("got %d notifications for dev-3 (new assignee), want 1", len(newAssigneeNotifications))
+	}
+	if newAssigneeNotifications[0].Kind != "task_assigned" {
+		t.Errorf("Kind = %q, want %q", newAssigneeNotifications[0].Kind, "task_assigned")
+	}
+
+	// The original assignee (dev-1) should not be notified on reassignment.
+	oldAssigneeNotifications, err := n.ListForUser("dev-1")
+	if err != nil {
+		t.Fatalf("ListForUser failed: %v", err)
+	}
+	if len(oldAssigneeNotifications) != 0 {
+		t.Errorf("old assignee got %d notifications, want 0", len(oldAssigneeNotifications))
 	}
 }

@@ -14,7 +14,9 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
+	"github.com/kenissha/DevPlatform/backend/internal/notify"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
+	"github.com/kenissha/DevPlatform/backend/internal/users"
 )
 
 const testJWTSecret = "test-secret"
@@ -420,5 +422,64 @@ func TestList_ReturnsCreatedRequests(t *testing.T) {
 	}
 	if len(mrs) != 1 {
 		t.Fatalf("got %d merge requests, want 1", len(mrs))
+	}
+}
+
+func TestCreate_NotifiesAllAdmins(t *testing.T) {
+	h, _ := newTestHandlers(t)
+	n := notify.NewStore(t.TempDir())
+	h.Notify = n
+
+	userStore := users.NewStore(filepath.Join(t.TempDir(), "users.json"))
+	if _, err := userStore.Upsert("admin-1", "admin-1@example.com", "admin"); err != nil {
+		t.Fatalf("Upsert failed: %v", err)
+	}
+	if _, err := userStore.Upsert("admin-2", "admin-2@example.com", "admin"); err != nil {
+		t.Fatalf("Upsert failed: %v", err)
+	}
+	if _, err := userStore.Upsert("dev-1", "dev-1@example.com", "developer"); err != nil {
+		t.Fatalf("Upsert failed: %v", err)
+	}
+	h.Users = userStore
+
+	mux := newMux(h)
+
+	body, _ := json.Marshal(map[string]string{
+		"title":        "Add line two",
+		"sourceBranch": "feature-x",
+		"targetBranch": "main",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/merge-requests", bytes.NewReader(body))
+	req = addAuth(req, t, "dev-1", "developer")
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	for _, admin := range []string{"admin-1", "admin-2"} {
+		notifications, err := n.ListForUser(admin)
+		if err != nil {
+			t.Fatalf("ListForUser(%q) failed: %v", admin, err)
+		}
+		if len(notifications) != 1 {
+			t.Fatalf("got %d notifications for %s, want 1", len(notifications), admin)
+		}
+		if notifications[0].Kind != "merge_request_opened" {
+			t.Errorf("Kind = %q, want %q", notifications[0].Kind, "merge_request_opened")
+		}
+		if !strings.Contains(notifications[0].Message, "Add line two") {
+			t.Errorf("Message = %q, want it to mention the merge request title", notifications[0].Message)
+		}
+	}
+
+	devNotifications, err := n.ListForUser("dev-1")
+	if err != nil {
+		t.Fatalf("ListForUser failed: %v", err)
+	}
+	if len(devNotifications) != 0 {
+		t.Errorf("Developer got %d notifications, want 0", len(devNotifications))
 	}
 }
