@@ -1,6 +1,6 @@
 # DevPlatform — Nerede Kaldık
 
-Son güncelleme: 2026-08-13
+Son güncelleme: 2026-08-13 (gerçek SMTP gönderimi eklendi)
 
 Bu dosya, projeye ara verip geri döndüğünde "ne bitti, ne kaldı, nasıl
 çalıştırırım" sorularının tek cevap yeri. Tasarımın tamamı için
@@ -20,7 +20,11 @@ go run ./cmd/devplatform
 Varsayılan olarak `./data` klasörünü kullanır. Ortam değişkenleriyle
 değiştirilebilir: `DEVPLATFORM_DATA_DIR`, `DEVPLATFORM_LISTEN_ADDR`,
 `DEVPLATFORM_GIT_USERNAME`, `DEVPLATFORM_GIT_PASSWORD`,
-`DEVPLATFORM_JWT_SECRET`.
+`DEVPLATFORM_JWT_SECRET`. Gerçek e-posta göndermek için (varsayılan:
+kapalı, sadece panel içi bildirim): `DEVPLATFORM_SMTP_HOST`,
+`DEVPLATFORM_SMTP_PORT`, `DEVPLATFORM_SMTP_USERNAME`,
+`DEVPLATFORM_SMTP_PASSWORD`, `DEVPLATFORM_SMTP_FROM`,
+`DEVPLATFORM_BASE_URL`.
 
 **Frontend** (`:5173`):
 
@@ -69,13 +73,42 @@ Kullanıcı/şifre `DEVPLATFORM_GIT_USERNAME` / `_PASSWORD` ile ayarlanır.
 | Audit log | ✅ Bitti |
 | Kimlik doğrulama & roller | ✅ Bitti (JWT devri; gerçek AD bağlantısı sende) |
 | Kişi kaydı (assignee listesi) | ✅ Bitti (girişte otomatik kaydolur) |
-| Bildirim (panel içi; e-posta yer tutucu) | ✅ Bitti (2026-08-12) |
+| Bildirim (panel içi + gerçek e-posta) | ✅ Bitti (2026-08-13) |
 
-**Faz 1 tamamlandı.** Tek eksik: e-posta gönderimi gerçek SMTP'ye
-bağlanmadı — `internal/notify.EmailSender` arayüzü ve config'teki
-`DEVPLATFORM_SMTP_*` alanları hazır ama kasıtlı olarak yer tutucu
-(`NoopEmailSender` sadece loglar). Gerçek gönderim bağlanana kadar bu
-şekilde kalacak.
+**Faz 1 tamamlandı** — e-posta gönderimi de dahil.
+
+**2026-08-13 güncelleme — gerçek SMTP gönderimi:** `internal/notify.Store`
+artık `net/smtp` tabanlı gerçek bir `SMTPEmailSender` ile bildirim
+oluşturulduğunda e-posta da gönderebiliyor. Tasarım:
+
+- Bağlama noktası tek yer: `Store.Create` içine `Sender`/`LookupEmail`/
+  `BaseURL` opsiyonel alanları eklendi. `mergerequest`, `taskboard`,
+  `deployment` — `Create`'i çağıran 3 paket — hiç değişmedi, otomatik
+  olarak e-posta göndermeye başladılar.
+- **Varsayılan olarak kapalı:** `DEVPLATFORM_SMTP_HOST` boşsa (varsayılan)
+  davranış tamamen eskisi gibi — bildirimler sadece panelde kalır. Diğer
+  `DEVPLATFORM_JWT_SECRET` gibi alanlarla aynı "güvenli varsayılan" deseni.
+- Yeni ortam değişkenleri: `DEVPLATFORM_SMTP_HOST` (açma anahtarı),
+  `DEVPLATFORM_SMTP_PORT` (varsayılan `25`), `DEVPLATFORM_SMTP_USERNAME` /
+  `_PASSWORD` (boşsa AUTH denenmez), `DEVPLATFORM_SMTP_FROM` (varsayılan
+  `devplatform@localhost`), `DEVPLATFORM_BASE_URL` (bildirim linkini
+  e-postada tıklanabilir mutlak URL'e çeviriyor; boşsa link olduğu gibi
+  kalır).
+- STARTTLS sunucu destekliyorsa fırsatçı şekilde kullanılıyor (zorunlu
+  değil — dahili röle sunucuları düz 25 portunda çalışabilir); AUTH sadece
+  `Username` ayarlıysa VE sunucu destekliyorsa deneniyor; e-posta konusu
+  (`Subject`) her zaman sabit bir metin — görev başlığı/branch adı gibi
+  kullanıcı kontrollü içerik asla header'a girmiyor (header injection'a
+  kapalı).
+- `users.Store.Get(subject)` eklendi: bildirim alıcısının (JWT `sub`)
+  e-posta adresini bulmak için kullanılıyor.
+- Gerçek bir mail sunucusuna dokunmadan kanıtlandı: `internal/notify/smtp_test.go`
+  ham TCP soketi üzerinde elle yazılmış sahte bir SMTP sunucusu çalıştırıyor
+  (IIS için kullanılan sahte `CommandRunner` deseniyle aynı yaklaşım) — 
+  STARTTLS farkındalığı ve koşullu AUTH gerçek protokol seviyesinde test
+  edildi. Bilinçli olarak kapsam dışı bırakılan tek şey: TLS handshake'in
+  kendisinin uçtan uca testi (zaten test edilmiş stdlib'e ince bir çağrı,
+  emek/değer oranı düşük görüldü).
 
 ### Faz 2 — Otomasyon
 
@@ -140,17 +173,24 @@ gecelik yedekleme. (Kişi *kaydı* var ama davet/yetkilendirme yok.)
 
 ## Sıradaki iş
 
-Faz 1 bitti. Faz 2'nin build+deploy+rollback mekanizması artık panelden
-gerçekten tetiklenebiliyor (bkz. yukarısı). Kalan gerçek iş, kod değil,
-**ops + gözetimli bir oturum** gerektiriyor: (a) gerçek Intranet-F/
-Intranet-B'yi `DEVPLATFORM_DEPLOY_TARGETS_FILE`'a hedef olarak eklemek ve
-ilk gerçek deploy'u birlikte izlemek (IIS site adları, recipe'ler, gerçek
-appsettings için secretsctl ile secrets'ı önceden yüklemek gerekecek —
-"IIS / deploy — canlıda öğrenilen dersler" bölümündeki 3 nottan özellikle
-üçüncüsüne, içerik konumuna, dikkat), (b) gerçek SMTP gönderimini
-bağlamak, (c) bekleyen küçük iyileştirme notlarına bakmak (aşağıdaki
-"Bilinmesi gereken kararlar" ve `docs/superpowers/plans/2026-08-12-notifications.md`'nin
-son inceleme notlarındaki Minor bulgular — hiçbiri engelleyici değil).
+Faz 1 bitti (SMTP dahil). Faz 2'nin build+deploy+rollback mekanizması
+artık panelden gerçekten tetiklenebiliyor (bkz. yukarısı). Kalan gerçek
+iş, kod değil, **ops + gözetimli bir oturum** gerektiriyor: gerçek
+Intranet-F/Intranet-B'yi `DEVPLATFORM_DEPLOY_TARGETS_FILE`'a hedef olarak
+eklemek ve ilk gerçek deploy'u birlikte izlemek (IIS site adları,
+recipe'ler, gerçek appsettings için secretsctl ile secrets'ı önceden
+yüklemek gerekecek — "IIS / deploy — canlıda öğrenilen dersler"
+bölümündeki 3 nottan özellikle üçüncüsüne, içerik konumuna, dikkat).
+Gerçek SMTP sunucu bilgilerini (`DEVPLATFORM_SMTP_*`) girmek de aynı
+şekilde senin elinle, gözetimli yapılacak bir adım.
+
+Küçük, engelleyici olmayan bir not: `internal/mergerequest`'te
+`TestList_ReturnsAllRequestsNewestFirst` nadiren "flaky" — arka arkaya
+iki `Create` çağrısı aynı `time.Now().UTC()` değerine denk gelirse
+`CreatedAt`'e göre sıralama kararsız oluyor. Bu oturumda dokunulmadı
+(SMTP kapsamı dışında, önceden var olan kod); 5 kez izole çalıştırıldı ve
+hep geçti, tek seferlik bir tesadüf olarak doğrulandı. İleride düzeltilecekse
+çözüm muhtemelen sıralamaya ikincil bir anahtar (ör. ID) eklemek.
 
 ## Bilinmesi gereken kararlar
 
