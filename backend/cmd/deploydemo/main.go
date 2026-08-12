@@ -26,7 +26,17 @@ func main() {
 		log.Fatal(err)
 	}
 
-	vs := deploy.NewVersionStore(*dataDir)
+	// IIS requires an absolute physical path — the worker process's working
+	// directory has nothing to do with wherever this CLI happened to be
+	// run from, so a relative -data-dir (including the flag's own default)
+	// must be resolved to an absolute path before VersionStore ever builds
+	// a release path from it.
+	absDataDir, err := filepath.Abs(*dataDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	vs := deploy.NewVersionStore(absDataDir)
 	pipeline := deploy.NewPipeline(&deploy.Builder{}, vs, deploy.NewIISSwapper(deploy.RealCommandRunner{}))
 
 	releaseDir, err := pipeline.Deploy(sourceDir, deploy.RecipeNpm, "demo", "test", *siteName, 5)

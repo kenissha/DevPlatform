@@ -61,6 +61,18 @@ func NewIISSwapper(runner CommandRunner) *IISSwapper {
 // unparsed arguments, exactly as os/exec passes them to the OS, with no
 // shell in between to reinterpret special characters.
 func (s *IISSwapper) SetPhysicalPath(siteName, path string) error {
+	// IIS requires an absolute physical path. A relative path doesn't
+	// resolve against anything meaningful — the IIS worker process has its
+	// own working directory, unrelated to wherever the path was computed
+	// from — so appcmd would "succeed" while leaving the site serving a
+	// 404 with no indication why. Reject it here so any caller (not just
+	// this package's own tests or deploydemo) gets a clear, actionable
+	// error immediately instead of a mysterious IIS-side failure
+	// discovered only by a human checking a browser.
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("deploy: physical path %q must be absolute", path)
+	}
+
 	_, err := s.runner.Run(appcmdPath(), "set", "vdir", siteName+"/", "/physicalPath:"+path)
 	if err != nil {
 		return fmt.Errorf("deploy: failed to set physical path for site %q: %w", siteName, err)
