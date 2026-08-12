@@ -20,6 +20,12 @@ var ErrInvalidRepo = errors.New("deploy: invalid repository name")
 var validRepoName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 var validEnvironment = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
+// now is a seam for tests to freeze the clock so a genuine timestamp
+// collision in NewRelease can be forced deterministically instead of
+// relying on real clock timing. Production code always uses the real
+// time.Now.
+var now = time.Now
+
 // VersionStore manages versioned release directories on disk, rooted at
 // rootDir, organized as rootDir/<repo>/<environment>/<timestamp>/.
 type VersionStore struct {
@@ -44,11 +50,36 @@ func (s *VersionStore) NewRelease(repo, environment string) (string, error) {
 		return "", ErrInvalidRepo
 	}
 
-	dir := filepath.Join(s.rootDir, repo, environment, releaseName(time.Now()))
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+	parent := filepath.Join(s.rootDir, repo, environment)
+	if err := os.MkdirAll(parent, 0o750); err != nil {
 		return "", err
 	}
-	return dir, nil
+
+	// Retry on the rare chance two releases would otherwise land on the
+	// same formatted timestamp (coarse wall-clock resolution, load, a VM
+	// clock, etc.). os.Mkdir — not os.MkdirAll — makes the check-then-
+	// create atomic and surfaces a collision as os.IsExist instead of
+	// silently reusing (and corrupting) the existing release directory.
+	// Mirrors taskboard.go's Create: a handful of attempts, retried on
+	// os.IsExist, with a suffix added after the first attempt so a retry
+	// is guaranteed to target a different name.
+	var lastErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		name := releaseName(now())
+		if attempt > 0 {
+			name = fmt.Sprintf("%s-%d", name, attempt)
+		}
+		dir := filepath.Join(parent, name)
+		err := os.Mkdir(dir, 0o750)
+		if err == nil {
+			return dir, nil
+		}
+		if !os.IsExist(err) {
+			return "", err
+		}
+		lastErr = err
+	}
+	return "", fmt.Errorf("deploy: failed to allocate a unique release directory after 5 attempts: %w", lastErr)
 }
 
 func releaseName(t time.Time) string {
