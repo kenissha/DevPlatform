@@ -36,6 +36,32 @@ func TestPipeline_Deploy_BuildsVersionsAndSwaps(t *testing.T) {
 	}
 }
 
+func TestPipeline_Deploy_RejectsNonPositiveKeepVersions(t *testing.T) {
+	source, err := filepath.Abs("testdata/npm-fixture")
+	if err != nil {
+		t.Fatalf("failed to resolve fixture path: %v", err)
+	}
+
+	for _, keep := range []int{0, -1} {
+		vs := NewVersionStore(t.TempDir())
+		runner := &fakeCommandRunner{}
+		pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner))
+
+		_, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", keep)
+		if err == nil {
+			t.Fatalf("Deploy with keepVersions=%d: expected an error, got nil", keep)
+		}
+
+		// The guard must short-circuit before SetPhysicalPath or Prune ever
+		// run — otherwise IIS could be left pointed at a release that was
+		// then deleted by Prune. Zero recorded appcmd calls proves neither
+		// ran.
+		if len(runner.calls) != 0 {
+			t.Errorf("Deploy with keepVersions=%d: got %d appcmd calls, want 0 (guard should short-circuit before any IIS call)", keep, len(runner.calls))
+		}
+	}
+}
+
 func TestPipeline_Deploy_PrunesOldReleases(t *testing.T) {
 	requireTool(t, "npm")
 

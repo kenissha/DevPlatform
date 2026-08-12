@@ -29,6 +29,15 @@ func NewPipeline(builder *Builder, versions *VersionStore, iis *IISSwapper) *Pip
 // not implemented in this proof-of-concept task; note it as a follow-up
 // if this pipeline is extended to handle build failures more gracefully.
 func (p *Pipeline) Deploy(sourceDir string, recipe Recipe, repo, environment, siteName string, keepVersions int) (string, error) {
+	// keepVersions < 1 would prune the release this call just activated:
+	// Prune keeps only the newest `keep` releases, and the release created
+	// below is always the newest at the point Prune runs. Reject before
+	// doing any work — there's no point allocating a release directory or
+	// building anything for a call that's going to be rejected anyway.
+	if keepVersions < 1 {
+		return "", fmt.Errorf("deploy: keepVersions must be at least 1, got %d", keepVersions)
+	}
+
 	releaseDir, err := p.versions.NewRelease(repo, environment)
 	if err != nil {
 		return "", fmt.Errorf("deploy: failed to allocate release dir: %w", err)
