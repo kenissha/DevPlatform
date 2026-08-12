@@ -72,20 +72,34 @@ func (b *Builder) buildNpm(sourceDir, outputDir string) error {
 	return copyDir(filepath.Join(sourceDir, "dist"), outputDir)
 }
 
+// copyDir recursively copies the contents of src into dst, preserving the
+// relative directory structure. Real frontend builds (e.g. Vite/React, which
+// this platform's own frontend already uses) produce nested subdirectories
+// such as assets/ — copying only top-level files would silently produce a
+// broken deploy: index.html would 200 but every hashed JS/CSS asset would
+// 404, with no error anywhere to indicate anything went wrong.
 func copyDir(src, dst string) error {
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		return fmt.Errorf("deploy: failed to read npm build output %q: %w", src, err)
 	}
 	for _, e := range entries {
+		srcPath := filepath.Join(src, e.Name())
+		dstPath := filepath.Join(dst, e.Name())
 		if e.IsDir() {
-			continue // fixture/test scope: flat output only, no nested dirs to copy
+			if err := os.MkdirAll(dstPath, 0o750); err != nil {
+				return err
+			}
+			if err := copyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+			continue
 		}
-		data, err := os.ReadFile(filepath.Join(src, e.Name()))
+		data, err := os.ReadFile(srcPath)
 		if err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(dst, e.Name()), data, 0o640); err != nil {
+		if err := os.WriteFile(dstPath, data, 0o640); err != nil {
 			return err
 		}
 	}

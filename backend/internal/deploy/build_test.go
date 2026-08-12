@@ -54,6 +54,18 @@ func TestBuild_Npm_ProducesOutput(t *testing.T) {
 	if string(content) == "" {
 		t.Error("index.html is empty")
 	}
+
+	// The fixture also writes a nested assets/style.css, mirroring the
+	// subdirectories a real Vite/React build produces. copyDir must recurse
+	// into subdirectories instead of silently dropping them — otherwise a
+	// real deploy would 200 on index.html but 404 on every hashed asset.
+	assetContent, err := os.ReadFile(filepath.Join(outputDir, "assets", "style.css"))
+	if err != nil {
+		t.Fatalf("expected assets/style.css in output dir (nested dirs must be copied): %v", err)
+	}
+	if string(assetContent) != "body { color: red; }\n" {
+		t.Errorf("assets/style.css content = %q, want %q", assetContent, "body { color: red; }\n")
+	}
 }
 
 func TestBuild_RejectsUnknownRecipe(t *testing.T) {
