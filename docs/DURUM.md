@@ -82,14 +82,25 @@ bağlanmadı — `internal/notify.EmailSender` arayüzü ve config'teki
 | Parça | Durum |
 |---|---|
 | Build + versiyonlu klasör + IIS swap (temel mekanizma) | ✅ Bitti (2026-08-12), gerçek IIS'e karşı kanıtlandı |
-| Secrets deposu (gerçek appsettings enjeksiyonu) | ❌ Başlanmadı |
+| Secrets deposu (AES-256-GCM şifreleme + enjeksiyon) | ✅ Bitti (2026-08-12) |
 | Onay akışına bağlama (panelden tetikleme) | ❌ Başlanmadı |
 | Gerçek Intranet-F/Intranet-B'ye bağlanma | ❌ Başlanmadı — bilinçli olarak sonraya bırakıldı |
 
-`internal/deploy` paketi (`Builder`, `VersionStore`, `IISSwapper`,
-`Pipeline`) hazır ve test edilmiş, ama şimdilik hiçbir HTTP endpoint'ine
-bağlı değil — sadece `cmd/deploydemo` adlı bağımsız bir deneme aracından
-çağrılabiliyor.
+`internal/deploy` (`Builder`, `VersionStore`, `IISSwapper`, `Pipeline`) ve
+`internal/secretsvault` (`Store`, AES-256-GCM şifreleme) hazır ve test
+edilmiş, ama şimdilik hiçbir HTTP endpoint'ine bağlı değil — sadece
+`cmd/deploydemo` ve `cmd/secretsctl` adlı bağımsız araçlardan çağrılabiliyor.
+
+**Secrets deposu nasıl kullanılır:** Yönetici gerçek appsettings dosyasını
+sunucuya elle koyar, `secretsctl -repo <ad> -environment <ad> -file <yol>`
+çalıştırır (düz metni şifreleyip depoya yazar, kaynağı siler). Şifreleme
+anahtarı `DEVPLATFORM_SECRETS_KEY` ortam değişkeninden gelir, diskte hiçbir
+dosyada durmaz — bir şifre yöneticisinde saklanmalı, kaybedilirse şifreli
+dosyalar kalıcı olarak açılamaz hale gelir. **Önemli:** `-environment`
+değeri `Pipeline.Deploy`'a verilen `environment` ile birebir aynı yazılmalı
+(büyük/küçük harf dahil) — `secretsctl` `production` ile kaydedip `Deploy`
+`Production` ile ararsa dosya bulunamaz (hata verir, sessizce yanlış
+davranmaz, ama karışıklığa yol açabilir).
 
 **2026-08-12 güncelleme:** Son incelemede bulunan 2 önemli not kapatıldı —
 `copyDir` artık recursive (alt klasörleri de kopyalıyor, `TestBuild_Npm_ProducesOutput`
@@ -107,12 +118,14 @@ gecelik yedekleme. (Kişi *kaydı* var ama davet/yetkilendirme yok.)
 
 ## Sıradaki iş
 
-Faz 1 bitti, Faz 2'nin temel mekanizması (build+deploy+rollback) da
-gerçek IIS'e karşı kanıtlanmış durumda. Sırada üç seçenek var: (a) Faz
-2'nin devamı — secrets deposu + panelden tetikleme + gerçek Intranet'e
-bağlanma (yukarıdaki 2 önemli notu önce ele alarak), (b) gerçek SMTP
-gönderimini bağlamak, (c) bekleyen küçük iyileştirme notlarına bakmak
-(aşağıdaki "Bilinmesi gereken kararlar" ve
+Faz 1 bitti. Faz 2'nin temel mekanizması (build+deploy+rollback) VE
+secrets deposu (şifreli appsettings enjeksiyonu) gerçek IIS'e karşı
+kanıtlanmış/test edilmiş durumda — ikisi de şu an sadece bağımsız CLI
+araçlarından (`deploydemo`, `secretsctl`) çağrılabiliyor, panele/HTTP'ye
+hiç bağlı değil. Sırada üç seçenek var: (a) Faz 2'nin devamı — ikisini
+panelden tetiklenen bir onay akışına bağlamak, sonra gerçek Intranet'e
+bağlanmak, (b) gerçek SMTP gönderimini bağlamak, (c) bekleyen küçük
+iyileştirme notlarına bakmak (aşağıdaki "Bilinmesi gereken kararlar" ve
 `docs/superpowers/plans/2026-08-12-notifications.md`'nin son inceleme
 notlarındaki Minor bulgular — hiçbiri engelleyici değil).
 
