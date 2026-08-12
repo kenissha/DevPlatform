@@ -1,0 +1,241 @@
+package deployment
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"time"
+)
+
+var (
+	ErrInvalidRepo = fmt.Errorf("deployment: invalid repository name")
+	ErrInvalidID   = fmt.Errorf("deployment: invalid deploy request id")
+	ErrNotFound    = fmt.Errorf("deployment: not found")
+	ErrNotPending  = fmt.Errorf("deployment: request is not pending")
+)
+
+// validRepoName mirrors repostore's, mergerequest's, and taskboard's own
+// copy of this same allow-list — this package builds filesystem paths
+// from repo names too.
+var validRepoName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// idPattern matches only IDs this package itself generates (see newID),
+// so an ID coming from a URL path parameter can be validated before it is
+// ever joined into a filesystem path.
+var idPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
+
+// Status is a deploy request's place in its review-then-act lifecycle.
+type Status string
+
+const (
+	StatusPending  Status = "pending"
+	StatusDeployed Status = "deployed"
+	StatusFailed   Status = "failed"
+	StatusRejected Status = "rejected"
+)
+
+// Request is a request to release repo's sourceBranch into environment.
+// Approval runs the deploy synchronously and records the outcome in the
+// same object — there is no separate "deploy log" to cross-reference,
+// mirroring how MergeRequest records its own MergedCommit rather than
+// pointing elsewhere for it.
+type Request struct {
+	ID            string    `json:"id"`
+	Repo          string    `json:"repo"`
+	Environment   string    `json:"environment"`
+	SourceBranch  string    `json:"sourceBranch"`
+	Author        string    `json:"author"`
+	Status        Status    `json:"status"`
+	ReleaseDir    string    `json:"releaseDir,omitempty"`
+	FailureReason string    `json:"failureReason,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
+	// DecidedAt is a pointer, not a bare time.Time: encoding/json's
+	// omitempty never treats a struct type as "empty" regardless of its
+	// value, so a zero time.Time would serialize as "0001-01-01T..." for
+	// every still-pending request instead of being omitted. A nil pointer
+	// omits correctly and is what the frontend's optional field expects.
+	DecidedAt *time.Time `json:"decidedAt,omitempty"`
+}
+
+// Store persists deploy requests as one JSON file per request under
+// rootDir, grouped in a per-repo subdirectory — the same flat-file
+// approach mergerequest and taskboard already use.
+type Store struct {
+	rootDir string
+}
+
+// NewStore returns a Store rooted at rootDir. rootDir does not need to
+// exist yet.
+func NewStore(rootDir string) *Store {
+	return &Store{rootDir: rootDir}
+}
+
+// Create persists a new, StatusPending request.
+func (s *Store) Create(repo, environment, sourceBranch, author string) (Request, error) {
+	if !validRepoName.MatchString(repo) {
+		return Request{}, ErrInvalidRepo
+	}
+
+	dir := filepath.Join(s.rootDir, repo)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return Request{}, err
+	}
+
+	req := Request{
+		Repo:         repo,
+		Environment:  environment,
+		SourceBranch: sourceBranch,
+		Author:       author,
+		Status:       StatusPending,
+		CreatedAt:    time.Now().UTC(),
+	}
+
+	for attempt := 0; attempt < 5; attempt++ {
+		id, err := newID()
+		if err != nil {
+			return Request{}, err
+		}
+		req.ID = id
+
+		path := filepath.Join(dir, id+".json")
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o640)
+		if err != nil {
+			if os.IsExist(err) {
+				continue
+			}
+			return Request{}, err
+		}
+		err = json.NewEncoder(f).Encode(req)
+		closeErr := f.Close()
+		if err != nil {
+			return Request{}, err
+		}
+		if closeErr != nil {
+			return Request{}, closeErr
+		}
+		return req, nil
+	}
+	return Request{}, fmt.Errorf("deployment: failed to allocate a unique id after 5 attempts")
+}
+
+// Get returns the request identified by (repo, id).
+func (s *Store) Get(repo, id string) (Request, error) {
+	path, err := s.path(repo, id)
+	if err != nil {
+		return Request{}, err
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return Request{}, ErrNotFound
+		}
+		return Request{}, err
+	}
+
+	var req Request
+	if err := json.Unmarshal(data, &req); err != nil {
+		return Request{}, err
+	}
+	return req, nil
+}
+
+// List returns every deploy request for repo, newest first.
+func (s *Store) List(repo string) ([]Request, error) {
+	if !validRepoName.MatchString(repo) {
+		return nil, ErrInvalidRepo
+	}
+
+	dir := filepath.Join(s.rootDir, repo)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []Request{}, nil
+		}
+		return nil, err
+	}
+
+	requests := []Request{}
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			return nil, err
+		}
+		var req Request
+		if err := json.Unmarshal(data, &req); err != nil {
+			return nil, err
+		}
+		requests = append(requests, req)
+	}
+
+	sort.Slice(requests, func(i, j int) bool {
+		return requests[i].CreatedAt.After(requests[j].CreatedAt)
+	})
+	return requests, nil
+}
+
+// Decide transitions the request identified by (repo, id) from
+// StatusPending to a terminal status (StatusDeployed, StatusFailed, or
+// StatusRejected), recording releaseDir and/or failureReason and stamping
+// DecidedAt. It is the only way this store ever leaves StatusPending —
+// there is no path back to it, matching mergerequest's own
+// "approved/rejected exactly once" invariant (there, ErrNotOpen).
+func (s *Store) Decide(repo, id string, status Status, releaseDir, failureReason string) (Request, error) {
+	req, err := s.Get(repo, id)
+	if err != nil {
+		return Request{}, err
+	}
+	if req.Status != StatusPending {
+		return Request{}, ErrNotPending
+	}
+
+	req.Status = status
+	req.ReleaseDir = releaseDir
+	req.FailureReason = failureReason
+	decidedAt := time.Now().UTC()
+	req.DecidedAt = &decidedAt
+
+	path, err := s.path(repo, id)
+	if err != nil {
+		return Request{}, err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0o640)
+	if err != nil {
+		return Request{}, err
+	}
+	err = json.NewEncoder(f).Encode(req)
+	closeErr := f.Close()
+	if err != nil {
+		return Request{}, err
+	}
+	if closeErr != nil {
+		return Request{}, closeErr
+	}
+	return req, nil
+}
+
+func (s *Store) path(repo, id string) (string, error) {
+	if !validRepoName.MatchString(repo) {
+		return "", ErrInvalidRepo
+	}
+	if !idPattern.MatchString(id) {
+		return "", ErrInvalidID
+	}
+	return filepath.Join(s.rootDir, repo, id+".json"), nil
+}
+
+func newID() (string, error) {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}

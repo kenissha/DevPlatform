@@ -27,12 +27,16 @@ import (
 type Action string
 
 const (
-	ActionRepoCreated Action = "repo.created"
-	ActionTaskCreated Action = "task.created"
-	ActionTaskUpdated Action = "task.updated"
-	ActionMROpened    Action = "merge_request.opened"
-	ActionMRApproved  Action = "merge_request.approved"
-	ActionMRRejected  Action = "merge_request.rejected"
+	ActionRepoCreated       Action = "repo.created"
+	ActionTaskCreated       Action = "task.created"
+	ActionTaskUpdated       Action = "task.updated"
+	ActionMROpened          Action = "merge_request.opened"
+	ActionMRApproved        Action = "merge_request.approved"
+	ActionMRRejected        Action = "merge_request.rejected"
+	ActionDeploymentOpened  Action = "deployment.opened"
+	ActionDeploymentSuccess Action = "deployment.deployed"
+	ActionDeploymentFailed  Action = "deployment.failed"
+	ActionDeploymentReject  Action = "deployment.rejected"
 )
 
 // Event is one recorded action.

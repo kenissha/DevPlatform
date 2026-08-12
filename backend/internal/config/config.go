@@ -12,6 +12,13 @@ type Config struct {
 	SMTPHost    string
 	SMTPPort    string
 	SMTPFrom    string
+	// DeployTargetsFile points at a JSON file listing the (repo,
+	// environment) pairs this server is allowed to deploy (see
+	// deployment.LoadTargets). Empty by default: no target is deployable
+	// until an admin deliberately creates this file, matching the design
+	// doc's "sabit listeden" requirement — a deploy target is server-side
+	// configuration, never something typed into the panel.
+	DeployTargetsFile string
 }
 
 // Load reads configuration from the environment, falling back to
@@ -39,14 +46,15 @@ type Config struct {
 // for an SMTP host, so they default to "".
 func Load() Config {
 	return Config{
-		ListenAddr:  getEnv("DEVPLATFORM_LISTEN_ADDR", ":8080"),
-		DataDir:     getEnv("DEVPLATFORM_DATA_DIR", "./data"),
-		GitUsername: getEnv("DEVPLATFORM_GIT_USERNAME", "dev"),
-		GitPassword: getEnv("DEVPLATFORM_GIT_PASSWORD", "dev"),
-		JWTSecret:   getEnv("DEVPLATFORM_JWT_SECRET", "dev-not-a-real-secret"),
-		SMTPHost:    getEnv("DEVPLATFORM_SMTP_HOST", ""),
-		SMTPPort:    getEnv("DEVPLATFORM_SMTP_PORT", ""),
-		SMTPFrom:    getEnv("DEVPLATFORM_SMTP_FROM", ""),
+		ListenAddr:        getEnv("DEVPLATFORM_LISTEN_ADDR", ":8080"),
+		DataDir:           getEnv("DEVPLATFORM_DATA_DIR", "./data"),
+		GitUsername:       getEnv("DEVPLATFORM_GIT_USERNAME", "dev"),
+		GitPassword:       getEnv("DEVPLATFORM_GIT_PASSWORD", "dev"),
+		JWTSecret:         getEnv("DEVPLATFORM_JWT_SECRET", "dev-not-a-real-secret"),
+		SMTPHost:          getEnv("DEVPLATFORM_SMTP_HOST", ""),
+		SMTPPort:          getEnv("DEVPLATFORM_SMTP_PORT", ""),
+		SMTPFrom:          getEnv("DEVPLATFORM_SMTP_FROM", ""),
+		DeployTargetsFile: getEnv("DEVPLATFORM_DEPLOY_TARGETS_FILE", ""),
 	}
 }
 

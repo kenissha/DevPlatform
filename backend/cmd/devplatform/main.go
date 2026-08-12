@@ -9,6 +9,8 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/config"
+	"github.com/kenissha/DevPlatform/backend/internal/deploy"
+	"github.com/kenissha/DevPlatform/backend/internal/deployment"
 	"github.com/kenissha/DevPlatform/backend/internal/gitauth"
 	"github.com/kenissha/DevPlatform/backend/internal/gitserver"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
@@ -16,6 +18,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/notify"
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
+	"github.com/kenissha/DevPlatform/backend/internal/secretsvault"
 	"github.com/kenissha/DevPlatform/backend/internal/server"
 	"github.com/kenissha/DevPlatform/backend/internal/taskboard"
 	"github.com/kenissha/DevPlatform/backend/internal/users"
@@ -63,6 +66,44 @@ func main() {
 	notifyHandlers := &notify.Handlers{
 		Store: notifyStore,
 	}
+
+	targets, err := deployment.LoadTargets(cfg.DeployTargetsFile)
+	if err != nil {
+		log.Fatalf("failed to load deploy targets from %q: %v", cfg.DeployTargetsFile, err)
+	}
+	if cfg.DeployTargetsFile == "" {
+		log.Printf("no DEVPLATFORM_DEPLOY_TARGETS_FILE configured — deploy requests can be opened but never approved until one is set")
+	}
+
+	// A missing/invalid secrets key is not fatal: it only means deploy
+	// targets that ask for a secretsTarget will fail at approval time with
+	// a clear error (see deploy.Pipeline.Deploy), the same "misconfigured,
+	// not crashed" posture LoadTargets' empty-path case already takes.
+	var secretsStore *secretsvault.Store
+	if key, err := secretsvault.LoadKey(); err != nil {
+		log.Printf("secrets vault not available (%v) — deploy targets with a secretsTarget will fail until DEVPLATFORM_SECRETS_KEY is set", err)
+	} else {
+		secretsStore = secretsvault.NewStore(filepath.Join(cfg.DataDir, "secrets"), key)
+	}
+
+	pipeline := deploy.NewPipeline(
+		&deploy.Builder{},
+		deploy.NewVersionStore(filepath.Join(cfg.DataDir, "releases")),
+		deploy.NewIISSwapper(deploy.RealCommandRunner{}),
+		secretsStore,
+	)
+	checkoutRoot := filepath.Join(cfg.DataDir, "deploy-checkouts")
+	deploymentHandlers := &deployment.Handlers{
+		Store:        deployment.NewStore(filepath.Join(cfg.DataDir, "deployments")),
+		Repos:        store,
+		Targets:      targets,
+		Pipeline:     pipeline,
+		CheckoutRoot: checkoutRoot,
+		Audit:        auditLogger,
+		Notify:       notifyStore,
+		Users:        usersStore,
+	}
+
 	router := server.NewRouter(server.Deps{
 		GitHandler:     authedGitHandler,
 		AuthMiddleware: authMiddleware,
@@ -72,6 +113,7 @@ func main() {
 		Stats:          statsHandlers,
 		Audit:          auditHandlers,
 		Notifications:  notifyHandlers,
+		Deployments:    deploymentHandlers,
 		Users:          usersStore,
 	})
 

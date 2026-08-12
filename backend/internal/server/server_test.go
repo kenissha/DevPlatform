@@ -13,6 +13,7 @@ import (
 
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
+	"github.com/kenissha/DevPlatform/backend/internal/deployment"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/notify"
@@ -54,6 +55,17 @@ func newTestRouter(t *testing.T) (*http.ServeMux, *repostore.Store) {
 	statsHandlers := &gitstats.Handlers{Repos: store}
 	auditHandlers := &audit.Handlers{Logger: auditLogger}
 	notifyHandlers := &notify.Handlers{Store: notify.NewStore(filepath.Join(dataDir, "notifications"))}
+	// No Pipeline/Targets wired here: nothing in this file's tests exercises
+	// a deploy approval — that full-pipeline path (real checkout, real
+	// build, faked-only IIS swap) is covered in internal/deployment's own
+	// tests instead.
+	deploymentHandlers := &deployment.Handlers{
+		Store:        deployment.NewStore(filepath.Join(dataDir, "deployments")),
+		Repos:        store,
+		Targets:      deployment.NewTargets(nil),
+		CheckoutRoot: t.TempDir(),
+		Audit:        auditLogger,
+	}
 
 	router := NewRouter(Deps{
 		GitHandler:     http.NotFoundHandler(),
@@ -64,6 +76,7 @@ func newTestRouter(t *testing.T) (*http.ServeMux, *repostore.Store) {
 		Stats:          statsHandlers,
 		Audit:          auditHandlers,
 		Notifications:  notifyHandlers,
+		Deployments:    deploymentHandlers,
 		Users:          users.NewStore(filepath.Join(dataDir, "users.json")),
 	})
 	return router, store

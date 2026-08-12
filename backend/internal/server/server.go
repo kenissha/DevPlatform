@@ -7,6 +7,7 @@ import (
 
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
+	"github.com/kenissha/DevPlatform/backend/internal/deployment"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/notify"
@@ -34,6 +35,7 @@ type Deps struct {
 	Stats         *gitstats.Handlers     // read-only repository insight
 	Audit         *audit.Handlers        // recorded action history
 	Notifications *notify.Handlers       // per-user notifications
+	Deployments   *deployment.Handlers   // onay-triggered build+deploy
 	// Users is the people registry. Optional: when nil, /api/users returns
 	// an empty list and no just-in-time provisioning happens on /api/me.
 	Users *users.Store
@@ -49,6 +51,7 @@ func NewRouter(deps Deps) *http.ServeMux {
 	stats := deps.Stats
 	auditLog := deps.Audit
 	notifications := deps.Notifications
+	deployments := deps.Deployments
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealth)
@@ -108,6 +111,20 @@ func NewRouter(deps Deps) *http.ServeMux {
 	// read only their own — see notify.Handlers' doc comment.
 	mux.Handle("GET /api/notifications", authMiddleware(http.HandlerFunc(notifications.List)))
 	mux.Handle("POST /api/notifications/{id}/read", authMiddleware(http.HandlerFunc(notifications.MarkRead)))
+
+	// Deploy requests: any authenticated user can open one or read its
+	// status; only an Admin can approve (which actually runs the deploy)
+	// or reject — the same review-then-act split merge requests already
+	// use, see deployment.Handlers.Approve's doc comment.
+	mux.Handle("GET /api/repos/{repo}/deploy-targets", authMiddleware(http.HandlerFunc(deployments.Environments)))
+	mux.Handle("POST /api/repos/{repo}/deployments", authMiddleware(http.HandlerFunc(deployments.Create)))
+	mux.Handle("GET /api/repos/{repo}/deployments", authMiddleware(http.HandlerFunc(deployments.List)))
+	mux.Handle("GET /api/repos/{repo}/deployments/{id}", authMiddleware(http.HandlerFunc(deployments.Get)))
+	mux.Handle("POST /api/repos/{repo}/deployments/{id}/approve",
+		authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(deployments.Approve))))
+	mux.Handle("POST /api/repos/{repo}/deployments/{id}/reject",
+		authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(deployments.Reject))))
+	mux.Handle("GET /api/deployments", authMiddleware(http.HandlerFunc(deployments.ListAll)))
 
 	return mux
 }
