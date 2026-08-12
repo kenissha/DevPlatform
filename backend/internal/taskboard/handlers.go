@@ -167,6 +167,24 @@ func (h *Handlers) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Store.Update mutates the task in place and never hands back the
+	// pre-update value, so a genuine reassignment ("dev-1" → "dev-2")
+	// can't be told apart from a client resending the current assignee
+	// unchanged (e.g. a UI that echoes the whole task back when it only
+	// meant to flip urgent) purely from Update's return value. Fetching
+	// the previous state first — the same Get-then-mutate shape Approve
+	// already uses — is the least invasive way to make that distinction
+	// without changing Store.Update's signature or its other callers.
+	var previousAssignedTo string
+	if req.AssignedTo != nil {
+		previous, err := h.Store.Get(repo, id)
+		if err != nil {
+			h.writeStoreError(w, err)
+			return
+		}
+		previousAssignedTo = previous.AssignedTo
+	}
+
 	task, err := h.Store.Update(repo, id, req.Status, req.Urgent, req.AssignedTo)
 	if err != nil {
 		h.writeStoreError(w, err)
@@ -178,7 +196,7 @@ func (h *Handlers) Update(w http.ResponseWriter, r *http.Request) {
 			"Görev güncellendi: "+task.Title+" ("+describeUpdate(req)+")")
 	}
 
-	if req.AssignedTo != nil && *req.AssignedTo != "" && h.Notify != nil {
+	if req.AssignedTo != nil && *req.AssignedTo != "" && *req.AssignedTo != previousAssignedTo && h.Notify != nil {
 		_, _ = h.Notify.Create(task.AssignedTo, "task_assigned",
 			"Bir görev size atandı: "+task.Title+" ("+repo+")",
 			"/repos/"+repo+"/tasks/"+task.ID)

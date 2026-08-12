@@ -342,3 +342,40 @@ func TestUpdate_NotifiesNewAssigneeOnReassignment(t *testing.T) {
 		t.Errorf("old assignee got %d notifications, want 0", len(oldAssigneeNotifications))
 	}
 }
+
+// TestUpdate_DoesNotNotifyOnSameAssigneeResend covers a PATCH that includes
+// assignedTo but sets it to the value it already had — e.g. a client that
+// echoes the whole task back when it only meant to change status or
+// urgent. This must not re-notify the already-assigned person; only a
+// genuine reassignment (a different AssignedTo value, see
+// TestUpdate_NotifiesNewAssigneeOnReassignment) should.
+func TestUpdate_DoesNotNotifyOnSameAssigneeResend(t *testing.T) {
+	h, n := newTestHandlersWithNotify(t)
+	mux := newMux(h)
+
+	created, err := h.Store.Create("sample", "Fix login bug", "d", "dev-1", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	// The task is already assigned to dev-1; resend the same value
+	// alongside an unrelated field change.
+	body, _ := json.Marshal(map[string]any{"assignedTo": "dev-1", "urgent": true})
+	req := httptest.NewRequest(http.MethodPatch, "/api/repos/sample/tasks/"+created.ID, bytes.NewReader(body))
+	req = addAuth(req, t, "dev-2", "developer")
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	notifications, err := n.ListForUser("dev-1")
+	if err != nil {
+		t.Fatalf("ListForUser failed: %v", err)
+	}
+	if len(notifications) != 0 {
+		t.Errorf("got %d notifications for dev-1 on a same-value resend, want 0", len(notifications))
+	}
+}
