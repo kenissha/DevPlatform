@@ -70,6 +70,19 @@ Kullanıcıyla birlikte alınan, yukarıdaki genel çerçeveyi uygulanabilir hal
 - **IIS yönetimi: `appcmd.exe`.** Go'nun IIS'e yerli bir bağlantısı yok; IIS'in kendi resmi komut satırı aracı `appcmd.exe` kullanılacak (PowerShell WebAdministration modülüne göre daha dar/basit yüzey). `appcmd`'ye giden hiçbir parametre kullanıcı girdisinden gelmez — sadece önceden tanımlı repo↔site eşlemelerinden.
 - **Aşamalı devreye alma — önce zararsız bir deneme sitesiyle.** Mekanizma, önce gerçek sunucuda ama **gerçek Intranet'ten bağımsız, zararsız bir deneme IIS sitesi** üzerinde uçtan uca kanıtlanacak (build → versiyonlu klasör → appcmd swap → rollback tam döngüsü). Gerçek Intranet-F/Intranet-B projelerine bağlanmak, bu döngü sağlamlaştıktan sonra ayrı, bilinçli bir adım olacak — otomatik/örtük bir geçiş değil.
 
+### Secrets Deposu — Somutlaştırma Kararları (2026-08-12)
+
+Kullanıcıyla birlikte, "en ufak bir sızıntıda bile şifreler kolayca ele geçmesin, ama gereğinden karmaşık da olmasın, ileride sunucu değiştirilebilsin" hedefiyle netleştirilen kararlar:
+
+- **Düzenleme: panel yok, doğrudan dosya.** Yönetici gerçek appsettings dosyalarını panelden değil, sunucuya doğrudan (elle, dosya olarak) koyar. Bu dosyalar hiçbir zaman panelin/API'nin üzerinden geçmez, tarayıcıya hiç gitmez — saldırı yüzeyi baştan kapatılmış olur.
+- **İki katmanlı koruma:**
+  1. **Klasör izni** (NTFS ACL) — sadece DevPlatform'u çalıştıran servis hesabı ve Yönetici'nin hesabı erişebilir. İlk savunma katmanı, tasarımın orijinal fikriyle aynı.
+  2. **Şifreleme (AES-256-GCM) + anahtarın diskten ayrı tutulması** — klasör izni bir şekilde aşılsa bile (yanlış yapılandırılmış paylaşım, sızan yedek, aynı sunucudaki başka bir servisin erişimi gibi) dosya içeriği yine de okunamaz olsun diye. Şifreleme anahtarı diskte hiçbir dosyada durmaz; servis her başladığında `DEVPLATFORM_SECRETS_KEY` ortam değişkeniyle verilir — tıpkı `DEVPLATFORM_JWT_SECRET`/git şifresi gibi, platformun zaten kullandığı desenin aynısı.
+- **Neden Windows DPAPI değil, kendi yönetilen anahtar:** DPAPI (Windows'un yerleşik şifreleme mekanizması) da değerlendirildi ama anahtarı o spesifik makineye kilitliyor — sunucu değişirse şifreli dosyalar kalıcı olarak açılamaz hale gelirdi. Kullanıcı ileride sunucu değiştirme/taşınabilirlik istediğini belirtti, bu yüzden kendi yönetilen anahtar (ve onu ortam değişkeniyle taşıma) tercih edildi. Bedeli: anahtarın kaybolmaması Yönetici'nin sorumluluğunda (bir şifre yöneticisinde saklanmalı).
+- **Depolama yapısı:** `<DataDir>/secrets/<repo>/<environment>/appsettings.json.enc` — `internal/deploy`'un repo/environment klasörleme deseniyle aynı.
+- **Yönetici akışı:** Yönetici sunucuya düz metin dosyayı koyar, küçük bağımsız bir komut satırı aracı (`deploydemo`'nun izlediği desenle aynı) onu okuyup şifreler, şifreli haliyle depoya yazar, düz metin halini siler.
+- **Deploy akışına bağlanma:** Tasarımın orijinal "Deploy akışı" sıralamasındaki 3. adım (secrets kopyalama) artık somut: `Pipeline.Deploy` içine build ile appcmd swap arasına yeni bir adım eklenir — ilgili ortamın şifreli dosyası okunur, `DEVPLATFORM_SECRETS_KEY` ile çözülür, düz metin olarak (uygulamanın beklediği gerçek appsettings dosya adıyla) versiyonlu release klasörüne yazılır. Çözülmüş düz metin sadece o release klasöründe var olur — tıpkı normal bir .NET/React uygulamasının zaten appsettings'i o şekilde okuduğu gibi, bu adım deploy'un doğal bir parçası.
+
 ## Faz 3 — Genişleme: Personel entegrasyonu + yedekleme
 
 Bu faz tamamlandığında kişi ekleme ve veri koruma da sisteme dahil olur.
