@@ -62,6 +62,14 @@ Bu faz tamamlandığında onaylanan bir talep tek tıkla test veya canlı ortama
 - **Rollback:** Saklanan eski versiyonlardan biri seçilip tek tıkla aktif hale getirilebilir.
 - **Güvenlik:** Build/deploy komutları hiçbir zaman kullanıcıdan gelen serbest metinle oluşturulmaz; proje/branch/ortam seçimleri sabit listeden yapılır. Build/deploy işlemini çalıştıran servis hesabı en az yetki ilkesiyle sınırlıdır (yalnızca kendi klasörlerine erişebilir).
 
+### Faz 2 — Somutlaştırma Kararları (2026-08-12)
+
+Kullanıcıyla birlikte alınan, yukarıdaki genel çerçeveyi uygulanabilir hale getiren kararlar:
+
+- **Build tarifi, serbest metin değil sabit tip:** Yönetici her repo için bir "build tarifi" tanımlar — ör. `dotnet` (`dotnet publish`) veya `npm` (`npm run build`) gibi, kod içinde önceden tanımlı sabit bir küçük tip kümesinden seçilir. Kullanıcıdan (talebi açan geliştiriciden) hiçbir zaman serbest komut metni alınmaz; sadece "hangi repo, hangi branch, hangi ortam" seçimi yapılır, gerçek komut sunucu tarafında sabit şablondan üretilir.
+- **IIS yönetimi: `appcmd.exe`.** Go'nun IIS'e yerli bir bağlantısı yok; IIS'in kendi resmi komut satırı aracı `appcmd.exe` kullanılacak (PowerShell WebAdministration modülüne göre daha dar/basit yüzey). `appcmd`'ye giden hiçbir parametre kullanıcı girdisinden gelmez — sadece önceden tanımlı repo↔site eşlemelerinden.
+- **Aşamalı devreye alma — önce zararsız bir deneme sitesiyle.** Mekanizma, önce gerçek sunucuda ama **gerçek Intranet'ten bağımsız, zararsız bir deneme IIS sitesi** üzerinde uçtan uca kanıtlanacak (build → versiyonlu klasör → appcmd swap → rollback tam döngüsü). Gerçek Intranet-F/Intranet-B projelerine bağlanmak, bu döngü sağlamlaştıktan sonra ayrı, bilinçli bir adım olacak — otomatik/örtük bir geçiş değil.
+
 ## Faz 3 — Genişleme: Personel entegrasyonu + yedekleme
 
 Bu faz tamamlandığında kişi ekleme ve veri koruma da sisteme dahil olur.
