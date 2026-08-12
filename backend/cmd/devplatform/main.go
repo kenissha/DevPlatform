@@ -13,6 +13,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/gitserver"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
+	"github.com/kenissha/DevPlatform/backend/internal/notify"
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 	"github.com/kenissha/DevPlatform/backend/internal/server"
@@ -54,6 +55,9 @@ func main() {
 	}
 	statsHandlers := &gitstats.Handlers{Repos: store}
 	auditHandlers := &audit.Handlers{Logger: auditLogger}
+	notifyHandlers := &notify.Handlers{
+		Store: notify.NewStore(filepath.Join(cfg.DataDir, "notifications")),
+	}
 	router := server.NewRouter(server.Deps{
 		GitHandler:     authedGitHandler,
 		AuthMiddleware: authMiddleware,
@@ -62,6 +66,7 @@ func main() {
 		Tasks:          taskHandlers,
 		Stats:          statsHandlers,
 		Audit:          auditHandlers,
+		Notifications:  notifyHandlers,
 		Users:          users.NewStore(filepath.Join(cfg.DataDir, "users.json")),
 	})
 

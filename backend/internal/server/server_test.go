@@ -15,6 +15,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
+	"github.com/kenissha/DevPlatform/backend/internal/notify"
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 	"github.com/kenissha/DevPlatform/backend/internal/taskboard"
@@ -52,6 +53,7 @@ func newTestRouter(t *testing.T) (*http.ServeMux, *repostore.Store) {
 	}
 	statsHandlers := &gitstats.Handlers{Repos: store}
 	auditHandlers := &audit.Handlers{Logger: auditLogger}
+	notifyHandlers := &notify.Handlers{Store: notify.NewStore(filepath.Join(dataDir, "notifications"))}
 
 	router := NewRouter(Deps{
 		GitHandler:     http.NotFoundHandler(),
@@ -61,6 +63,7 @@ func newTestRouter(t *testing.T) (*http.ServeMux, *repostore.Store) {
 		Tasks:          taskHandlers,
 		Stats:          statsHandlers,
 		Audit:          auditHandlers,
+		Notifications:  notifyHandlers,
 		Users:          users.NewStore(filepath.Join(dataDir, "users.json")),
 	})
 	return router, store

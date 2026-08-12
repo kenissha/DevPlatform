@@ -61,3 +61,24 @@ func TestLoad_ReadsJWTSecretFromEnv(t *testing.T) {
 		t.Errorf("JWTSecret = %q, want %q", cfg.JWTSecret, "super-secret")
 	}
 }
+
+func TestLoad_ReadsSMTPSettingsFromEnv(t *testing.T) {
+	os.Setenv("DEVPLATFORM_SMTP_HOST", "smtp.example.com")
+	os.Setenv("DEVPLATFORM_SMTP_PORT", "587")
+	os.Setenv("DEVPLATFORM_SMTP_FROM", "devplatform@example.com")
+	defer os.Unsetenv("DEVPLATFORM_SMTP_HOST")
+	defer os.Unsetenv("DEVPLATFORM_SMTP_PORT")
+	defer os.Unsetenv("DEVPLATFORM_SMTP_FROM")
+
+	cfg := Load()
+
+	if cfg.SMTPHost != "smtp.example.com" {
+		t.Errorf("SMTPHost = %q, want %q", cfg.SMTPHost, "smtp.example.com")
+	}
+	if cfg.SMTPPort != "587" {
+		t.Errorf("SMTPPort = %q, want %q", cfg.SMTPPort, "587")
+	}
+	if cfg.SMTPFrom != "devplatform@example.com" {
+		t.Errorf("SMTPFrom = %q, want %q", cfg.SMTPFrom, "devplatform@example.com")
+	}
+}

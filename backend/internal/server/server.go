@@ -9,6 +9,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
+	"github.com/kenissha/DevPlatform/backend/internal/notify"
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
 	"github.com/kenissha/DevPlatform/backend/internal/taskboard"
 	"github.com/kenissha/DevPlatform/backend/internal/users"
@@ -32,6 +33,7 @@ type Deps struct {
 	Tasks         *taskboard.Handlers    // task board
 	Stats         *gitstats.Handlers     // read-only repository insight
 	Audit         *audit.Handlers        // recorded action history
+	Notifications *notify.Handlers       // per-user notifications
 	// Users is the people registry. Optional: when nil, /api/users returns
 	// an empty list and no just-in-time provisioning happens on /api/me.
 	Users *users.Store
@@ -46,6 +48,7 @@ func NewRouter(deps Deps) *http.ServeMux {
 	tasks := deps.Tasks
 	stats := deps.Stats
 	auditLog := deps.Audit
+	notifications := deps.Notifications
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealth)
@@ -100,6 +103,11 @@ func NewRouter(deps Deps) *http.ServeMux {
 	// The audit log is readable by any authenticated user — see
 	// audit.Handlers' doc comment for why it isn't Admin-gated.
 	mux.Handle("GET /api/audit", authMiddleware(http.HandlerFunc(auditLog.List)))
+
+	// Per-user notifications: every authenticated user can list and mark
+	// read only their own — see notify.Handlers' doc comment.
+	mux.Handle("GET /api/notifications", authMiddleware(http.HandlerFunc(notifications.List)))
+	mux.Handle("POST /api/notifications/{id}/read", authMiddleware(http.HandlerFunc(notifications.MarkRead)))
 
 	return mux
 }
