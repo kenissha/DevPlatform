@@ -444,6 +444,21 @@ code,
   flex: 1;
 }
 
+.checkbox-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  margin-top: 10px;
+}
+
+.checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-strong);
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

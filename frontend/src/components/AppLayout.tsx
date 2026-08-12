@@ -8,6 +8,7 @@ import {
   BranchIcon,
   ChartIcon,
   DeployIcon,
+  LockIcon,
   LogoMark,
   MergeIcon,
   OverviewIcon,
@@ -88,6 +89,14 @@ export function AppLayout() {
                   {unreadCount > 0 && <span className="nav-count">{unreadCount}</span>}
                 </NavLink>
               </li>
+              {user?.role === 'admin' && (
+                <li>
+                  <NavLink end to="/access" className={navClass}>
+                    <LockIcon />
+                    <span className="nav-label">Proje erişimi</span>
+                  </NavLink>
+                </li>
+              )}
             </ul>
           </div>
 

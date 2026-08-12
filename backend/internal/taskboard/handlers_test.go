@@ -11,6 +11,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/kenissha/DevPlatform/backend/internal/access"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/notify"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
@@ -73,6 +74,7 @@ func newMux(h *Handlers) *http.ServeMux {
 	mux.Handle("GET /api/repos/{repo}/tasks", authMW(http.HandlerFunc(h.List)))
 	mux.Handle("GET /api/repos/{repo}/tasks/{id}", authMW(http.HandlerFunc(h.Get)))
 	mux.Handle("PATCH /api/repos/{repo}/tasks/{id}", authMW(http.HandlerFunc(h.Update)))
+	mux.Handle("GET /api/tasks", authMW(http.HandlerFunc(h.ListAll)))
 	return mux
 }
 
@@ -100,6 +102,43 @@ func TestCreate_ReturnsCreatedTask(t *testing.T) {
 	}
 	if task.Author != "dev-1" || task.AssignedTo != "dev-2" || task.Status != StatusInProgress {
 		t.Errorf("task = %+v, unexpected fields", task)
+	}
+}
+
+func TestListAll_NarrowsToAllowedReposForARestrictedDeveloper(t *testing.T) {
+	h := newTestHandlers(t)
+	if _, err := h.Repos.Create("other"); err != nil {
+		t.Fatalf("failed to create second repo: %v", err)
+	}
+	h.Access = access.NewStore(t.TempDir() + "/access.json")
+	if err := h.Access.Set("dev-1", []string{"other"}); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+	mux := newMux(h)
+
+	body, _ := json.Marshal(map[string]string{"title": "Fix login bug"})
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/tasks", bytes.NewReader(body))
+	req = addAuth(req, t, "dev-1", "developer")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/tasks", nil)
+	req = addAuth(req, t, "dev-1", "developer")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	var tasks []Task
+	if err := json.Unmarshal(rec.Body.Bytes(), &tasks); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Errorf("got %d tasks, want 0 (sample is not in dev-1's allow-list)", len(tasks))
 	}
 }
 

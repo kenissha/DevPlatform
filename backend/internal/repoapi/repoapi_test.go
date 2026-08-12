@@ -7,9 +7,44 @@ import (
 	"net/http/httptest"
 	"os/exec"
 	"testing"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
+
+	"github.com/kenissha/DevPlatform/backend/internal/access"
+	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 )
+
+const testJWTSecret = "test-secret"
+
+func signTestToken(t *testing.T, subject, role string) string {
+	t.Helper()
+	c := jwt.MapClaims{
+		"sub":  subject,
+		"role": role,
+		"exp":  time.Now().Add(time.Hour).Unix(),
+	}
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
+	s, err := tok.SignedString([]byte(testJWTSecret))
+	if err != nil {
+		t.Fatalf("failed to sign test token: %v", err)
+	}
+	return s
+}
+
+// listAsUser round-trips req through the real auth.RequireAuth middleware
+// (so auth.UserFromContext behaves exactly as it would in production)
+// before calling h.List, letting these tests exercise List's Access
+// filtering as an authenticated subject/role would experience it.
+func listAsUser(h *Handlers, subject, role string, t *testing.T) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/repos", nil)
+	req.Header.Set("Authorization", "Bearer "+signTestToken(t, subject, role))
+	rec := httptest.NewRecorder()
+	auth.RequireAuth([]byte(testJWTSecret), http.HandlerFunc(h.List)).ServeHTTP(rec, req)
+	return rec
+}
 
 func requireGit(t *testing.T) {
 	t.Helper()
@@ -52,6 +87,77 @@ func TestList_ReturnsRepoNamesSorted(t *testing.T) {
 	}
 	if len(names) != 2 || names[0] != "alpha" || names[1] != "zeta" {
 		t.Errorf("names = %v, want [alpha zeta]", names)
+	}
+}
+
+func TestList_NarrowsToAllowedReposForARestrictedDeveloper(t *testing.T) {
+	repos := repostore.New(t.TempDir())
+	if _, err := repos.Create("intranet-backend"); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if _, err := repos.Create("intranet-frontend"); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	accessStore := access.NewStore(t.TempDir() + "/access.json")
+	if err := accessStore.Set("dev-1", []string{"intranet-backend"}); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+	h := &Handlers{Repos: repos, Access: accessStore}
+
+	rec := listAsUser(h, "dev-1", "developer", t)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", rec.Code, rec.Body.String())
+	}
+	var names []string
+	if err := json.Unmarshal(rec.Body.Bytes(), &names); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(names) != 1 || names[0] != "intranet-backend" {
+		t.Errorf("names = %v, want [intranet-backend]", names)
+	}
+}
+
+func TestList_AdminSeesEveryRepoEvenWhenRestricted(t *testing.T) {
+	repos := repostore.New(t.TempDir())
+	if _, err := repos.Create("intranet-backend"); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if _, err := repos.Create("intranet-frontend"); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	accessStore := access.NewStore(t.TempDir() + "/access.json")
+	if err := accessStore.Set("admin-1", []string{"intranet-backend"}); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+	h := &Handlers{Repos: repos, Access: accessStore}
+
+	rec := listAsUser(h, "admin-1", "admin", t)
+
+	var names []string
+	if err := json.Unmarshal(rec.Body.Bytes(), &names); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(names) != 2 {
+		t.Errorf("names = %v, want both repos (admins bypass restriction)", names)
+	}
+}
+
+func TestList_UnrestrictedDeveloperSeesEveryRepo(t *testing.T) {
+	repos := repostore.New(t.TempDir())
+	if _, err := repos.Create("intranet-backend"); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	h := &Handlers{Repos: repos, Access: access.NewStore(t.TempDir() + "/access.json")}
+
+	rec := listAsUser(h, "dev-1", "developer", t)
+
+	var names []string
+	if err := json.Unmarshal(rec.Body.Bytes(), &names); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(names) != 1 {
+		t.Errorf("names = %v, want the one repo (unrestricted by default)", names)
 	}
 }
 

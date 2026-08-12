@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/kenissha/DevPlatform/backend/internal/access"
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/notify"
@@ -32,6 +33,10 @@ type Handlers struct {
 	// notifications are created, rather than a panic — a repo can be
 	// used without notifications wired at all, same as without Audit.
 	Users *users.Store
+	// Access is optional; a nil Store means every caller sees every repo
+	// (see internal/access). ListAll is the only place this package needs
+	// it — see taskboard.Handlers.Access's doc comment for why.
+	Access *access.Store
 }
 
 type createRequest struct {
@@ -156,6 +161,13 @@ func (h *Handlers) ListAll(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
 		return
+	}
+	if user, ok := auth.UserFromContext(r.Context()); ok && user.Role != auth.RoleAdmin {
+		repos, err = h.Access.FilterRepos(user.Subject, repos)
+		if err != nil {
+			http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	status := Status(r.URL.Query().Get("status"))

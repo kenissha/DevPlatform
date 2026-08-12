@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-git/go-git/v6/plumbing"
 
+	"github.com/kenissha/DevPlatform/backend/internal/access"
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
@@ -28,6 +29,15 @@ type Handlers struct {
 	Repos *repostore.Store
 	// Audit is optional; a nil Logger records nothing (see internal/audit).
 	Audit *audit.Logger
+	// Access is optional; a nil Store means every caller sees every repo
+	// (see internal/access). When set, List narrows its response to what
+	// the caller is allowed to see — the one place a restricted repo must
+	// never appear for a restricted subject, everything else (Branches,
+	// and every other repo-scoped endpoint elsewhere in this codebase)
+	// enforces the same restriction via access.RequireRepoAccess at the
+	// router level instead, since they operate on a single named repo
+	// rather than a list.
+	Access *access.Store
 }
 
 // List handles GET /api/repos.
@@ -37,6 +47,15 @@ func (h *Handlers) List(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+
+	if user, ok := auth.UserFromContext(r.Context()); ok && user.Role != auth.RoleAdmin {
+		names, err = h.Access.FilterRepos(user.Subject, names)
+		if err != nil {
+			http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+	}
+
 	sort.Strings(names)
 	writeJSON(w, http.StatusOK, names)
 }

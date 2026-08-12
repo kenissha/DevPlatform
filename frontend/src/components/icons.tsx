@@ -128,3 +128,13 @@ export function OverviewIcon({ className }: IconProps) {
     </svg>
   )
 }
+
+export function LockIcon({ className }: IconProps) {
+  return (
+    <svg className={className} {...base} aria-hidden="true">
+      <rect x="3" y="7.5" width="10" height="6.5" rx="1.2" />
+      <path d="M5 7.5V5a3 3 0 0 1 6 0v2.5" />
+      <path d="M8 10v2" />
+    </svg>
+  )
+}

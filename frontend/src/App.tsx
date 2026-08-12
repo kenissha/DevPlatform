@@ -3,6 +3,7 @@ import { AuthProvider } from './auth/AuthContext'
 import { AppLayout } from './components/AppLayout'
 import { RequireAuth } from './components/RequireAuth'
 import { NotificationsProvider } from './notifications/NotificationsContext'
+import { AccessPage } from './pages/AccessPage'
 import { AuditPage } from './pages/AuditPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
@@ -39,6 +40,7 @@ export default function App() {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/repos" element={<ReposPage />} />
               <Route path="/audit" element={<AuditPage />} />
+              <Route path="/access" element={<AccessPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/repos/:repo" element={<RepoOverviewPage />} />
               <Route path="/repos/:repo/tasks" element={<RepoTasksPage />} />

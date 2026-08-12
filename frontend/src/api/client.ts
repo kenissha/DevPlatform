@@ -1,4 +1,5 @@
 import type {
+  AccessRegistry,
   AuditEvent,
   Commit,
   Contributor,
@@ -149,9 +150,21 @@ export const api = {
     ),
   listAllDeployments: (status?: DeploymentStatus) =>
     request<DeploymentRequest[]>(`/api/deployments${status ? `?status=${status}` : ''}`),
+
+  // Per-project authorization (Admin-only on the backend). A subject
+  // absent from listAccess's result is unrestricted — see AccessRegistry.
+  listAccess: () => request<AccessRegistry>('/api/access'),
+  setAccess: (subject: string, repos: string[]) =>
+    request<{ repos: string[] }>(`/api/access/${encodeURIComponent(subject)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ repos }),
+    }),
+  clearAccess: (subject: string) =>
+    request<void>(`/api/access/${encodeURIComponent(subject)}`, { method: 'DELETE' }),
 }
 
 export type {
+  AccessRegistry,
   AuditEvent,
   Commit,
   Contributor,

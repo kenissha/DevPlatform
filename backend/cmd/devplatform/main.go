@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/kenissha/DevPlatform/backend/internal/access"
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/backup"
@@ -49,6 +50,11 @@ func main() {
 	auditLogger := audit.New(filepath.Join(cfg.DataDir, "audit.jsonl"))
 	notifyStore := notify.NewStore(filepath.Join(cfg.DataDir, "notifications"))
 	usersStore := users.NewStore(filepath.Join(cfg.DataDir, "users.json"))
+	// accessStore starts with nobody restricted — every repo stays visible
+	// to everyone exactly as before this existed, until an admin calls
+	// PUT /api/access/{subject} for a specific person (see
+	// internal/access's doc comment for why unrestricted is the default).
+	accessStore := access.NewStore(filepath.Join(cfg.DataDir, "access.json"))
 
 	// SMTPHost is the switch: empty means NoopEmailSender-equivalent
 	// behavior (notifications stay panel-only), exactly as before this was
@@ -77,13 +83,15 @@ func main() {
 		Audit:  auditLogger,
 		Notify: notifyStore,
 		Users:  usersStore,
+		Access: accessStore,
 	}
-	repoHandlers := &repoapi.Handlers{Repos: store, Audit: auditLogger}
+	repoHandlers := &repoapi.Handlers{Repos: store, Audit: auditLogger, Access: accessStore}
 	taskHandlers := &taskboard.Handlers{
 		Store:  taskboard.NewStore(filepath.Join(cfg.DataDir, "tasks")),
 		Repos:  store,
 		Audit:  auditLogger,
 		Notify: notifyStore,
+		Access: accessStore,
 	}
 	statsHandlers := &gitstats.Handlers{Repos: store}
 	auditHandlers := &audit.Handlers{Logger: auditLogger}
@@ -126,6 +134,7 @@ func main() {
 		Audit:        auditLogger,
 		Notify:       notifyStore,
 		Users:        usersStore,
+		Access:       accessStore,
 	}
 
 	// BackupDir is the switch: empty means no nightly backup goroutine runs
@@ -149,6 +158,7 @@ func main() {
 		Notifications:  notifyHandlers,
 		Deployments:    deploymentHandlers,
 		Users:          usersStore,
+		Access:         accessStore,
 	})
 
 	log.Printf("devplatform listening on %s", cfg.ListenAddr)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/kenissha/DevPlatform/backend/internal/access"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/notify"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
@@ -99,7 +100,58 @@ func newMux(h *Handlers) *http.ServeMux {
 		authMW(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(h.Approve))))
 	mux.Handle("POST /api/repos/{repo}/merge-requests/{id}/reject",
 		authMW(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(h.Reject))))
+	mux.Handle("GET /api/merge-requests", authMW(http.HandlerFunc(h.ListAll)))
 	return mux
+}
+
+func TestListAll_NarrowsToAllowedReposForARestrictedDeveloper(t *testing.T) {
+	h, _ := newTestHandlers(t)
+	if _, err := h.Repos.Create("other"); err != nil {
+		t.Fatalf("failed to create second repo: %v", err)
+	}
+	// Seeded directly through the store rather than the HTTP handler: Create
+	// validates the source/target branches exist via a real git repo, which
+	// this test doesn't need — only that ListAll's Access filtering hides an
+	// item belonging to a repo the caller isn't allowed to see.
+	if _, err := h.Store.Create("other", "unrelated", "feature", "main", "dev-2"); err != nil {
+		t.Fatalf("failed to seed merge request: %v", err)
+	}
+	h.Access = access.NewStore(t.TempDir() + "/access.json")
+	if err := h.Access.Set("dev-1", []string{"other"}); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+	mux := newMux(h)
+
+	body, _ := json.Marshal(map[string]string{
+		"title":        "Add line two",
+		"sourceBranch": "feature-x",
+		"targetBranch": "main",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/merge-requests", bytes.NewReader(body))
+	req = addAuth(req, t, "dev-1", "developer")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/merge-requests", nil)
+	req = addAuth(req, t, "dev-1", "developer")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	var all []MergeRequest
+	if err := json.Unmarshal(rec.Body.Bytes(), &all); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	// dev-1 is restricted to "other". "sample"'s merge request (the one
+	// just created) must be hidden; "other"'s seeded one must show through.
+	if len(all) != 1 || all[0].Repo != "other" {
+		t.Errorf("got %v, want exactly the one merge request in repo %q", all, "other")
+	}
 }
 
 func TestCreate_ReturnsCreatedRequest(t *testing.T) {

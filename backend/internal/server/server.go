@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/kenissha/DevPlatform/backend/internal/access"
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/deployment"
@@ -39,6 +40,13 @@ type Deps struct {
 	// Users is the people registry. Optional: when nil, /api/users returns
 	// an empty list and no just-in-time provisioning happens on /api/me.
 	Users *users.Store
+	// Access controls per-person repository visibility (see internal/access,
+	// Faz 3's "proje bazlı yetkilendirme"). Optional: a nil Store means
+	// nobody is restricted, matching the platform's behavior before this
+	// existed. When set, every repo-scoped route below additionally
+	// requires access.RequireRepoAccess to pass, and /api/access exposes
+	// the admin-only management API.
+	Access *access.Store
 }
 
 // NewRouter builds the top-level HTTP router.
@@ -52,6 +60,24 @@ func NewRouter(deps Deps) *http.ServeMux {
 	auditLog := deps.Audit
 	notifications := deps.Notifications
 	deployments := deps.Deployments
+	accessHandlers := &access.Handlers{Store: deps.Access}
+
+	// repoScoped wraps a handler for any route with a {repo} path value:
+	// authentication first, then access.RequireRepoAccess (a nil
+	// deps.Access means nobody is restricted, so this is a no-op until an
+	// admin actually configures one — see access.Store's doc comment).
+	repoScoped := func(h http.Handler) http.Handler {
+		return authMiddleware(access.RequireRepoAccess(deps.Access, h))
+	}
+	// repoScopedAdmin is repoScoped plus an Admin-only check, for
+	// repo-scoped actions that were already Admin-gated (approving a merge
+	// request or deploy) — project visibility is checked before role,
+	// so a developer restricted away from a repo gets the same 403 an
+	// outsider would, rather than a role-based one revealing the repo's
+	// admin-only actions exist at all.
+	repoScopedAdmin := func(h http.Handler) http.Handler {
+		return authMiddleware(access.RequireRepoAccess(deps.Access, auth.RequireRole(auth.RoleAdmin, h)))
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealth)
@@ -65,46 +91,50 @@ func NewRouter(deps Deps) *http.ServeMux {
 	mux.Handle("GET /api/me", authMiddleware(handleMe(deps.Users)))
 	mux.Handle("GET /api/users", authMiddleware(handleUsers(deps.Users)))
 
-	// Any authenticated user can list repos and branches; creating a repo
-	// is an administrative action (project setup), so it's Admin-only.
+	// Any authenticated user can list repos (List narrows the result to
+	// what they're allowed to see itself — no {repo} in this path for
+	// repoScoped to check); creating a repo is an administrative action
+	// (project setup), so it's Admin-only. Branches is repo-scoped.
 	mux.Handle("GET /api/repos", authMiddleware(http.HandlerFunc(repos.List)))
 	mux.Handle("POST /api/repos", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(repos.Create))))
-	mux.Handle("GET /api/repos/{repo}/branches", authMiddleware(http.HandlerFunc(repos.Branches)))
+	mux.Handle("GET /api/repos/{repo}/branches", repoScoped(http.HandlerFunc(repos.Branches)))
 
 	// Any authenticated user (Developer or Admin) can open a merge request
 	// or read its diff; only an Admin can approve/reject it — "kör onay
 	// yoktur" is enforced by Get always recomputing the diff live, and
 	// approve/reject being gated separately from create/list.
-	mux.Handle("POST /api/repos/{repo}/merge-requests", authMiddleware(http.HandlerFunc(mr.Create)))
-	mux.Handle("GET /api/repos/{repo}/merge-requests", authMiddleware(http.HandlerFunc(mr.List)))
-	mux.Handle("GET /api/repos/{repo}/merge-requests/{id}", authMiddleware(http.HandlerFunc(mr.Get)))
-	mux.Handle("POST /api/repos/{repo}/merge-requests/{id}/approve",
-		authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(mr.Approve))))
-	mux.Handle("POST /api/repos/{repo}/merge-requests/{id}/reject",
-		authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(mr.Reject))))
+	mux.Handle("POST /api/repos/{repo}/merge-requests", repoScoped(http.HandlerFunc(mr.Create)))
+	mux.Handle("GET /api/repos/{repo}/merge-requests", repoScoped(http.HandlerFunc(mr.List)))
+	mux.Handle("GET /api/repos/{repo}/merge-requests/{id}", repoScoped(http.HandlerFunc(mr.Get)))
+	mux.Handle("POST /api/repos/{repo}/merge-requests/{id}/approve", repoScopedAdmin(http.HandlerFunc(mr.Approve)))
+	mux.Handle("POST /api/repos/{repo}/merge-requests/{id}/reject", repoScopedAdmin(http.HandlerFunc(mr.Reject)))
 
 	// The task board has no Admin-only actions — see taskboard.Store.Update's
 	// doc comment for why it's deliberately lighter-weight than merge
 	// request review.
-	mux.Handle("POST /api/repos/{repo}/tasks", authMiddleware(http.HandlerFunc(tasks.Create)))
-	mux.Handle("GET /api/repos/{repo}/tasks", authMiddleware(http.HandlerFunc(tasks.List)))
-	mux.Handle("GET /api/repos/{repo}/tasks/{id}", authMiddleware(http.HandlerFunc(tasks.Get)))
-	mux.Handle("PATCH /api/repos/{repo}/tasks/{id}", authMiddleware(http.HandlerFunc(tasks.Update)))
+	mux.Handle("POST /api/repos/{repo}/tasks", repoScoped(http.HandlerFunc(tasks.Create)))
+	mux.Handle("GET /api/repos/{repo}/tasks", repoScoped(http.HandlerFunc(tasks.List)))
+	mux.Handle("GET /api/repos/{repo}/tasks/{id}", repoScoped(http.HandlerFunc(tasks.Get)))
+	mux.Handle("PATCH /api/repos/{repo}/tasks/{id}", repoScoped(http.HandlerFunc(tasks.Update)))
 
 	// Cross-repo views. These back the dashboard, which answers "who is
 	// working on what" and "what is waiting on me" across every repository
 	// at once — questions the per-repo endpoints above can't answer without
-	// the client fanning out a request per repo.
+	// the client fanning out a request per repo. No {repo} in these paths
+	// for repoScoped to check; each handler narrows its own result via its
+	// Access field instead (see taskboard.Handlers.Access's doc comment).
 	mux.Handle("GET /api/tasks", authMiddleware(http.HandlerFunc(tasks.ListAll)))
 	mux.Handle("GET /api/merge-requests", authMiddleware(http.HandlerFunc(mr.ListAll)))
 
-	// Repository insight: read-only, so not role-gated.
-	mux.Handle("GET /api/repos/{repo}/commits", authMiddleware(http.HandlerFunc(stats.Commits)))
-	mux.Handle("GET /api/repos/{repo}/contributors", authMiddleware(http.HandlerFunc(stats.Contributors)))
-	mux.Handle("GET /api/repos/{repo}/activity", authMiddleware(http.HandlerFunc(stats.Activity)))
+	// Repository insight: read-only, so not role-gated (still repo-scoped).
+	mux.Handle("GET /api/repos/{repo}/commits", repoScoped(http.HandlerFunc(stats.Commits)))
+	mux.Handle("GET /api/repos/{repo}/contributors", repoScoped(http.HandlerFunc(stats.Contributors)))
+	mux.Handle("GET /api/repos/{repo}/activity", repoScoped(http.HandlerFunc(stats.Activity)))
 
 	// The audit log is readable by any authenticated user — see
-	// audit.Handlers' doc comment for why it isn't Admin-gated.
+	// audit.Handlers' doc comment for why it isn't Admin-gated. Not
+	// repo-scoped: it spans every repo already, same as the /api/tasks-style
+	// aggregate views above.
 	mux.Handle("GET /api/audit", authMiddleware(http.HandlerFunc(auditLog.List)))
 
 	// Per-user notifications: every authenticated user can list and mark
@@ -116,15 +146,22 @@ func NewRouter(deps Deps) *http.ServeMux {
 	// status; only an Admin can approve (which actually runs the deploy)
 	// or reject — the same review-then-act split merge requests already
 	// use, see deployment.Handlers.Approve's doc comment.
-	mux.Handle("GET /api/repos/{repo}/deploy-targets", authMiddleware(http.HandlerFunc(deployments.Environments)))
-	mux.Handle("POST /api/repos/{repo}/deployments", authMiddleware(http.HandlerFunc(deployments.Create)))
-	mux.Handle("GET /api/repos/{repo}/deployments", authMiddleware(http.HandlerFunc(deployments.List)))
-	mux.Handle("GET /api/repos/{repo}/deployments/{id}", authMiddleware(http.HandlerFunc(deployments.Get)))
-	mux.Handle("POST /api/repos/{repo}/deployments/{id}/approve",
-		authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(deployments.Approve))))
-	mux.Handle("POST /api/repos/{repo}/deployments/{id}/reject",
-		authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(deployments.Reject))))
+	mux.Handle("GET /api/repos/{repo}/deploy-targets", repoScoped(http.HandlerFunc(deployments.Environments)))
+	mux.Handle("POST /api/repos/{repo}/deployments", repoScoped(http.HandlerFunc(deployments.Create)))
+	mux.Handle("GET /api/repos/{repo}/deployments", repoScoped(http.HandlerFunc(deployments.List)))
+	mux.Handle("GET /api/repos/{repo}/deployments/{id}", repoScoped(http.HandlerFunc(deployments.Get)))
+	mux.Handle("POST /api/repos/{repo}/deployments/{id}/approve", repoScopedAdmin(http.HandlerFunc(deployments.Approve)))
+	mux.Handle("POST /api/repos/{repo}/deployments/{id}/reject", repoScopedAdmin(http.HandlerFunc(deployments.Reject)))
 	mux.Handle("GET /api/deployments", authMiddleware(http.HandlerFunc(deployments.ListAll)))
+
+	// Per-project authorization management: entirely Admin-only, not
+	// repo-scoped by access.RequireRepoAccess itself (that middleware
+	// checks whether the caller can see one {repo}; this is the API that
+	// decides that for everyone else, so it can't be gated by its own
+	// output).
+	mux.Handle("GET /api/access", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(accessHandlers.List))))
+	mux.Handle("PUT /api/access/{subject}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(accessHandlers.Set))))
+	mux.Handle("DELETE /api/access/{subject}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(accessHandlers.Clear))))
 
 	return mux
 }

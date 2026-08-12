@@ -11,6 +11,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/kenissha/DevPlatform/backend/internal/access"
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/deployment"
@@ -35,22 +36,30 @@ func testAuthMiddleware() func(http.Handler) http.Handler {
 // main.go does. Sharing the store matters: a repo created through POST
 // /api/repos has to be visible to the task and merge request handlers in
 // the same test, which separate per-handler stores would silently break.
-func newTestRouter(t *testing.T) (*http.ServeMux, *repostore.Store) {
+// The returned access.Store is real (not nil) but starts with nobody
+// restricted — identical behavior to a nil one (see access.Store's doc
+// comment) until a test calls Set on it, which is what lets
+// access-specific tests below restrict a subject without needing a
+// separate router construction path.
+func newTestRouter(t *testing.T) (*http.ServeMux, *repostore.Store, *access.Store) {
 	t.Helper()
 	dataDir := t.TempDir()
 	store := repostore.New(dataDir)
 	auditLogger := audit.New(filepath.Join(dataDir, "audit.jsonl"))
+	accessStore := access.NewStore(filepath.Join(dataDir, "access.json"))
 
 	mrHandlers := &mergerequest.Handlers{
-		Store: mergerequest.NewStore(filepath.Join(dataDir, "merge-requests")),
-		Repos: store,
-		Audit: auditLogger,
+		Store:  mergerequest.NewStore(filepath.Join(dataDir, "merge-requests")),
+		Repos:  store,
+		Audit:  auditLogger,
+		Access: accessStore,
 	}
-	repoHandlers := &repoapi.Handlers{Repos: store, Audit: auditLogger}
+	repoHandlers := &repoapi.Handlers{Repos: store, Audit: auditLogger, Access: accessStore}
 	taskHandlers := &taskboard.Handlers{
-		Store: taskboard.NewStore(filepath.Join(dataDir, "tasks")),
-		Repos: store,
-		Audit: auditLogger,
+		Store:  taskboard.NewStore(filepath.Join(dataDir, "tasks")),
+		Repos:  store,
+		Audit:  auditLogger,
+		Access: accessStore,
 	}
 	statsHandlers := &gitstats.Handlers{Repos: store}
 	auditHandlers := &audit.Handlers{Logger: auditLogger}
@@ -65,6 +74,7 @@ func newTestRouter(t *testing.T) (*http.ServeMux, *repostore.Store) {
 		Targets:      deployment.NewTargets(nil),
 		CheckoutRoot: t.TempDir(),
 		Audit:        auditLogger,
+		Access:       accessStore,
 	}
 
 	router := NewRouter(Deps{
@@ -78,8 +88,9 @@ func newTestRouter(t *testing.T) (*http.ServeMux, *repostore.Store) {
 		Notifications:  notifyHandlers,
 		Deployments:    deploymentHandlers,
 		Users:          users.NewStore(filepath.Join(dataDir, "users.json")),
+		Access:         accessStore,
 	})
-	return router, store
+	return router, store, accessStore
 }
 
 func signTestToken(t *testing.T, subject, role string) string {
@@ -121,7 +132,7 @@ func do(t *testing.T, router *http.ServeMux, method, path, subject, role string,
 }
 
 func TestHealthz_ReturnsOK(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, _ := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 
@@ -139,7 +150,7 @@ func TestHealthz_ReturnsOK(t *testing.T) {
 }
 
 func TestMe_RejectsUnauthenticatedRequest(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, _ := newTestRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
 	rec := httptest.NewRecorder()
 
@@ -151,7 +162,7 @@ func TestMe_RejectsUnauthenticatedRequest(t *testing.T) {
 }
 
 func TestMe_ReturnsAuthenticatedUser(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, _ := newTestRouter(t)
 	rec := do(t, router, http.MethodGet, "/api/me", "user-1", "developer", nil)
 
 	if rec.Code != http.StatusOK {
@@ -167,7 +178,7 @@ func TestMe_ReturnsAuthenticatedUser(t *testing.T) {
 }
 
 func TestReposCreate_RejectsNonAdminThroughRouter(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, _ := newTestRouter(t)
 	rec := do(t, router, http.MethodPost, "/api/repos", "dev-1", "developer",
 		map[string]string{"name": "intranet-backend"})
 
@@ -177,7 +188,7 @@ func TestReposCreate_RejectsNonAdminThroughRouter(t *testing.T) {
 }
 
 func TestReposCreate_AllowsAdminThenListReturnsIt(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, _ := newTestRouter(t)
 
 	createRec := do(t, router, http.MethodPost, "/api/repos", "admin-1", "admin",
 		map[string]string{"name": "intranet-backend"})
@@ -199,7 +210,7 @@ func TestReposCreate_AllowsAdminThenListReturnsIt(t *testing.T) {
 }
 
 func TestMergeRequestApprove_RejectsNonAdminThroughRouter(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, _ := newTestRouter(t)
 	rec := do(t, router, http.MethodPost,
 		"/api/repos/sample/merge-requests/0123456789abcdef/approve", "dev-1", "developer", nil)
 
@@ -209,7 +220,7 @@ func TestMergeRequestApprove_RejectsNonAdminThroughRouter(t *testing.T) {
 }
 
 func TestMergeRequestList_ReturnsNotFoundForUnknownRepo(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, _ := newTestRouter(t)
 	rec := do(t, router, http.MethodGet, "/api/repos/does-not-exist/merge-requests", "dev-1", "developer", nil)
 
 	if rec.Code != http.StatusNotFound {
@@ -218,7 +229,7 @@ func TestMergeRequestList_ReturnsNotFoundForUnknownRepo(t *testing.T) {
 }
 
 func TestTasksCreate_AllowsAnyAuthenticatedUserThroughRouter(t *testing.T) {
-	router, store := newTestRouter(t)
+	router, store, _ := newTestRouter(t)
 	if _, err := store.Create("sample"); err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
@@ -232,7 +243,7 @@ func TestTasksCreate_AllowsAnyAuthenticatedUserThroughRouter(t *testing.T) {
 }
 
 func TestTasksListAll_SpansReposAndFiltersByAssignee(t *testing.T) {
-	router, store := newTestRouter(t)
+	router, store, _ := newTestRouter(t)
 	for _, name := range []string{"repo-a", "repo-b"} {
 		if _, err := store.Create(name); err != nil {
 			t.Fatalf("failed to create test repo: %v", err)
@@ -267,7 +278,7 @@ func TestTasksListAll_SpansReposAndFiltersByAssignee(t *testing.T) {
 }
 
 func TestMergeRequestsListAll_ReturnsEmptyArrayWhenNoRepos(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, _ := newTestRouter(t)
 	rec := do(t, router, http.MethodGet, "/api/merge-requests", "dev-1", "developer", nil)
 
 	if rec.Code != http.StatusOK {
@@ -280,7 +291,7 @@ func TestMergeRequestsListAll_ReturnsEmptyArrayWhenNoRepos(t *testing.T) {
 }
 
 func TestUsers_AreRegisteredJustInTimeOnFirstCall(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, _ := newTestRouter(t)
 
 	// Nobody has called /api/me yet, so the registry is empty.
 	before := do(t, router, http.MethodGet, "/api/users", "dev-1", "developer", nil)
@@ -313,7 +324,7 @@ func TestUsers_AreRegisteredJustInTimeOnFirstCall(t *testing.T) {
 }
 
 func TestAudit_RecordsActionsTakenThroughTheAPI(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, _ := newTestRouter(t)
 
 	createRec := do(t, router, http.MethodPost, "/api/repos", "admin-1", "admin",
 		map[string]string{"name": "intranet-backend"})
@@ -351,7 +362,7 @@ func TestAudit_RecordsActionsTakenThroughTheAPI(t *testing.T) {
 }
 
 func TestAudit_ReturnsEmptyArrayBeforeAnythingHappens(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, _ := newTestRouter(t)
 	rec := do(t, router, http.MethodGet, "/api/audit", "dev-1", "developer", nil)
 
 	if rec.Code != http.StatusOK {
@@ -363,7 +374,7 @@ func TestAudit_ReturnsEmptyArrayBeforeAnythingHappens(t *testing.T) {
 }
 
 func TestActivity_ReturnsNotFoundForUnknownRepo(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, _ := newTestRouter(t)
 	rec := do(t, router, http.MethodGet, "/api/repos/does-not-exist/activity", "dev-1", "developer", nil)
 
 	if rec.Code != http.StatusNotFound {
@@ -372,7 +383,7 @@ func TestActivity_ReturnsNotFoundForUnknownRepo(t *testing.T) {
 }
 
 func TestActivity_ReturnsRequestedNumberOfDays(t *testing.T) {
-	router, store := newTestRouter(t)
+	router, store, _ := newTestRouter(t)
 	if _, err := store.Create("sample"); err != nil {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
@@ -387,5 +398,128 @@ func TestActivity_ReturnsRequestedNumberOfDays(t *testing.T) {
 	}
 	if len(days) != 5 {
 		t.Fatalf("got %d days, want 5", len(days))
+	}
+}
+
+func TestAccess_RestrictedDeveloperIsBlockedFromAnUngrantedRepoThroughEveryRepoScopedRoute(t *testing.T) {
+	router, store, accessStore := newTestRouter(t)
+	if _, err := store.Create("intranet-backend"); err != nil {
+		t.Fatalf("failed to create test repo: %v", err)
+	}
+	if err := accessStore.Set("dev-1", []string{"some-other-repo"}); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+
+	for _, tc := range []struct {
+		method, path string
+	}{
+		{http.MethodGet, "/api/repos/intranet-backend/branches"},
+		{http.MethodGet, "/api/repos/intranet-backend/tasks"},
+		{http.MethodGet, "/api/repos/intranet-backend/merge-requests"},
+		{http.MethodGet, "/api/repos/intranet-backend/commits"},
+		{http.MethodGet, "/api/repos/intranet-backend/deploy-targets"},
+		{http.MethodGet, "/api/repos/intranet-backend/deployments"},
+	} {
+		rec := do(t, router, tc.method, tc.path, "dev-1", "developer", nil)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("%s %s: status = %d, want %d", tc.method, tc.path, rec.Code, http.StatusForbidden)
+		}
+	}
+}
+
+func TestAccess_RestrictedDeveloperCanStillUseTheirGrantedRepo(t *testing.T) {
+	router, store, accessStore := newTestRouter(t)
+	if _, err := store.Create("intranet-backend"); err != nil {
+		t.Fatalf("failed to create test repo: %v", err)
+	}
+	if err := accessStore.Set("dev-1", []string{"intranet-backend"}); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+
+	rec := do(t, router, http.MethodGet, "/api/repos/intranet-backend/tasks", "dev-1", "developer", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestAccess_AdminBypassesRestrictionEntirely(t *testing.T) {
+	router, store, accessStore := newTestRouter(t)
+	if _, err := store.Create("intranet-backend"); err != nil {
+		t.Fatalf("failed to create test repo: %v", err)
+	}
+	if err := accessStore.Set("admin-1", []string{"some-other-repo"}); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+
+	rec := do(t, router, http.MethodGet, "/api/repos/intranet-backend/tasks", "admin-1", "admin", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestAccess_ReposListIsNarrowedForARestrictedDeveloper(t *testing.T) {
+	router, store, accessStore := newTestRouter(t)
+	for _, name := range []string{"intranet-backend", "intranet-frontend"} {
+		if _, err := store.Create(name); err != nil {
+			t.Fatalf("failed to create test repo: %v", err)
+		}
+	}
+	if err := accessStore.Set("dev-1", []string{"intranet-backend"}); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+
+	rec := do(t, router, http.MethodGet, "/api/repos", "dev-1", "developer", nil)
+	var names []string
+	if err := json.Unmarshal(rec.Body.Bytes(), &names); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(names) != 1 || names[0] != "intranet-backend" {
+		t.Errorf("names = %v, want [intranet-backend]", names)
+	}
+}
+
+func TestAccess_ManagementAPIIsAdminOnly(t *testing.T) {
+	router, _, _ := newTestRouter(t)
+
+	rec := do(t, router, http.MethodGet, "/api/access", "dev-1", "developer", nil)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("GET /api/access as developer: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	rec = do(t, router, http.MethodPut, "/api/access/dev-2", "dev-1", "developer",
+		map[string][]string{"repos": {"intranet-backend"}})
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("PUT /api/access/dev-2 as developer: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
+func TestAccess_AdminCanGrantThenRevokeThroughTheRouter(t *testing.T) {
+	router, store, _ := newTestRouter(t)
+	if _, err := store.Create("intranet-backend"); err != nil {
+		t.Fatalf("failed to create test repo: %v", err)
+	}
+
+	setRec := do(t, router, http.MethodPut, "/api/access/dev-1", "admin-1", "admin",
+		map[string][]string{"repos": {"intranet-backend"}})
+	if setRec.Code != http.StatusOK {
+		t.Fatalf("PUT status = %d, want %d, body: %s", setRec.Code, http.StatusOK, setRec.Body.String())
+	}
+
+	afterGrantRec := do(t, router, http.MethodGet, "/api/repos/intranet-backend/tasks", "dev-1", "developer", nil)
+	if afterGrantRec.Code != http.StatusOK {
+		t.Fatalf("status after grant = %d, want %d", afterGrantRec.Code, http.StatusOK)
+	}
+
+	clearRec := do(t, router, http.MethodDelete, "/api/access/dev-1", "admin-1", "admin", nil)
+	if clearRec.Code != http.StatusNoContent {
+		t.Fatalf("DELETE status = %d, want %d", clearRec.Code, http.StatusNoContent)
+	}
+
+	otherRec := do(t, router, http.MethodGet, "/api/repos/some-other-repo/tasks", "dev-1", "developer", nil)
+	// "some-other-repo" doesn't exist, so this 404s rather than 200s — the
+	// point of this assertion is that it's not a 403 anymore, proving Clear
+	// actually removed the restriction rather than just emptying the list.
+	if otherRec.Code == http.StatusForbidden {
+		t.Errorf("status after clear = %d, want anything but 403 (restriction should be gone)", otherRec.Code)
 	}
 }

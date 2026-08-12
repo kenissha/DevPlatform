@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/kenissha/DevPlatform/backend/internal/access"
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/notify"
@@ -27,6 +28,13 @@ type Handlers struct {
 	// internal/notify). Unlike Logger, notify.Store is not itself
 	// nil-receiver-safe, so call sites check h.Notify != nil before use.
 	Notify *notify.Store
+	// Access is optional; a nil Store means every caller sees every repo
+	// (see internal/access). ListAll is the only place this package needs
+	// it: every per-repo endpoint is instead gated by
+	// access.RequireRepoAccess at the router level, but ListAll spans every
+	// repo in one response, so it has to do its own narrowing to keep a
+	// restricted caller from seeing another repo's tasks through it.
+	Access *access.Store
 }
 
 type createRequest struct {
@@ -106,6 +114,13 @@ func (h *Handlers) ListAll(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
 		return
+	}
+	if user, ok := auth.UserFromContext(r.Context()); ok && user.Role != auth.RoleAdmin {
+		repos, err = h.Access.FilterRepos(user.Subject, repos)
+		if err != nil {
+			http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	assignedTo := r.URL.Query().Get("assignedTo")

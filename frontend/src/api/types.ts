@@ -142,3 +142,9 @@ export interface Notification {
   read: boolean
   createdAt: string
 }
+
+// Maps subject -> the repos they're restricted to (see
+// backend/internal/access). A subject absent from this map is
+// unrestricted — they can see every repo. This is the design doc's Faz 3
+// "proje bazlı yetkilendirme".
+export type AccessRegistry = Record<string, string[]>

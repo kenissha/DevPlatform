@@ -14,6 +14,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/kenissha/DevPlatform/backend/internal/access"
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/deploy"
@@ -95,6 +96,7 @@ func newMux(h *Handlers) *http.ServeMux {
 		authMW(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(h.Approve))))
 	mux.Handle("POST /api/repos/{repo}/deployments/{id}/reject",
 		authMW(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(h.Reject))))
+	mux.Handle("GET /api/deployments", authMW(http.HandlerFunc(h.ListAll)))
 	return mux
 }
 
@@ -441,5 +443,48 @@ func TestListAll_SpansRepos(t *testing.T) {
 	}
 	if len(all) != 2 {
 		t.Fatalf("got %d requests, want 2", len(all))
+	}
+}
+
+func TestListAll_NarrowsToAllowedReposForARestrictedDeveloper(t *testing.T) {
+	h, repos := newTestHandlers(t, &fakeCommandRunner{})
+	if _, err := repos.Create("other"); err != nil {
+		t.Fatalf("failed to create second repo: %v", err)
+	}
+	h.Targets = NewTargets([]Target{
+		{Repo: "sample", Environment: "test", Recipe: deploy.RecipeNpm, SiteName: "A"},
+	})
+	h.Access = access.NewStore(t.TempDir() + "/access.json")
+	if err := h.Access.Set("dev-1", []string{"other"}); err != nil {
+		t.Fatalf("Set failed: %v", err)
+	}
+	mux := newMux(h)
+
+	body, _ := json.Marshal(map[string]string{"environment": "test", "sourceBranch": "main"})
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/deployments", bytes.NewReader(body))
+	req = addAuth(req, t, "dev-1", "developer")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/deployments", nil)
+	req = addAuth(req, t, "dev-1", "developer")
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	var all []Request
+	if err := json.Unmarshal(rec.Body.Bytes(), &all); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	// dev-1 is restricted to "other", which has no deploy requests — the
+	// request opened against "sample" (a repo they can't see) must not
+	// appear even though it exists.
+	if len(all) != 0 {
+		t.Errorf("got %d requests, want 0 (sample is not in dev-1's allow-list)", len(all))
 	}
 }
