@@ -1,6 +1,6 @@
 # DevPlatform — Nerede Kaldık
 
-Son güncelleme: 2026-08-13 (gerçek SMTP gönderimi + gecelik repo yedeği eklendi)
+Son güncelleme: 2026-08-13 (gerçek SMTP gönderimi + gecelik repo yedeği + proje bazlı yetkilendirme eklendi)
 
 Bu dosya, projeye ara verip geri döndüğünde "ne bitti, ne kaldı, nasıl
 çalıştırırım" sorularının tek cevap yeri. Tasarımın tamamı için
@@ -172,8 +172,8 @@ Diğer küçük notlar (acil değil): `Deploy`'da henüz `context.Context` yok
 | Parça | Durum |
 |---|---|
 | İç git deposu yedeği (gecelik) | ✅ Bitti (2026-08-13) |
+| Proje bazlı yetkilendirme | ✅ Bitti (2026-08-13) |
 | Kişi ekleme/davet akışı | ❌ Başlanmadı (Kişi *kaydı* var — girişte otomatik — ama yönetici tarafından davet yok) |
-| Proje bazlı yetkilendirme | ❌ Başlanmadı |
 
 **2026-08-13 güncelleme — gecelik yedek:** `internal/backup` eklendi.
 Sunucu her gün (varsayılan 02:00, `DEVPLATFORM_BACKUP_HOUR` ile
@@ -197,13 +197,48 @@ kopyalıyor. Tasarım:
   gerçek bir hedefe (ayrı disk, ağ paylaşımı, başka makine) işaret etmek
   senin elinle yapılacak bir sonraki adım, tıpkı SMTP ve Intranet gibi.
 
+**2026-08-13 güncelleme — proje bazlı yetkilendirme:** `internal/access`
+eklendi. Yönetici artık belirli bir kişiyi, sadece izin verilen repolarla
+sınırlayabiliyor — panelde yeni "Proje erişimi" sayfası (sadece yönetici
+görür).
+
+- **Varsayılan: kısıtlanmamış.** Erişim kaydı hiç ayarlanmamış biri tüm
+  repoları görür — bugünkü davranışın aynısı. Bu, deploy hedefleri
+  listesinin tersi bir tercih: deploy hedefleri boşken "hiçbir şey deploy
+  edilemez" güvenli varsayılandı çünkü deploy zaten yeni bir yetenekti; repo
+  görünürlüğü ise herkesin zaten sahip olduğu bir yetenek olduğu için,
+  "varsayılan olarak kısıtlı" burada bu özelliğin devreye girdiği anda
+  mevcut kullanıcıları kilitler, hiç kimseye bir şey geri verilmeden önce.
+  Yönetici belirli bir kişiyi bilerek kısıtlamaya dahil ediyor; bu paketin
+  var olması kimseyi otomatik olarak kısıtlamıyor.
+- **İki seviyeli uygulama:** `access.RequireRepoAccess` middleware'i
+  `server.go`'daki her `{repo}` içeren rotayı (branch'ler, görevler, merge
+  istekleri, istatistikler, deploy istekleri) korurken; `/api/repos`,
+  `/api/tasks`, `/api/merge-requests`, `/api/deployments` gibi "tüm
+  repolar" görünümleri kendi sonuçlarını ayrıca süzüyor (`Access` alanı
+  üzerinden) — yoksa kısıtlı biri, doğrudan erişemediği bir reponun
+  öğelerini "tüm repolar" görünümünden yine de görebilirdi.
+- **Yönetici her zaman istisna.** `auth.RequireRole`'ün "RoleAdmin her
+  kontrolü geçer" kuralıyla aynı: bir yöneticiyi kısıtlamak, kısıtlamayı
+  yönetmeyi imkansız hale getirirdi.
+- Yeni admin-only API: `GET/PUT/DELETE /api/access(/{subject})`.
+- Gerçek çalışan sunucuya karşı elle doğrulandı (sadece testlerle değil):
+  iki repo oluşturuldu, bir geliştirici birine kısıtlandı, her repo-scoped
+  rotanın izin verilmeyen repo için 403 döndüğü, `/api/repos`'un süzüldüğü,
+  yöneticinin etkilenmediği ve kısıtlama kaldırılınca her iki reponun da
+  geri geldiği doğrulandı.
+- **Görsel/tarayıcı testi yapılmadı** — bu ortamda tarayıcı otomasyon aracı
+  yok. Frontend `tsc -b && vite build` ve `oxlint` ile temiz derleniyor,
+  API sözleşmesi gerçek sunucuya karşı curl ile doğrulandı, ama "Proje
+  erişimi" sayfasının kendisi bir tarayıcıda tıklanarak denenmedi.
+
 ## Sıradaki iş
 
 Faz 1 bitti (SMTP dahil). Faz 2'nin build+deploy+rollback mekanizması
 artık panelden gerçekten tetiklenebiliyor (bkz. yukarısı). Faz 3'ten
-gecelik yedek bitti; kişi ekleme/davet ve proje bazlı yetkilendirme kaldı.
-Kalan gerçek iş büyük ölçüde kod değil, **ops + gözetimli bir oturum**
-gerektiriyor: gerçek Intranet-F/Intranet-B'yi
+gecelik yedek ve proje bazlı yetkilendirme bitti; kişi ekleme/davet akışı
+kaldı. Kalan gerçek iş büyük ölçüde kod değil, **ops + gözetimli bir
+oturum** gerektiriyor: gerçek Intranet-F/Intranet-B'yi
 `DEVPLATFORM_DEPLOY_TARGETS_FILE`'a hedef olarak eklemek ve ilk gerçek
 deploy'u birlikte izlemek (IIS site adları, recipe'ler, gerçek appsettings
 için secretsctl ile secrets'ı önceden yüklemek gerekecek — "IIS / deploy —
@@ -212,24 +247,31 @@ içerik konumuna, dikkat). Gerçek SMTP sunucu bilgilerini
 (`DEVPLATFORM_SMTP_*`) ve gerçek yedek hedefini (`DEVPLATFORM_BACKUP_DIR`)
 girmek de aynı şekilde senin elinle, gözetimli yapılacak birer adım.
 
-Kod tarafında kalan gerçek iş: Faz 3'ün kişi ekleme/davet akışı ve proje
-bazlı yetkilendirmesi. "Kişi ekleme" tasarımda "kurumsal personel
-veritabanından seçerek ekleme" olarak tanımlı — bizim gerçek bir kurumsal
-veritabanına erişimimiz yok, bu yüzden muhtemelen SMTP'de izlenen desenle
-aynı şekilde ele alınacak: yönetici panelden e-posta/kimlik girerek davet
-kaydı oluşturur (gerçek AD/HR entegrasyonu olmadan), davet e-postası zaten
-kurulu SMTP altyapısıyla gider.
+Kod tarafında kalan gerçek iş: Faz 3'ün kişi ekleme/davet akışı. Tasarımda
+"kurumsal personel veritabanından seçerek ekleme" olarak tanımlı — bizim
+gerçek bir kurumsal veritabanına erişimimiz yok, bu yüzden muhtemelen
+SMTP'de izlenen desenle aynı şekilde ele alınacak: yönetici panelden
+e-posta/kimlik girerek davet kaydı oluşturur (gerçek AD/HR entegrasyonu
+olmadan), davet e-postası zaten kurulu SMTP altyapısıyla gider.
 
-Küçük, engelleyici olmayan bir not: `internal/mergerequest`'te
-`TestList_ReturnsAllRequestsNewestFirst` nadiren "flaky" — arka arkaya
-iki `Create` çağrısı aynı `time.Now().UTC()` değerine denk gelirse
-`CreatedAt`'e göre sıralama kararsız oluyor. Bu oturumda dokunulmadı
-(SMTP kapsamı dışında, önceden var olan kod); 5 kez izole çalıştırıldı ve
-hep geçti, tek seferlik bir tesadüf olarak doğrulandı. İleride düzeltilecekse
-çözüm muhtemelen sıralamaya ikincil bir anahtar (ör. ID) eklemek.
+Küçük, engelleyici olmayan bir not: aynı `CreatedAt`-tabanlı "en yeni
+önce" sıralama flake'i artık iki yerde görüldü — `internal/mergerequest`'te
+`TestList_ReturnsAllRequestsNewestFirst` ve `internal/notify`'da
+`TestListForUser_NewestFirst`. Arka arkaya iki `Create` çağrısı aynı
+`time.Now().UTC()` değerine denk gelirse sıralama kararsız oluyor. Bu
+oturumda da dokunulmadı (proje kapsamı dışında, önceden var olan kod);
+izole çalıştırıldığında hep geçiyor, tek seferlik bir tesadüf. İleride
+düzeltilecekse çözüm muhtemelen her iki paketteki sıralamaya da ikincil
+bir anahtar (ör. ID) eklemek.
 
 ## Bilinmesi gereken kararlar
 
+- **Proje erişimi varsayılan olarak kısıtlanmamış, ayrıntı için yukarıdaki
+  2026-08-13 güncellemesine bakın.** Kısa özet: `internal/access`'te
+  erişim kaydı olmayan biri her repoyu görür. Bunu tersine çevirip
+  "varsayılan kısıtlı" yapmak, mevcut kullanıcıları (senin ve iş
+  arkadaşının hesapları dahil) kimseye hiçbir şey atanmadan kilitler —
+  yapılırsa önce her ikisine de tüm repolar elle atanmalı.
 - **Kimlik doğrulama AD'ye doğrudan bağlanmıyor.** Gerçek giriş, senin
   mevcut sisteminde yapılıyor; buraya imzalı bir JWT devrediliyor.
   Değiştirilmesi gereken tek yer `backend/internal/auth/auth.go` —
