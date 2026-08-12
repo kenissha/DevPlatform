@@ -117,3 +117,46 @@ func TestLoad_ReadsSMTPCredentialsAndBaseURLFromEnv(t *testing.T) {
 		t.Errorf("BaseURL = %q, want %q", cfg.BaseURL, "https://devplatform.internal")
 	}
 }
+
+func TestLoad_BackupDirDefaultsToEmptyMeaningNoBackupRuns(t *testing.T) {
+	os.Unsetenv("DEVPLATFORM_BACKUP_DIR")
+
+	cfg := Load()
+
+	// main.go only starts the nightly backup goroutine when this is
+	// non-empty — an accidental default here would mean every fresh
+	// deployment silently starts copying repos to a directory nobody chose.
+	if cfg.BackupDir != "" {
+		t.Errorf("BackupDir = %q, want \"\" by default", cfg.BackupDir)
+	}
+	if cfg.BackupHour != 2 {
+		t.Errorf("BackupHour = %d, want 2 by default", cfg.BackupHour)
+	}
+}
+
+func TestLoad_ReadsBackupSettingsFromEnv(t *testing.T) {
+	os.Setenv("DEVPLATFORM_BACKUP_DIR", "D:\\backups")
+	os.Setenv("DEVPLATFORM_BACKUP_HOUR", "4")
+	defer os.Unsetenv("DEVPLATFORM_BACKUP_DIR")
+	defer os.Unsetenv("DEVPLATFORM_BACKUP_HOUR")
+
+	cfg := Load()
+
+	if cfg.BackupDir != "D:\\backups" {
+		t.Errorf("BackupDir = %q, want %q", cfg.BackupDir, "D:\\backups")
+	}
+	if cfg.BackupHour != 4 {
+		t.Errorf("BackupHour = %d, want 4", cfg.BackupHour)
+	}
+}
+
+func TestLoad_FallsBackToDefaultHourWhenEnvValueIsNotAnInt(t *testing.T) {
+	os.Setenv("DEVPLATFORM_BACKUP_HOUR", "not-a-number")
+	defer os.Unsetenv("DEVPLATFORM_BACKUP_HOUR")
+
+	cfg := Load()
+
+	if cfg.BackupHour != 2 {
+		t.Errorf("BackupHour = %d, want fallback of 2 for an invalid value", cfg.BackupHour)
+	}
+}

@@ -1,6 +1,9 @@
 package config
 
-import "os"
+import (
+	"os"
+	"strconv"
+)
 
 // Config holds runtime configuration read from environment variables.
 type Config struct {
@@ -27,6 +30,14 @@ type Config struct {
 	// doc's "sabit listeden" requirement — a deploy target is server-side
 	// configuration, never something typed into the panel.
 	DeployTargetsFile string
+	// BackupDir, if set, turns on internal/backup's nightly job: every
+	// repository is copied into this directory once a day at BackupHour.
+	// Empty by default — no backup runs until an operator points this at a
+	// real destination (ideally a different disk/machine than DataDir).
+	BackupDir string
+	// BackupHour is the server-local hour (0-23) the nightly backup runs
+	// at. Only meaningful when BackupDir is set.
+	BackupHour int
 }
 
 // Load reads configuration from the environment, falling back to
@@ -66,6 +77,8 @@ func Load() Config {
 		SMTPFrom:          getEnv("DEVPLATFORM_SMTP_FROM", "devplatform@localhost"),
 		BaseURL:           getEnv("DEVPLATFORM_BASE_URL", ""),
 		DeployTargetsFile: getEnv("DEVPLATFORM_DEPLOY_TARGETS_FILE", ""),
+		BackupDir:         getEnv("DEVPLATFORM_BACKUP_DIR", ""),
+		BackupHour:        getEnvInt("DEVPLATFORM_BACKUP_HOUR", 2),
 	}
 }
 
@@ -74,4 +87,16 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func getEnvInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	return n
 }

@@ -99,6 +99,15 @@ func (s *Store) Open(name string) (*git.Repository, error) {
 	return repo, nil
 }
 
+// RootDir returns the directory bare repositories are stored under. It
+// exists for callers that need the raw filesystem location — currently
+// internal/backup, which copies every repo to a backup destination and
+// would otherwise have to duplicate List's directory-listing logic just to
+// rediscover where the repos it lists actually live on disk.
+func (s *Store) RootDir() string {
+	return s.rootDir
+}
+
 // List returns the names of all repositories currently in the store.
 func (s *Store) List() ([]string, error) {
 	entries, err := os.ReadDir(s.rootDir)

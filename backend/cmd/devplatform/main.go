@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
+	"github.com/kenissha/DevPlatform/backend/internal/backup"
 	"github.com/kenissha/DevPlatform/backend/internal/config"
 	"github.com/kenissha/DevPlatform/backend/internal/deploy"
 	"github.com/kenissha/DevPlatform/backend/internal/deployment"
@@ -124,6 +126,16 @@ func main() {
 		Audit:        auditLogger,
 		Notify:       notifyStore,
 		Users:        usersStore,
+	}
+
+	// BackupDir is the switch: empty means no nightly backup goroutine runs
+	// at all, exactly as before this was wired up. Set
+	// DEVPLATFORM_BACKUP_DIR to turn it on.
+	if cfg.BackupDir != "" {
+		log.Printf("nightly repository backup enabled: copying to %q at %02d:00 daily", cfg.BackupDir, cfg.BackupHour)
+		go backup.RunNightly(context.Background(), store, cfg.BackupDir, cfg.BackupHour, 0)
+	} else {
+		log.Printf("no DEVPLATFORM_BACKUP_DIR configured — nightly repository backup is off")
 	}
 
 	router := server.NewRouter(server.Deps{
