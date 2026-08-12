@@ -118,6 +118,28 @@ notlarındaki Minor bulgular — hiçbiri engelleyici değil).
 - **Frontend'in backend binary'sine gömülmesi henüz yapılmadı.**
   Tasarımda var (tek dosya deploy), şu an iki ayrı süreç.
 
+## IIS / deploy — canlıda öğrenilen dersler (2026-08-12)
+
+Faz 2'nin temel mekanizmasını (`internal/deploy`: build → versiyonlu klasör
+→ `appcmd` ile IIS swap) bu makinede gerçek IIS'e karşı kanıtladık
+(`cmd/deploydemo`). Yol boyunca çıkan, koda değil ortama ait 3 gerçek engel:
+
+- **`appcmd.exe` PATH'te değil.** IIS kurulumu `inetsrv`'i PATH'e eklemiyor.
+  Kod artık `%SystemRoot%\System32\inetsrv\appcmd.exe`'yi doğrudan
+  kullanıyor (`internal/deploy/iisswap.go`'daki `appcmdPath()`), PATH'e
+  güvenmiyor — bu düzeltildi, tekrar karşılaşılmayacak.
+- **IIS'e verilen fiziksel yol mutlak olmalı.** Göreli yol verilirse appcmd
+  hatasız döner ama site 404 verir. `IISSwapper.SetPhysicalPath` artık
+  mutlak olmayan yolu reddediyor (kod tarafı düzeltildi).
+- **IIS içeriği kullanıcı profili altında olmamalı.** `C:\Users\<kullanıcı>\...`
+  altındaki bir klasörü IIS'in anonim kimliği okuyamıyor (401.3/500.19) —
+  `icacls ... /grant IIS_IUSRS:(OI)(CI)RX` kısmi çözdü ama üst klasörlerden
+  biri (muhtemelen `Desktop` ya da kullanıcı profili) hâlâ engelliyordu.
+  **Kalıcı çözüm, kod değil, konum:** IIS içeriği/versiyon klasörleri
+  `C:\inetpub\...` gibi, kullanıcı profilinin dışında bir yerde tutulmalı —
+  gerçek Intranet'e bağlanırken deploy verisinin kök klasörü buna göre
+  seçilmeli (`DEVPLATFORM_DATA_DIR` ya da deploy'a özel ayrı bir kök).
+
 ## Kontroller
 
 ```bash
