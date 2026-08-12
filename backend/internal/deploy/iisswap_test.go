@@ -36,7 +36,7 @@ func TestSetPhysicalPath_InvokesAppcmdWithExpectedArguments(t *testing.T) {
 	}
 	got := runner.calls[0]
 	want := []string{
-		"appcmd", "set", "vdir", "DevPlatform Test Site/",
+		appcmdPath(), "set", "vdir", "DevPlatform Test Site/",
 		`/physicalPath:C:\releases\sample\test\20260812T000000.000000000`,
 	}
 	if len(got) != len(want) {
