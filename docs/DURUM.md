@@ -69,7 +69,13 @@ Kullanıcı/şifre `DEVPLATFORM_GIT_USERNAME` / `_PASSWORD` ile ayarlanır.
 | Audit log | ✅ Bitti |
 | Kimlik doğrulama & roller | ✅ Bitti (JWT devri; gerçek AD bağlantısı sende) |
 | Kişi kaydı (assignee listesi) | ✅ Bitti (girişte otomatik kaydolur) |
-| Bildirim (panel içi + e-posta) | ❌ **Sıradaki iş** |
+| Bildirim (panel içi; e-posta yer tutucu) | ✅ Bitti (2026-08-12) |
+
+**Faz 1 tamamlandı.** Tek eksik: e-posta gönderimi gerçek SMTP'ye
+bağlanmadı — `internal/notify.EmailSender` arayüzü ve config'teki
+`DEVPLATFORM_SMTP_*` alanları hazır ama kasıtlı olarak yer tutucu
+(`NoopEmailSender` sadece loglar). Gerçek gönderim bağlanana kadar bu
+şekilde kalacak.
 
 ### Faz 2 — Otomasyon
 
@@ -81,23 +87,13 @@ release + rollback.
 Hiç başlanmadı: kişi ekleme/davet akışı, proje bazlı yetkilendirme,
 gecelik yedekleme. (Kişi *kaydı* var ama davet/yetkilendirme yok.)
 
-## Sıradaki iş: bildirimler
+## Sıradaki iş
 
-Faz 1'in kalan tek maddesi. Tasarım dokümanı şunu istiyor: panel içi
-bildirim + e-posta; tetikleyiciler yeni görev ataması, onay bekleyen
-talep, deploy sonucu.
-
-Artık yapılabilir durumda çünkü kişi kaydı (`internal/users`) alıcıyı
-biliyor. Yapılacaklar:
-
-1. `internal/notify`: kullanıcı başına bildirim listesi (dosya tabanlı,
-   `internal/taskboard` deseniyle aynı), okundu işaretleme.
-2. Tetikleyicileri bağla: görev ataması → atanana; merge isteği açılması
-   → Yönetici rolündeki kişilere (kayıttan bulunur).
-3. `GET /api/notifications`, `POST /api/notifications/{id}/read`.
-4. Frontend: üst barda okunmamış sayacı + bildirim listesi.
-5. E-posta: SMTP ayarları config'e placeholder olarak eklenir
-   (JWT secret'ta yaptığımız gibi), gerçek gönderim arayüz arkasına alınır.
+Faz 1 bitti. Sırada: ya Faz 2'ye (build/deploy otomasyonu) başlamak,
+ya da gerçek SMTP gönderimini bağlamak, ya da bekleyen küçük iyileştirme
+notlarına bakmak (aşağıdaki "Bilinmesi gereken kararlar" ve
+`docs/superpowers/plans/2026-08-12-notifications.md`'nin son inceleme
+notlarındaki Minor bulgular — hiçbiri engelleyici değil).
 
 ## Bilinmesi gereken kararlar
 

@@ -3,6 +3,8 @@ backend/bin/
 *.exe
 *.test
 *.out
+*.log
+backend/data/
 
 # Node / React
 frontend/node_modules/
