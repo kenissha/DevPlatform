@@ -1,11 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
-import type { MergeRequest, Task } from '../api/types'
+import type { DeploymentRequest, MergeRequest, Task } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { BranchIcon } from '../components/icons'
 import { useRepos } from '../repos/ReposContext'
-import { MR_STATUS_BADGE, MR_STATUS_LABELS, TASK_STATUS_BADGE, TASK_STATUS_LABELS } from '../labels'
+import {
+  DEPLOYMENT_STATUS_BADGE,
+  DEPLOYMENT_STATUS_LABELS,
+  MR_STATUS_BADGE,
+  MR_STATUS_LABELS,
+  TASK_STATUS_BADGE,
+  TASK_STATUS_LABELS,
+} from '../labels'
 
 // The platform's landing page: what is waiting on me, and who is working
 // on what across every repository — the "kimin ne üzerinde çalıştığını
@@ -15,13 +22,15 @@ export function DashboardPage() {
   const { repos } = useRepos()
   const [tasks, setTasks] = useState<Task[] | null>(null)
   const [mergeRequests, setMergeRequests] = useState<MergeRequest[] | null>(null)
+  const [deployments, setDeployments] = useState<DeploymentRequest[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    Promise.all([api.listAllTasks(), api.listAllMergeRequests('open')])
-      .then(([t, m]) => {
+    Promise.all([api.listAllTasks(), api.listAllMergeRequests('open'), api.listAllDeployments('pending')])
+      .then(([t, m, d]) => {
         setTasks(t)
         setMergeRequests(m)
+        setDeployments(d)
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }, [])
@@ -58,6 +67,7 @@ export function DashboardPage() {
         <StatTile label="Açık görev" value={openTasks.length} />
         <StatTile label="Bana atanan" value={myTasks.length} />
         <StatTile label="Bekleyen merge" value={mergeRequests?.length ?? 0} />
+        <StatTile label="Bekleyen deploy" value={deployments?.length ?? 0} />
         <StatTile label="Acil" value={urgent.length} />
       </div>
 
@@ -114,6 +124,40 @@ export function DashboardPage() {
                   </span>
                   <span>·</span>
                   {mr.author} açtı
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="section-title">
+        <h2>Onay bekleyen deploy istekleri</h2>
+        <span className="badge badge-neutral">{deployments?.length ?? 0}</span>
+      </div>
+      <div className="card">
+        {deployments === null && <p className="empty-state">Yükleniyor...</p>}
+        {deployments?.length === 0 && <p className="empty-state">Bekleyen deploy isteği yok.</p>}
+        {deployments && deployments.length > 0 && (
+          <ul className="row-list">
+            {deployments.map((d) => (
+              <li key={`${d.repo}-${d.id}`}>
+                <div className="row-main">
+                  <Link to={`/repos/${encodeURIComponent(d.repo)}/deployments`} className="row-title">
+                    {d.repo} → {d.environment}
+                  </Link>
+                  <div className="spacer" />
+                  <span className={`badge ${DEPLOYMENT_STATUS_BADGE[d.status]}`}>
+                    {DEPLOYMENT_STATUS_LABELS[d.status]}
+                  </span>
+                </div>
+                <p className="row-meta">
+                  <span className="branch-chip">
+                    <BranchIcon />
+                    {d.sourceBranch}
+                  </span>
+                  <span>·</span>
+                  {d.author} açtı
                 </p>
               </li>
             ))}

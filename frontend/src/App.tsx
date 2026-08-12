@@ -9,6 +9,7 @@ import { LoginPage } from './pages/LoginPage'
 import { MergeRequestDetailPage } from './pages/MergeRequestDetailPage'
 import { NotificationsPage } from './pages/NotificationsPage'
 import { RepoBranchesPage } from './pages/RepoBranchesPage'
+import { RepoDeploymentsPage } from './pages/RepoDeploymentsPage'
 import { RepoInsightsPage } from './pages/RepoInsightsPage'
 import { RepoMergeRequestsPage } from './pages/RepoMergeRequestsPage'
 import { RepoOverviewPage } from './pages/RepoOverviewPage'
@@ -43,6 +44,7 @@ export default function App() {
               <Route path="/repos/:repo/tasks" element={<RepoTasksPage />} />
               <Route path="/repos/:repo/branches" element={<RepoBranchesPage />} />
               <Route path="/repos/:repo/insights" element={<RepoInsightsPage />} />
+              <Route path="/repos/:repo/deployments" element={<RepoDeploymentsPage />} />
               <Route path="/repos/:repo/merge-requests" element={<RepoMergeRequestsPage />} />
               <Route path="/repos/:repo/merge-requests/:id" element={<MergeRequestDetailPage />} />
             </Route>

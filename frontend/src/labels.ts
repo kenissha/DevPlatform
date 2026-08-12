@@ -1,4 +1,4 @@
-import type { AuditAction, MergeRequestStatus, TaskStatus } from './api/types'
+import type { AuditAction, DeploymentStatus, MergeRequestStatus, TaskStatus } from './api/types'
 
 // Turkish display strings + which badge variant each status wears. Shared
 // so the same status never renders as two different labels/colours on two
@@ -37,6 +37,10 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   'merge_request.opened': 'Merge isteği açıldı',
   'merge_request.approved': 'Merge onaylandı',
   'merge_request.rejected': 'Merge reddedildi',
+  'deployment.opened': 'Deploy isteği açıldı',
+  'deployment.deployed': 'Deploy edildi',
+  'deployment.failed': 'Deploy başarısız',
+  'deployment.rejected': 'Deploy reddedildi',
 }
 
 export const AUDIT_ACTION_BADGE: Record<AuditAction, string> = {
@@ -46,6 +50,24 @@ export const AUDIT_ACTION_BADGE: Record<AuditAction, string> = {
   'merge_request.opened': 'badge-accent',
   'merge_request.approved': 'badge-success',
   'merge_request.rejected': 'badge-danger',
+  'deployment.opened': 'badge-accent',
+  'deployment.deployed': 'badge-success',
+  'deployment.failed': 'badge-danger',
+  'deployment.rejected': 'badge-danger',
+}
+
+export const DEPLOYMENT_STATUS_LABELS: Record<DeploymentStatus, string> = {
+  pending: 'Onay bekliyor',
+  deployed: 'Deploy edildi',
+  failed: 'Başarısız',
+  rejected: 'Reddedildi',
+}
+
+export const DEPLOYMENT_STATUS_BADGE: Record<DeploymentStatus, string> = {
+  pending: 'badge-accent',
+  deployed: 'badge-success',
+  failed: 'badge-danger',
+  rejected: 'badge-danger',
 }
 
 // Keyed by string, not a union like AUDIT_ACTION_LABELS: Notification.kind
@@ -56,11 +78,15 @@ export const AUDIT_ACTION_BADGE: Record<AuditAction, string> = {
 export const NOTIFICATION_KIND_LABELS: Record<string, string> = {
   task_assigned: 'Görev atandı',
   merge_request_opened: 'Merge isteği açıldı',
+  deployment_opened: 'Deploy isteği açıldı',
+  deployment_decided: 'Deploy sonucu',
 }
 
 export const NOTIFICATION_KIND_BADGE: Record<string, string> = {
   task_assigned: 'badge-accent',
   merge_request_opened: 'badge-accent',
+  deployment_opened: 'badge-accent',
+  deployment_decided: 'badge-neutral',
 }
 
 export function formatDate(iso: string): string {

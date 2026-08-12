@@ -3,6 +3,8 @@ import type {
   Commit,
   Contributor,
   DayCount,
+  DeploymentRequest,
+  DeploymentStatus,
   DiffResult,
   MergeRequest,
   MergeRequestDetail,
@@ -123,6 +125,30 @@ export const api = {
   listNotifications: () => request<Notification[]>('/api/notifications'),
   markNotificationRead: (id: string) =>
     request<void>(`/api/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' }),
+
+  listDeployTargetEnvironments: (repo: string) =>
+    request<string[]>(`/api/repos/${encodeURIComponent(repo)}/deploy-targets`),
+  listDeployments: (repo: string) =>
+    request<DeploymentRequest[]>(`/api/repos/${encodeURIComponent(repo)}/deployments`),
+  createDeployment: (repo: string, environment: string, sourceBranch: string) =>
+    request<DeploymentRequest>(`/api/repos/${encodeURIComponent(repo)}/deployments`, {
+      method: 'POST',
+      body: JSON.stringify({ environment, sourceBranch }),
+    }),
+  getDeployment: (repo: string, id: string) =>
+    request<DeploymentRequest>(`/api/repos/${encodeURIComponent(repo)}/deployments/${encodeURIComponent(id)}`),
+  approveDeployment: (repo: string, id: string) =>
+    request<DeploymentRequest>(
+      `/api/repos/${encodeURIComponent(repo)}/deployments/${encodeURIComponent(id)}/approve`,
+      { method: 'POST' },
+    ),
+  rejectDeployment: (repo: string, id: string) =>
+    request<DeploymentRequest>(
+      `/api/repos/${encodeURIComponent(repo)}/deployments/${encodeURIComponent(id)}/reject`,
+      { method: 'POST' },
+    ),
+  listAllDeployments: (status?: DeploymentStatus) =>
+    request<DeploymentRequest[]>(`/api/deployments${status ? `?status=${status}` : ''}`),
 }
 
 export type {
@@ -130,6 +156,7 @@ export type {
   Commit,
   Contributor,
   DayCount,
+  DeploymentRequest,
   DiffResult,
   MergeRequest,
   MergeRequestDetail,

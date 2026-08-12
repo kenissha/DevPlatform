@@ -7,6 +7,7 @@ import {
   BellIcon,
   BranchIcon,
   ChartIcon,
+  DeployIcon,
   LogoMark,
   MergeIcon,
   OverviewIcon,
@@ -122,6 +123,12 @@ export function AppLayout() {
                   <NavLink to={`/repos/${encodeURIComponent(repo)}/insights`} className={navClass}>
                     <ChartIcon />
                     <span className="nav-label">İstatistikler</span>
+                  </NavLink>
+                </li>
+                <li>
+                  <NavLink to={`/repos/${encodeURIComponent(repo)}/deployments`} className={navClass}>
+                    <DeployIcon />
+                    <span className="nav-label">Deploy</span>
                   </NavLink>
                 </li>
               </ul>

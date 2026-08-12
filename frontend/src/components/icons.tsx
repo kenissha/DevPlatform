@@ -90,6 +90,16 @@ export function AuditIcon({ className }: IconProps) {
   )
 }
 
+export function DeployIcon({ className }: IconProps) {
+  return (
+    <svg className={className} {...base} aria-hidden="true">
+      <path d="M8 1.5c1.8 1.8 2.5 4 2.5 6.2 0 1.5-.5 2.8-1.2 3.8L8 13.5l-1.3-2c-.7-1-1.2-2.3-1.2-3.8 0-2.2.7-4.4 2.5-6.2Z" />
+      <circle cx="8" cy="7" r="1.3" />
+      <path d="M5.8 10.8 4 12.5v-2M10.2 10.8l1.8 1.7v-2" />
+    </svg>
+  )
+}
+
 export function ChartIcon({ className }: IconProps) {
   return (
     <svg className={className} {...base} aria-hidden="true">

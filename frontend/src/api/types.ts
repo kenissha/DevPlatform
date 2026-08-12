@@ -59,6 +59,10 @@ export type AuditAction =
   | 'merge_request.opened'
   | 'merge_request.approved'
   | 'merge_request.rejected'
+  | 'deployment.opened'
+  | 'deployment.deployed'
+  | 'deployment.failed'
+  | 'deployment.rejected'
 
 export interface AuditEvent {
   at: string
@@ -110,6 +114,25 @@ export interface Task {
 // backend without a frontend type change, same reasoning as AuditEvent's
 // optional fields. NOTIFICATION_KIND_LABELS in labels.ts falls back to the
 // raw kind for anything it doesn't recognise.
+export type DeploymentStatus = 'pending' | 'deployed' | 'failed' | 'rejected'
+
+// A request to release repo's sourceBranch into environment — mirrors
+// backend/internal/deployment.Request. Approving one actually runs the
+// build+version+IIS-swap pipeline, so releaseDir/failureReason are only
+// populated once Status has left "pending".
+export interface DeploymentRequest {
+  id: string
+  repo: string
+  environment: string
+  sourceBranch: string
+  author: string
+  status: DeploymentStatus
+  releaseDir?: string
+  failureReason?: string
+  createdAt: string
+  decidedAt?: string
+}
+
 export interface Notification {
   id: string
   recipient: string
