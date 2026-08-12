@@ -4,14 +4,22 @@ import "os"
 
 // Config holds runtime configuration read from environment variables.
 type Config struct {
-	ListenAddr  string
-	DataDir     string
-	GitUsername string
-	GitPassword string
-	JWTSecret   string
-	SMTPHost    string
-	SMTPPort    string
-	SMTPFrom    string
+	ListenAddr   string
+	DataDir      string
+	GitUsername  string
+	GitPassword  string
+	JWTSecret    string
+	SMTPHost     string
+	SMTPPort     string
+	SMTPUsername string
+	SMTPPassword string
+	SMTPFrom     string
+	// BaseURL, if set, is prefixed onto a notification's relative link
+	// (e.g. "/repos/x/tasks") when it's included in an outgoing email, so
+	// the link is clickable from a mail client instead of only readable as
+	// text. Empty by default — no sensible local-dev default exists, since
+	// it depends on wherever this server is actually reachable from.
+	BaseURL string
 	// DeployTargetsFile points at a JSON file listing the (repo,
 	// environment) pairs this server is allowed to deploy (see
 	// deployment.LoadTargets). Empty by default: no target is deployable
@@ -37,13 +45,13 @@ type Config struct {
 // DEVPLATFORM_JWT_SECRET before this platform is reachable by anyone but a
 // developer on their own machine.
 //
-// SMTPHost/SMTPPort/SMTPFrom are unused placeholders: internal/notify's
-// NoopEmailSender doesn't read them, and no real EmailSender implementation
-// exists yet to send through them. They exist now only so operators can
-// start setting DEVPLATFORM_SMTP_* in their environment ahead of a future
-// plan that wires a real SMTP-backed EmailSender to these values — unlike
-// GitUsername/GitPassword, there's no sensible non-empty local-dev default
-// for an SMTP host, so they default to "".
+// SMTPHost is the switch main.go checks to decide whether real mail is
+// possible at all: empty (the default) means notify.NoopEmailSender stays
+// in place and notifications remain panel-only, exactly today's behavior.
+// Set it to turn on internal/notify.SMTPEmailSender. SMTPUsername/Password
+// are optional on top of that — leave them empty for an anonymous internal
+// relay that doesn't require AUTH; SMTPEmailSender only attempts AUTH when
+// Username is set AND the server advertises support for it.
 func Load() Config {
 	return Config{
 		ListenAddr:        getEnv("DEVPLATFORM_LISTEN_ADDR", ":8080"),
@@ -52,8 +60,11 @@ func Load() Config {
 		GitPassword:       getEnv("DEVPLATFORM_GIT_PASSWORD", "dev"),
 		JWTSecret:         getEnv("DEVPLATFORM_JWT_SECRET", "dev-not-a-real-secret"),
 		SMTPHost:          getEnv("DEVPLATFORM_SMTP_HOST", ""),
-		SMTPPort:          getEnv("DEVPLATFORM_SMTP_PORT", ""),
-		SMTPFrom:          getEnv("DEVPLATFORM_SMTP_FROM", ""),
+		SMTPPort:          getEnv("DEVPLATFORM_SMTP_PORT", "25"),
+		SMTPUsername:      getEnv("DEVPLATFORM_SMTP_USERNAME", ""),
+		SMTPPassword:      getEnv("DEVPLATFORM_SMTP_PASSWORD", ""),
+		SMTPFrom:          getEnv("DEVPLATFORM_SMTP_FROM", "devplatform@localhost"),
+		BaseURL:           getEnv("DEVPLATFORM_BASE_URL", ""),
 		DeployTargetsFile: getEnv("DEVPLATFORM_DEPLOY_TARGETS_FILE", ""),
 	}
 }

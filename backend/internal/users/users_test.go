@@ -39,6 +39,36 @@ func TestUpsert_CreatesThenRefreshesWithoutDuplicating(t *testing.T) {
 	}
 }
 
+func TestGet_ReturnsKnownUser(t *testing.T) {
+	store := NewStore(filepath.Join(t.TempDir(), "users.json"))
+	if _, err := store.Upsert("dev-1", "dev-1@example.com", "developer"); err != nil {
+		t.Fatalf("Upsert failed: %v", err)
+	}
+
+	got, ok, err := store.Get("dev-1")
+	if err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected ok=true for a known subject")
+	}
+	if got.Email != "dev-1@example.com" {
+		t.Errorf("Email = %q, want %q", got.Email, "dev-1@example.com")
+	}
+}
+
+func TestGet_ReturnsFalseForUnknownSubject(t *testing.T) {
+	store := NewStore(filepath.Join(t.TempDir(), "users.json"))
+
+	_, ok, err := store.Get("nobody")
+	if err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+	if ok {
+		t.Error("expected ok=false for an unknown subject")
+	}
+}
+
 func TestUpsert_RejectsEmptySubject(t *testing.T) {
 	store := NewStore(filepath.Join(t.TempDir(), "users.json"))
 

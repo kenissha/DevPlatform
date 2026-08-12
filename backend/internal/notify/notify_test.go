@@ -1,6 +1,10 @@
 package notify
 
-import "testing"
+import (
+	"errors"
+	"strings"
+	"testing"
+)
 
 func TestCreate_PersistsAndReturnsNotification(t *testing.T) {
 	store := NewStore(t.TempDir())
@@ -176,5 +180,126 @@ func TestMarkRead_CannotMarkAnotherUsersNotificationRead(t *testing.T) {
 	}
 	if notifications[0].Read {
 		t.Error("expected dev-1's notification to remain unread")
+	}
+}
+
+// fakeEmailSender records every call instead of sending anything real.
+type fakeEmailSender struct {
+	calls   []sentEmail
+	failErr error
+}
+
+type sentEmail struct {
+	to, subject, body string
+}
+
+func (f *fakeEmailSender) Send(to, subject, body string) error {
+	f.calls = append(f.calls, sentEmail{to, subject, body})
+	return f.failErr
+}
+
+func TestCreate_SendsEmailWhenSenderAndLookupAreConfigured(t *testing.T) {
+	store := NewStore(t.TempDir())
+	sender := &fakeEmailSender{}
+	store.Sender = sender
+	store.LookupEmail = func(recipient string) (string, bool) {
+		if recipient != "dev-1" {
+			return "", false
+		}
+		return "dev-1@example.com", true
+	}
+
+	if _, err := store.Create("dev-1", "task_assigned", "Görev size atandı", "/repos/x/tasks"); err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	if len(sender.calls) != 1 {
+		t.Fatalf("got %d email sends, want 1", len(sender.calls))
+	}
+	if sender.calls[0].to != "dev-1@example.com" {
+		t.Errorf("to = %q, want %q", sender.calls[0].to, "dev-1@example.com")
+	}
+	if !strings.Contains(sender.calls[0].body, "Görev size atandı") {
+		t.Errorf("body = %q, missing the notification message", sender.calls[0].body)
+	}
+	if !strings.Contains(sender.calls[0].body, "/repos/x/tasks") {
+		t.Errorf("body = %q, missing the link", sender.calls[0].body)
+	}
+	// The subject is always the same fixed string — see sendEmail's doc
+	// comment on why dynamic content never lands in a header.
+	if sender.calls[0].subject != "DevPlatform bildirimi" {
+		t.Errorf("subject = %q, want a fixed value", sender.calls[0].subject)
+	}
+}
+
+func TestCreate_SkipsEmailWhenSenderNotConfigured(t *testing.T) {
+	store := NewStore(t.TempDir())
+	store.LookupEmail = func(string) (string, bool) { return "dev-1@example.com", true }
+	// Sender left nil.
+
+	if _, err := store.Create("dev-1", "task_assigned", "msg", ""); err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	// Nothing to assert on directly (no fake sender wired) — this test's
+	// only job is proving Create doesn't panic or error with a nil Sender.
+}
+
+func TestCreate_SkipsEmailWhenLookupFindsNoAddress(t *testing.T) {
+	store := NewStore(t.TempDir())
+	sender := &fakeEmailSender{}
+	store.Sender = sender
+	store.LookupEmail = func(string) (string, bool) { return "", false }
+
+	if _, err := store.Create("dev-1", "task_assigned", "msg", ""); err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	if len(sender.calls) != 0 {
+		t.Errorf("got %d email sends, want 0 (lookup found no address)", len(sender.calls))
+	}
+}
+
+func TestCreate_PrefixesBaseURLOntoTheEmailedLinkOnly(t *testing.T) {
+	store := NewStore(t.TempDir())
+	sender := &fakeEmailSender{}
+	store.Sender = sender
+	store.LookupEmail = func(string) (string, bool) { return "dev-1@example.com", true }
+	store.BaseURL = "https://devplatform.internal/"
+
+	n, err := store.Create("dev-1", "task_assigned", "msg", "/repos/x/tasks")
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+
+	// The stored, in-app notification keeps the relative link unchanged.
+	if n.Link != "/repos/x/tasks" {
+		t.Errorf("stored Link = %q, want the relative path unchanged", n.Link)
+	}
+
+	if len(sender.calls) != 1 {
+		t.Fatalf("got %d email sends, want 1", len(sender.calls))
+	}
+	if !strings.Contains(sender.calls[0].body, "https://devplatform.internal/repos/x/tasks") {
+		t.Errorf("body = %q, want the absolute URL (no doubled slash)", sender.calls[0].body)
+	}
+}
+
+func TestCreate_SucceedsEvenWhenEmailSendFails(t *testing.T) {
+	store := NewStore(t.TempDir())
+	store.Sender = &fakeEmailSender{failErr: errors.New("smtp: connection refused")}
+	store.LookupEmail = func(string) (string, bool) { return "dev-1@example.com", true }
+
+	n, err := store.Create("dev-1", "task_assigned", "msg", "")
+	if err != nil {
+		t.Fatalf("Create returned error even though only the email send failed: %v", err)
+	}
+
+	// The in-app notification must still be there regardless of the email
+	// outcome — persisting it and mailing it are different operations.
+	notifications, err := store.ListForUser("dev-1")
+	if err != nil {
+		t.Fatalf("ListForUser returned error: %v", err)
+	}
+	if len(notifications) != 1 || notifications[0].ID != n.ID {
+		t.Errorf("notifications = %+v, want the created one to be present", notifications)
 	}
 }

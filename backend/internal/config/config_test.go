@@ -82,3 +82,38 @@ func TestLoad_ReadsSMTPSettingsFromEnv(t *testing.T) {
 		t.Errorf("SMTPFrom = %q, want %q", cfg.SMTPFrom, "devplatform@example.com")
 	}
 }
+
+func TestLoad_SMTPHostDefaultsToEmptyMeaningNoRealMail(t *testing.T) {
+	os.Unsetenv("DEVPLATFORM_SMTP_HOST")
+
+	cfg := Load()
+
+	// main.go's decision to wire a real SMTPEmailSender hinges entirely on
+	// this being non-empty — an accidental non-empty default here would
+	// make every fresh deployment attempt to send real mail to a server
+	// that was never configured.
+	if cfg.SMTPHost != "" {
+		t.Errorf("SMTPHost = %q, want \"\" by default", cfg.SMTPHost)
+	}
+}
+
+func TestLoad_ReadsSMTPCredentialsAndBaseURLFromEnv(t *testing.T) {
+	os.Setenv("DEVPLATFORM_SMTP_USERNAME", "devplatform")
+	os.Setenv("DEVPLATFORM_SMTP_PASSWORD", "s3cret")
+	os.Setenv("DEVPLATFORM_BASE_URL", "https://devplatform.internal")
+	defer os.Unsetenv("DEVPLATFORM_SMTP_USERNAME")
+	defer os.Unsetenv("DEVPLATFORM_SMTP_PASSWORD")
+	defer os.Unsetenv("DEVPLATFORM_BASE_URL")
+
+	cfg := Load()
+
+	if cfg.SMTPUsername != "devplatform" {
+		t.Errorf("SMTPUsername = %q, want %q", cfg.SMTPUsername, "devplatform")
+	}
+	if cfg.SMTPPassword != "s3cret" {
+		t.Errorf("SMTPPassword = %q, want %q", cfg.SMTPPassword, "s3cret")
+	}
+	if cfg.BaseURL != "https://devplatform.internal" {
+		t.Errorf("BaseURL = %q, want %q", cfg.BaseURL, "https://devplatform.internal")
+	}
+}

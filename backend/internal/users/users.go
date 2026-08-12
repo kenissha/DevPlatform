@@ -83,6 +83,21 @@ func (s *Store) Upsert(subject, email, role string) (User, error) {
 	return user, nil
 }
 
+// Get returns the single user identified by subject, if known. Used to
+// resolve a notification recipient (a bare subject) to their email address
+// when sending real mail — see internal/notify's EmailLookup.
+func (s *Store) Get(subject string) (User, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	registry, err := s.load()
+	if err != nil {
+		return User{}, false, err
+	}
+	u, ok := registry[subject]
+	return u, ok, nil
+}
+
 // List returns every known user, most recently seen first.
 func (s *Store) List() ([]User, error) {
 	s.mu.Lock()

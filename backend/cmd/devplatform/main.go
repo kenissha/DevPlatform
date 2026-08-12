@@ -47,6 +47,28 @@ func main() {
 	auditLogger := audit.New(filepath.Join(cfg.DataDir, "audit.jsonl"))
 	notifyStore := notify.NewStore(filepath.Join(cfg.DataDir, "notifications"))
 	usersStore := users.NewStore(filepath.Join(cfg.DataDir, "users.json"))
+
+	// SMTPHost is the switch: empty means NoopEmailSender-equivalent
+	// behavior (notifications stay panel-only), exactly as before this was
+	// wired up at all. Set DEVPLATFORM_SMTP_HOST to turn real mail on.
+	if cfg.SMTPHost != "" {
+		notifyStore.Sender = &notify.SMTPEmailSender{
+			Host:     cfg.SMTPHost,
+			Port:     cfg.SMTPPort,
+			Username: cfg.SMTPUsername,
+			Password: cfg.SMTPPassword,
+			From:     cfg.SMTPFrom,
+		}
+		notifyStore.LookupEmail = func(subject string) (string, bool) {
+			u, ok, err := usersStore.Get(subject)
+			if err != nil || !ok {
+				return "", false
+			}
+			return u.Email, true
+		}
+		notifyStore.BaseURL = cfg.BaseURL
+		log.Printf("sending real email notifications via %s:%s", cfg.SMTPHost, cfg.SMTPPort)
+	}
 	mrHandlers := &mergerequest.Handlers{
 		Store:  mergerequest.NewStore(filepath.Join(cfg.DataDir, "merge-requests")),
 		Repos:  store,
