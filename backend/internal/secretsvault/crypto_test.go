@@ -77,6 +77,25 @@ func TestDecrypt_FailsWithTamperedCiphertext(t *testing.T) {
 	}
 }
 
+func TestEncrypt_ErrorsOnWrongKeyLength(t *testing.T) {
+	shortKey := []byte("0123456789012345") // 16 bytes, would silently be a valid AES-128 key
+	if _, err := Encrypt([]byte("secret data"), shortKey); err != ErrInvalidKeyLength {
+		t.Fatalf("err = %v, want ErrInvalidKeyLength", err)
+	}
+}
+
+func TestDecrypt_ErrorsOnWrongKeyLength(t *testing.T) {
+	ciphertext, err := Encrypt([]byte("secret data"), testKey())
+	if err != nil {
+		t.Fatalf("Encrypt failed: %v", err)
+	}
+
+	shortKey := []byte("0123456789012345") // 16 bytes, would silently be a valid AES-128 key
+	if _, err := Decrypt(ciphertext, shortKey); err != ErrInvalidKeyLength {
+		t.Fatalf("err = %v, want ErrInvalidKeyLength", err)
+	}
+}
+
 func TestLoadKey_ReadsFromEnv(t *testing.T) {
 	key := testKey()
 	encoded := base64StdEncode(key)

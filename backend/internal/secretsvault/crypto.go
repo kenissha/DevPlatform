@@ -51,6 +51,9 @@ func LoadKey() ([]byte, error) {
 // keeps it alongside the data it belongs to instead of needing separate
 // storage.
 func Encrypt(plaintext, key []byte) ([]byte, error) {
+	if len(key) != 32 {
+		return nil, ErrInvalidKeyLength
+	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("secretsvault: %w", err)
@@ -70,6 +73,9 @@ func Encrypt(plaintext, key []byte) ([]byte, error) {
 // authentication — if key is wrong or ciphertext was altered in any way;
 // it never silently returns corrupted plaintext.
 func Decrypt(ciphertext, key []byte) ([]byte, error) {
+	if len(key) != 32 {
+		return nil, ErrInvalidKeyLength
+	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, fmt.Errorf("secretsvault: %w", err)
