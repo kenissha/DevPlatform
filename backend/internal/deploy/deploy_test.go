@@ -1,10 +1,27 @@
 package deploy
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+// fakePruneFailingStore wraps a real *VersionStore to delegate NewRelease
+// normally, but always fails Prune — simulating "release activated but
+// cleanup failed" deterministically, without relying on filesystem-level
+// tricks (permissions, locked files) that are unreliable across platforms.
+type fakePruneFailingStore struct {
+	real *VersionStore
+}
+
+func (f *fakePruneFailingStore) NewRelease(repo, environment string) (string, error) {
+	return f.real.NewRelease(repo, environment)
+}
+
+func (f *fakePruneFailingStore) Prune(repo, environment string, keep int) error {
+	return errors.New("simulated prune failure: release directory locked by another process")
+}
 
 func TestPipeline_Deploy_BuildsVersionsAndSwaps(t *testing.T) {
 	requireTool(t, "npm")
@@ -82,5 +99,42 @@ func TestPipeline_Deploy_PrunesOldReleases(t *testing.T) {
 	}
 	if len(releases) != 2 {
 		t.Fatalf("got %d releases after 3 deploys with keepVersions=2, want 2", len(releases))
+	}
+}
+
+func TestPipeline_Deploy_PruneFailureReturnsReleaseDirAndErrPruneFailed(t *testing.T) {
+	requireTool(t, "npm")
+
+	source, err := filepath.Abs("testdata/npm-fixture")
+	if err != nil {
+		t.Fatalf("failed to resolve fixture path: %v", err)
+	}
+
+	store := &fakePruneFailingStore{real: NewVersionStore(t.TempDir())}
+	runner := &fakeCommandRunner{}
+	pipeline := NewPipeline(&Builder{}, store, NewIISSwapper(runner))
+
+	releaseDir, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 5)
+
+	// The release was already built and activated (SetPhysicalPath ran
+	// successfully — Prune is the only thing that failed), so the caller
+	// must still get back the valid, now-live release directory instead of
+	// an empty string indistinguishable from an actual deploy failure.
+	if releaseDir == "" {
+		t.Fatal("Deploy returned an empty releaseDir on a Prune-only failure; the release was already live and its path must not be lost")
+	}
+	if _, statErr := os.Stat(filepath.Join(releaseDir, "index.html")); statErr != nil {
+		t.Errorf("expected returned releaseDir to be the real, built release dir: %v", statErr)
+	}
+
+	if err == nil {
+		t.Fatal("expected an error when Prune fails, got nil")
+	}
+	if !errors.Is(err, ErrPruneFailed) {
+		t.Errorf("errors.Is(err, ErrPruneFailed) = false, want true; err = %v", err)
+	}
+
+	if len(runner.calls) != 1 {
+		t.Fatalf("got %d appcmd calls, want 1 (SetPhysicalPath must have run before Prune failed)", len(runner.calls))
 	}
 }

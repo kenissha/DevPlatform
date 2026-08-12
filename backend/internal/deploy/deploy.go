@@ -1,17 +1,37 @@
 package deploy
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+// ErrPruneFailed indicates that a release was successfully built and
+// activated (the site IS live on the new release) but pruning old releases
+// afterward failed. Callers can distinguish this from a genuine deploy
+// failure via errors.Is(err, ErrPruneFailed); Deploy still returns the
+// valid, now-live release directory in this case, not an empty string.
+var ErrPruneFailed = errors.New("deploy: release activated but pruning old releases failed")
+
+// releaseStore is the subset of VersionStore's behavior Pipeline depends
+// on, abstracted so tests can simulate a Prune failure without relying on
+// filesystem-level tricks (permissions, locked files) that are unreliable
+// across platforms. *VersionStore already satisfies this interface with
+// no changes needed.
+type releaseStore interface {
+	NewRelease(repo, environment string) (string, error)
+	Prune(repo, environment string, keep int) error
+}
 
 // Pipeline wires the build, versioning, and IIS-swap steps into one
 // deploy operation.
 type Pipeline struct {
 	builder  *Builder
-	versions *VersionStore
+	versions releaseStore
 	iis      *IISSwapper
 }
 
 // NewPipeline returns a Pipeline using the given collaborators.
-func NewPipeline(builder *Builder, versions *VersionStore, iis *IISSwapper) *Pipeline {
+func NewPipeline(builder *Builder, versions releaseStore, iis *IISSwapper) *Pipeline {
 	return &Pipeline{builder: builder, versions: versions, iis: iis}
 }
 
@@ -52,7 +72,12 @@ func (p *Pipeline) Deploy(sourceDir string, recipe Recipe, repo, environment, si
 	}
 
 	if err := p.versions.Prune(repo, environment, keepVersions); err != nil {
-		return "", fmt.Errorf("deploy: deploy succeeded but pruning old releases failed: %w", err)
+		// The release is already live (SetPhysicalPath succeeded above) —
+		// return the valid releaseDir alongside the wrapped sentinel so
+		// callers can tell this apart from an actual deploy failure via
+		// errors.Is(err, ErrPruneFailed) instead of losing the release
+		// path a real deploy did produce.
+		return releaseDir, fmt.Errorf("%w: %v", ErrPruneFailed, err)
 	}
 
 	return releaseDir, nil
