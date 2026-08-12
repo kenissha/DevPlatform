@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/kenissha/DevPlatform/backend/internal/secretsvault"
 )
 
 // fakePruneFailingStore wraps a real *VersionStore to delegate NewRelease
@@ -33,9 +35,9 @@ func TestPipeline_Deploy_BuildsVersionsAndSwaps(t *testing.T) {
 
 	vs := NewVersionStore(t.TempDir())
 	runner := &fakeCommandRunner{}
-	pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner))
+	pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner), nil)
 
-	releaseDir, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 5)
+	releaseDir, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 5, "")
 	if err != nil {
 		t.Fatalf("Deploy returned error: %v", err)
 	}
@@ -62,9 +64,9 @@ func TestPipeline_Deploy_RejectsNonPositiveKeepVersions(t *testing.T) {
 	for _, keep := range []int{0, -1} {
 		vs := NewVersionStore(t.TempDir())
 		runner := &fakeCommandRunner{}
-		pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner))
+		pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner), nil)
 
-		_, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", keep)
+		_, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", keep, "")
 		if err == nil {
 			t.Fatalf("Deploy with keepVersions=%d: expected an error, got nil", keep)
 		}
@@ -85,10 +87,10 @@ func TestPipeline_Deploy_PrunesOldReleases(t *testing.T) {
 	source, _ := filepath.Abs("testdata/npm-fixture")
 	vs := NewVersionStore(t.TempDir())
 	runner := &fakeCommandRunner{}
-	pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner))
+	pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner), nil)
 
 	for i := 0; i < 3; i++ {
-		if _, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 2); err != nil {
+		if _, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 2, ""); err != nil {
 			t.Fatalf("Deploy #%d returned error: %v", i, err)
 		}
 	}
@@ -112,9 +114,9 @@ func TestPipeline_Deploy_PruneFailureReturnsReleaseDirAndErrPruneFailed(t *testi
 
 	store := &fakePruneFailingStore{real: NewVersionStore(t.TempDir())}
 	runner := &fakeCommandRunner{}
-	pipeline := NewPipeline(&Builder{}, store, NewIISSwapper(runner))
+	pipeline := NewPipeline(&Builder{}, store, NewIISSwapper(runner), nil)
 
-	releaseDir, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 5)
+	releaseDir, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 5, "")
 
 	// The release was already built and activated (SetPhysicalPath ran
 	// successfully — Prune is the only thing that failed), so the caller
@@ -136,5 +138,72 @@ func TestPipeline_Deploy_PruneFailureReturnsReleaseDirAndErrPruneFailed(t *testi
 
 	if len(runner.calls) != 1 {
 		t.Fatalf("got %d appcmd calls, want 1 (SetPhysicalPath must have run before Prune failed)", len(runner.calls))
+	}
+}
+
+func TestPipeline_Deploy_InjectsSecretsWhenConfigured(t *testing.T) {
+	requireTool(t, "npm")
+
+	source, err := filepath.Abs("testdata/npm-fixture")
+	if err != nil {
+		t.Fatalf("failed to resolve fixture path: %v", err)
+	}
+
+	vs := NewVersionStore(t.TempDir())
+	runner := &fakeCommandRunner{}
+	key := []byte("01234567890123456789012345678901"[:32])
+	secrets := secretsvault.NewStore(t.TempDir(), key)
+	if err := secrets.Put("sample", "test", []byte(`{"connectionString": "test-only"}`)); err != nil {
+		t.Fatalf("failed to seed secrets: %v", err)
+	}
+
+	pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner), secrets)
+
+	releaseDir, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 5, "appsettings.Production.json")
+	if err != nil {
+		t.Fatalf("Deploy returned error: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(releaseDir, "appsettings.Production.json"))
+	if err != nil {
+		t.Fatalf("expected secrets file in release dir: %v", err)
+	}
+	if string(content) != `{"connectionString": "test-only"}` {
+		t.Errorf("secrets file content = %q, want the seeded value", content)
+	}
+}
+
+func TestPipeline_Deploy_SkipsSecretsWhenTargetEmpty(t *testing.T) {
+	requireTool(t, "npm")
+
+	source, _ := filepath.Abs("testdata/npm-fixture")
+	vs := NewVersionStore(t.TempDir())
+	runner := &fakeCommandRunner{}
+	key := []byte("01234567890123456789012345678901"[:32])
+	secrets := secretsvault.NewStore(t.TempDir(), key)
+	// Deliberately not seeding any secrets for "sample"/"test" — proves
+	// Deploy never even tries to read them when secretsTarget is empty.
+	pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner), secrets)
+
+	releaseDir, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 5, "")
+	if err != nil {
+		t.Fatalf("Deploy returned error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(releaseDir, "appsettings.Production.json")); !os.IsNotExist(err) {
+		t.Error("expected no secrets file to be written when secretsTarget is empty")
+	}
+}
+
+func TestPipeline_Deploy_ErrorsWhenSecretsTargetGivenButNoStoreConfigured(t *testing.T) {
+	requireTool(t, "npm")
+
+	source, _ := filepath.Abs("testdata/npm-fixture")
+	vs := NewVersionStore(t.TempDir())
+	runner := &fakeCommandRunner{}
+	pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner), nil) // no secrets store
+
+	_, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 5, "appsettings.Production.json")
+	if err == nil {
+		t.Fatal("expected an error when secretsTarget is set but no secrets store is configured")
 	}
 }

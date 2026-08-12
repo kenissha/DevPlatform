@@ -3,6 +3,10 @@ package deploy
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/kenissha/DevPlatform/backend/internal/secretsvault"
 )
 
 // ErrPruneFailed indicates that a release was successfully built and
@@ -28,11 +32,14 @@ type Pipeline struct {
 	builder  *Builder
 	versions releaseStore
 	iis      *IISSwapper
+	secrets  *secretsvault.Store
 }
 
-// NewPipeline returns a Pipeline using the given collaborators.
-func NewPipeline(builder *Builder, versions releaseStore, iis *IISSwapper) *Pipeline {
-	return &Pipeline{builder: builder, versions: versions, iis: iis}
+// NewPipeline returns a Pipeline using the given collaborators. secrets may
+// be nil if this Pipeline will never be asked to inject secrets (Deploy
+// will then error if a caller passes a non-empty secretsTarget).
+func NewPipeline(builder *Builder, versions releaseStore, iis *IISSwapper, secrets *secretsvault.Store) *Pipeline {
+	return &Pipeline{builder: builder, versions: versions, iis: iis, secrets: secrets}
 }
 
 // Deploy builds sourceDir with recipe, writes the result to a fresh
@@ -48,7 +55,7 @@ func NewPipeline(builder *Builder, versions releaseStore, iis *IISSwapper) *Pipe
 // do) directory behind. Cleaning up an empty failed-release directory is
 // not implemented in this proof-of-concept task; note it as a follow-up
 // if this pipeline is extended to handle build failures more gracefully.
-func (p *Pipeline) Deploy(sourceDir string, recipe Recipe, repo, environment, siteName string, keepVersions int) (string, error) {
+func (p *Pipeline) Deploy(sourceDir string, recipe Recipe, repo, environment, siteName string, keepVersions int, secretsTarget string) (string, error) {
 	// keepVersions < 1 would prune the release this call just activated:
 	// Prune keeps only the newest `keep` releases, and the release created
 	// below is always the newest at the point Prune runs. Reject before
@@ -65,6 +72,19 @@ func (p *Pipeline) Deploy(sourceDir string, recipe Recipe, repo, environment, si
 
 	if err := p.builder.Build(sourceDir, recipe, releaseDir); err != nil {
 		return "", fmt.Errorf("deploy: build failed: %w", err)
+	}
+
+	if secretsTarget != "" {
+		if p.secrets == nil {
+			return "", fmt.Errorf("deploy: secretsTarget %q given but no secrets store is configured", secretsTarget)
+		}
+		plaintext, err := p.secrets.Get(repo, environment)
+		if err != nil {
+			return "", fmt.Errorf("deploy: failed to load secrets: %w", err)
+		}
+		if err := os.WriteFile(filepath.Join(releaseDir, secretsTarget), plaintext, 0o640); err != nil {
+			return "", fmt.Errorf("deploy: failed to write secrets into release: %w", err)
+		}
 	}
 
 	if err := p.iis.SetPhysicalPath(siteName, releaseDir); err != nil {
