@@ -1,6 +1,6 @@
 # DevPlatform — Nerede Kaldık
 
-Son güncelleme: 2026-08-13 (gerçek SMTP gönderimi eklendi)
+Son güncelleme: 2026-08-13 (gerçek SMTP gönderimi + gecelik repo yedeği eklendi)
 
 Bu dosya, projeye ara verip geri döndüğünde "ne bitti, ne kaldı, nasıl
 çalıştırırım" sorularının tek cevap yeri. Tasarımın tamamı için
@@ -24,7 +24,8 @@ değiştirilebilir: `DEVPLATFORM_DATA_DIR`, `DEVPLATFORM_LISTEN_ADDR`,
 kapalı, sadece panel içi bildirim): `DEVPLATFORM_SMTP_HOST`,
 `DEVPLATFORM_SMTP_PORT`, `DEVPLATFORM_SMTP_USERNAME`,
 `DEVPLATFORM_SMTP_PASSWORD`, `DEVPLATFORM_SMTP_FROM`,
-`DEVPLATFORM_BASE_URL`.
+`DEVPLATFORM_BASE_URL`. Gecelik repo yedeği için (varsayılan: kapalı):
+`DEVPLATFORM_BACKUP_DIR`, `DEVPLATFORM_BACKUP_HOUR` (varsayılan `2`).
 
 **Frontend** (`:5173`):
 
@@ -168,21 +169,56 @@ Diğer küçük notlar (acil değil): `Deploy`'da henüz `context.Context` yok
 
 ### Faz 3 — Genişleme
 
-Hiç başlanmadı: kişi ekleme/davet akışı, proje bazlı yetkilendirme,
-gecelik yedekleme. (Kişi *kaydı* var ama davet/yetkilendirme yok.)
+| Parça | Durum |
+|---|---|
+| İç git deposu yedeği (gecelik) | ✅ Bitti (2026-08-13) |
+| Kişi ekleme/davet akışı | ❌ Başlanmadı (Kişi *kaydı* var — girişte otomatik — ama yönetici tarafından davet yok) |
+| Proje bazlı yetkilendirme | ❌ Başlanmadı |
+
+**2026-08-13 güncelleme — gecelik yedek:** `internal/backup` eklendi.
+Sunucu her gün (varsayılan 02:00, `DEVPLATFORM_BACKUP_HOUR` ile
+değiştirilebilir) tüm bare repoları `DEVPLATFORM_BACKUP_DIR` altına
+kopyalıyor. Tasarım:
+
+- **Varsayılan olarak kapalı:** `DEVPLATFORM_BACKUP_DIR` boşsa (varsayılan)
+  hiçbir arka plan işi başlamıyor — diğer güvenli varsayılanlarla aynı desen.
+- Kopyalama go-git'in Clone'undan geçmiyor (Windows yol/URL belirsizliği
+  `deploy.Checkout`'ta olduğu gibi burada da sorun olurdu); doğrudan bare
+  repo klasörünü dosya sistemi seviyesinde kopyalıyor.
+- Her repo `<ad>.git.tmp` içine kopyalanıp sonra `<ad>.git`'e rename
+  ediliyor — kopyalama yarıda kesilirse önceki gecenin iyi yedeği yerinde
+  kalıyor, yarım/bozuk bir yedekle asla değişmiyor. Bir reponun kopyalanması
+  başarısız olsa bile diğerleri etkilenmiyor (`Result.Errors`'ta raporlanıyor).
+- `repostore.Store`'a `RootDir()` eklendi — `backup` paketinin bare repo
+  klasörlerinin gerçek disk konumunu, `Store`'un kendi listeleme mantığını
+  tekrarlamadan bulabilmesi için.
+- **Henüz yapılmadı, bilinçli olarak:** yedek hedefi gerçek başka bir
+  disk/makineye ("uzak" bir konuma) bağlanmadı — `DEVPLATFORM_BACKUP_DIR`'i
+  gerçek bir hedefe (ayrı disk, ağ paylaşımı, başka makine) işaret etmek
+  senin elinle yapılacak bir sonraki adım, tıpkı SMTP ve Intranet gibi.
 
 ## Sıradaki iş
 
 Faz 1 bitti (SMTP dahil). Faz 2'nin build+deploy+rollback mekanizması
-artık panelden gerçekten tetiklenebiliyor (bkz. yukarısı). Kalan gerçek
-iş, kod değil, **ops + gözetimli bir oturum** gerektiriyor: gerçek
-Intranet-F/Intranet-B'yi `DEVPLATFORM_DEPLOY_TARGETS_FILE`'a hedef olarak
-eklemek ve ilk gerçek deploy'u birlikte izlemek (IIS site adları,
-recipe'ler, gerçek appsettings için secretsctl ile secrets'ı önceden
-yüklemek gerekecek — "IIS / deploy — canlıda öğrenilen dersler"
-bölümündeki 3 nottan özellikle üçüncüsüne, içerik konumuna, dikkat).
-Gerçek SMTP sunucu bilgilerini (`DEVPLATFORM_SMTP_*`) girmek de aynı
-şekilde senin elinle, gözetimli yapılacak bir adım.
+artık panelden gerçekten tetiklenebiliyor (bkz. yukarısı). Faz 3'ten
+gecelik yedek bitti; kişi ekleme/davet ve proje bazlı yetkilendirme kaldı.
+Kalan gerçek iş büyük ölçüde kod değil, **ops + gözetimli bir oturum**
+gerektiriyor: gerçek Intranet-F/Intranet-B'yi
+`DEVPLATFORM_DEPLOY_TARGETS_FILE`'a hedef olarak eklemek ve ilk gerçek
+deploy'u birlikte izlemek (IIS site adları, recipe'ler, gerçek appsettings
+için secretsctl ile secrets'ı önceden yüklemek gerekecek — "IIS / deploy —
+canlıda öğrenilen dersler" bölümündeki 3 nottan özellikle üçüncüsüne,
+içerik konumuna, dikkat). Gerçek SMTP sunucu bilgilerini
+(`DEVPLATFORM_SMTP_*`) ve gerçek yedek hedefini (`DEVPLATFORM_BACKUP_DIR`)
+girmek de aynı şekilde senin elinle, gözetimli yapılacak birer adım.
+
+Kod tarafında kalan gerçek iş: Faz 3'ün kişi ekleme/davet akışı ve proje
+bazlı yetkilendirmesi. "Kişi ekleme" tasarımda "kurumsal personel
+veritabanından seçerek ekleme" olarak tanımlı — bizim gerçek bir kurumsal
+veritabanına erişimimiz yok, bu yüzden muhtemelen SMTP'de izlenen desenle
+aynı şekilde ele alınacak: yönetici panelden e-posta/kimlik girerek davet
+kaydı oluşturur (gerçek AD/HR entegrasyonu olmadan), davet e-postası zaten
+kurulu SMTP altyapısıyla gider.
 
 Küçük, engelleyici olmayan bir not: `internal/mergerequest`'te
 `TestList_ReturnsAllRequestsNewestFirst` nadiren "flaky" — arka arkaya
