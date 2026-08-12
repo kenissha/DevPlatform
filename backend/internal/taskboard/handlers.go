@@ -68,9 +68,12 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 	_ = h.Audit.Log(user.Subject, audit.ActionTaskCreated, repo, task.ID, "Görev açıldı: "+task.Title)
 
 	if task.AssignedTo != "" && h.Notify != nil {
+		// Link points at the task list page, not a per-task detail route —
+		// the frontend has no /repos/{repo}/tasks/{id} route to land on
+		// (see RepoTasksPage in frontend/src/App.tsx), only the list.
 		_, _ = h.Notify.Create(task.AssignedTo, "task_assigned",
 			"Görev size atandı: "+task.Title+" ("+repo+")",
-			"/repos/"+repo+"/tasks/"+task.ID)
+			"/repos/"+repo+"/tasks")
 	}
 
 	writeJSON(w, http.StatusCreated, task)
@@ -197,9 +200,10 @@ func (h *Handlers) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.AssignedTo != nil && *req.AssignedTo != "" && *req.AssignedTo != previousAssignedTo && h.Notify != nil {
+		// Same list-page link as Create — see the comment there.
 		_, _ = h.Notify.Create(task.AssignedTo, "task_assigned",
 			"Bir görev size atandı: "+task.Title+" ("+repo+")",
-			"/repos/"+repo+"/tasks/"+task.ID)
+			"/repos/"+repo+"/tasks")
 	}
 
 	writeJSON(w, http.StatusOK, task)

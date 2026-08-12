@@ -267,6 +267,11 @@ func TestCreate_NotifiesAssignee(t *testing.T) {
 	if !strings.Contains(notifications[0].Message, "Fix login bug") {
 		t.Errorf("Message = %q, want it to mention the task title", notifications[0].Message)
 	}
+	// Link must point at the task list page (the only route the frontend
+	// actually has), not a per-task detail route that doesn't exist.
+	if notifications[0].Link != "/repos/sample/tasks" {
+		t.Errorf("Link = %q, want %q", notifications[0].Link, "/repos/sample/tasks")
+	}
 
 	// The author must not also be notified — only the assignee.
 	authorNotifications, err := n.ListForUser("dev-1")
@@ -331,6 +336,9 @@ func TestUpdate_NotifiesNewAssigneeOnReassignment(t *testing.T) {
 	}
 	if newAssigneeNotifications[0].Kind != "task_assigned" {
 		t.Errorf("Kind = %q, want %q", newAssigneeNotifications[0].Kind, "task_assigned")
+	}
+	if newAssigneeNotifications[0].Link != "/repos/sample/tasks" {
+		t.Errorf("Link = %q, want %q", newAssigneeNotifications[0].Link, "/repos/sample/tasks")
 	}
 
 	// The original assignee (dev-1) should not be notified on reassignment.
