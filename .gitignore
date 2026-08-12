@@ -5,6 +5,7 @@ backend/bin/
 *.out
 *.log
 backend/data/
+backend/deploydemo-data/
 
 # Node / React
 frontend/node_modules/

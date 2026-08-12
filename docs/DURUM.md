@@ -79,8 +79,34 @@ bağlanmadı — `internal/notify.EmailSender` arayüzü ve config'teki
 
 ### Faz 2 — Otomasyon
 
-Hiç başlanmadı: build/deploy otomasyonu, secrets deposu, versiyonlu
-release + rollback.
+| Parça | Durum |
+|---|---|
+| Build + versiyonlu klasör + IIS swap (temel mekanizma) | ✅ Bitti (2026-08-12), gerçek IIS'e karşı kanıtlandı |
+| Secrets deposu (gerçek appsettings enjeksiyonu) | ❌ Başlanmadı |
+| Onay akışına bağlama (panelden tetikleme) | ❌ Başlanmadı |
+| Gerçek Intranet-F/Intranet-B'ye bağlanma | ❌ Başlanmadı — bilinçli olarak sonraya bırakıldı |
+
+`internal/deploy` paketi (`Builder`, `VersionStore`, `IISSwapper`,
+`Pipeline`) hazır ve test edilmiş, ama şimdilik hiçbir HTTP endpoint'ine
+bağlı değil — sadece `cmd/deploydemo` adlı bağımsız bir deneme aracından
+çağrılabiliyor. Faz 2'nin devamına başlarken **taşınması gereken 2 önemli
+not** (son incelemede bulundu, kod bug'ı değil ama gerçek projeye
+bağlanmadan önce mutlaka ele alınmalı):
+
+- **`internal/deploy/build.go`'daki `copyDir` sadece düz (flat) dosyaları
+  kopyalıyor, alt klasörleri sessizce atlıyor.** Gerçek bir React build'i
+  (`assets/` gibi alt klasörlü) deploy edilirse, site 200 döner ama
+  hash'li JS/CSS dosyaları 404 verir — hatasız görünen ama kırık bir
+  deploy. Gerçek bir frontend projesine bağlanmadan önce bu fonksiyon
+  recursive yapılmalı (ya da en azından alt klasör görünce hata versin).
+- **`Pipeline.Deploy`'da `Prune` başarısız olursa, site aslında canlıya
+  çıkmış olsa bile tüm deploy "başarısız" olarak dönüyor.** Onay/audit
+  katmanı bunu sarmalamadan önce, "site güncellendi ama eski versiyonlar
+  temizlenemedi" ile "site hiç güncellenmedi" ayrımı net şekilde
+  yapılmalı.
+
+Diğer küçük notlar (acil değil): `Deploy`'da henüz `context.Context` yok
+(ileride iptal/timeout gerekecek), `appcmdPath()` 64-bit varsayıyor.
 
 ### Faz 3 — Genişleme
 
@@ -89,9 +115,12 @@ gecelik yedekleme. (Kişi *kaydı* var ama davet/yetkilendirme yok.)
 
 ## Sıradaki iş
 
-Faz 1 bitti. Sırada: ya Faz 2'ye (build/deploy otomasyonu) başlamak,
-ya da gerçek SMTP gönderimini bağlamak, ya da bekleyen küçük iyileştirme
-notlarına bakmak (aşağıdaki "Bilinmesi gereken kararlar" ve
+Faz 1 bitti, Faz 2'nin temel mekanizması (build+deploy+rollback) da
+gerçek IIS'e karşı kanıtlanmış durumda. Sırada üç seçenek var: (a) Faz
+2'nin devamı — secrets deposu + panelden tetikleme + gerçek Intranet'e
+bağlanma (yukarıdaki 2 önemli notu önce ele alarak), (b) gerçek SMTP
+gönderimini bağlamak, (c) bekleyen küçük iyileştirme notlarına bakmak
+(aşağıdaki "Bilinmesi gereken kararlar" ve
 `docs/superpowers/plans/2026-08-12-notifications.md`'nin son inceleme
 notlarındaki Minor bulgular — hiçbiri engelleyici değil).
 
