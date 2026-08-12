@@ -89,21 +89,13 @@ bağlanmadı — `internal/notify.EmailSender` arayüzü ve config'teki
 `internal/deploy` paketi (`Builder`, `VersionStore`, `IISSwapper`,
 `Pipeline`) hazır ve test edilmiş, ama şimdilik hiçbir HTTP endpoint'ine
 bağlı değil — sadece `cmd/deploydemo` adlı bağımsız bir deneme aracından
-çağrılabiliyor. Faz 2'nin devamına başlarken **taşınması gereken 2 önemli
-not** (son incelemede bulundu, kod bug'ı değil ama gerçek projeye
-bağlanmadan önce mutlaka ele alınmalı):
+çağrılabiliyor.
 
-- **`internal/deploy/build.go`'daki `copyDir` sadece düz (flat) dosyaları
-  kopyalıyor, alt klasörleri sessizce atlıyor.** Gerçek bir React build'i
-  (`assets/` gibi alt klasörlü) deploy edilirse, site 200 döner ama
-  hash'li JS/CSS dosyaları 404 verir — hatasız görünen ama kırık bir
-  deploy. Gerçek bir frontend projesine bağlanmadan önce bu fonksiyon
-  recursive yapılmalı (ya da en azından alt klasör görünce hata versin).
-- **`Pipeline.Deploy`'da `Prune` başarısız olursa, site aslında canlıya
-  çıkmış olsa bile tüm deploy "başarısız" olarak dönüyor.** Onay/audit
-  katmanı bunu sarmalamadan önce, "site güncellendi ama eski versiyonlar
-  temizlenemedi" ile "site hiç güncellenmedi" ayrımı net şekilde
-  yapılmalı.
+**2026-08-12 güncelleme:** Son incelemede bulunan 2 önemli not kapatıldı —
+`copyDir` artık recursive (alt klasörleri de kopyalıyor, `TestBuild_Npm_ProducesOutput`
+nested dosya testiyle kanıtlı), ve `Pipeline.Deploy` artık `Prune` hatasını
+gerçek deploy hatasından ayırt edebiliyor (`ErrPruneFailed`, `errors.Is` ile
+yakalanabilir, `releaseDir` yine de dönüyor çünkü site gerçekten güncellendi).
 
 Diğer küçük notlar (acil değil): `Deploy`'da henüz `context.Context` yok
 (ileride iptal/timeout gerekecek), `appcmdPath()` 64-bit varsayıyor.
