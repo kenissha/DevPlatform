@@ -74,6 +74,10 @@ func (p *Pipeline) Deploy(sourceDir string, recipe Recipe, repo, environment, si
 		return "", fmt.Errorf("deploy: build failed: %w", err)
 	}
 
+	if secretsTarget != "" && !filepath.IsLocal(secretsTarget) {
+		return "", fmt.Errorf("deploy: invalid secretsTarget %q", secretsTarget)
+	}
+
 	if secretsTarget != "" {
 		if p.secrets == nil {
 			return "", fmt.Errorf("deploy: secretsTarget %q given but no secrets store is configured", secretsTarget)

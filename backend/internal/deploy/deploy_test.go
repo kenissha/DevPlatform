@@ -207,3 +207,51 @@ func TestPipeline_Deploy_ErrorsWhenSecretsTargetGivenButNoStoreConfigured(t *tes
 		t.Fatal("expected an error when secretsTarget is set but no secrets store is configured")
 	}
 }
+
+func TestPipeline_Deploy_RejectsPathTraversalInSecretsTarget(t *testing.T) {
+	requireTool(t, "npm")
+
+	source, err := filepath.Abs("testdata/npm-fixture")
+	if err != nil {
+		t.Fatalf("failed to resolve fixture path: %v", err)
+	}
+
+	key := []byte("01234567890123456789012345678901"[:32])
+
+	escapeDir := t.TempDir()
+	targets := []string{
+		"../escape.json",
+		"../../../../etc/escape.json",
+		filepath.Join(escapeDir, "escape.json"), // absolute path
+	}
+
+	for _, target := range targets {
+		vs := NewVersionStore(t.TempDir())
+		runner := &fakeCommandRunner{}
+		secrets := secretsvault.NewStore(t.TempDir(), key)
+		if err := secrets.Put("sample", "test", []byte(`{"connectionString": "test-only"}`)); err != nil {
+			t.Fatalf("failed to seed secrets: %v", err)
+		}
+		pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner), secrets)
+
+		_, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 5, target)
+		if err == nil {
+			t.Fatalf("Deploy with secretsTarget %q: expected an error, got nil", target)
+		}
+
+		// The guard must short-circuit before SetPhysicalPath ever runs —
+		// zero recorded appcmd calls proves the traversal attempt never
+		// reached IIS activation.
+		if len(runner.calls) != 0 {
+			t.Errorf("Deploy with secretsTarget %q: got %d appcmd calls, want 0 (guard should short-circuit before any IIS call)", target, len(runner.calls))
+		}
+
+		// Nothing should have been written outside the escape directory
+		// either — the file must not exist since Deploy should have
+		// rejected the target before ever calling secrets.Get or
+		// os.WriteFile.
+		if _, statErr := os.Stat(filepath.Join(escapeDir, "escape.json")); !os.IsNotExist(statErr) {
+			t.Errorf("Deploy with secretsTarget %q: escape.json was written outside the release dir", target)
+		}
+	}
+}
