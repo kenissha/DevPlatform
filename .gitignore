@@ -10,6 +10,11 @@ backend/data/
 frontend/node_modules/
 frontend/dist/
 frontend/build/
+backend/internal/deploy/testdata/npm-fixture/dist/
+
+# .NET (deploy fixture — dotnet publish writes these into the fixture dir)
+backend/internal/deploy/testdata/dotnet-fixture/bin/
+backend/internal/deploy/testdata/dotnet-fixture/obj/
 
 # Env / secrets — never committed
 .env

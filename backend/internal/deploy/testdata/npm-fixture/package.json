@@ -1,0 +1,7 @@
+{
+  "name": "deploy-fixture",
+  "private": true,
+  "scripts": {
+    "build": "node build.js"
+  }
+}
