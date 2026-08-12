@@ -1,8 +1,10 @@
 import { Link, NavLink, Outlet, useMatch } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { useNotifications } from '../notifications/useNotifications'
 import { useRepos } from '../repos/ReposContext'
 import {
   AuditIcon,
+  BellIcon,
   BranchIcon,
   ChartIcon,
   LogoMark,
@@ -20,6 +22,7 @@ import {
 export function AppLayout() {
   const { user, logout } = useAuth()
   const { repos } = useRepos()
+  const { unreadCount } = useNotifications()
   // useParams would return {} here: a layout route only sees params its own
   // path pattern matched, not its descendants'. useMatch runs against the
   // full location, so the layout can tell which repo the page below it is
@@ -75,6 +78,13 @@ export function AppLayout() {
                 <NavLink end to="/audit" className={navClass}>
                   <AuditIcon />
                   <span className="nav-label">Denetim kaydı</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink end to="/notifications" className={navClass}>
+                  <BellIcon />
+                  <span className="nav-label">Bildirimler</span>
+                  {unreadCount > 0 && <span className="nav-count">{unreadCount}</span>}
                 </NavLink>
               </li>
             </ul>

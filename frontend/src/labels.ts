@@ -48,6 +48,21 @@ export const AUDIT_ACTION_BADGE: Record<AuditAction, string> = {
   'merge_request.rejected': 'badge-danger',
 }
 
+// Keyed by string, not a union like AUDIT_ACTION_LABELS: Notification.kind
+// is deliberately a bare string on the backend (see api/types.ts), so an
+// unrecognised kind falls back to the raw value rather than a type error.
+// Covers the two kinds the backend currently produces (backend/internal/
+// taskboard, backend/internal/mergerequest).
+export const NOTIFICATION_KIND_LABELS: Record<string, string> = {
+  task_assigned: 'Görev atandı',
+  merge_request_opened: 'Merge isteği açıldı',
+}
+
+export const NOTIFICATION_KIND_BADGE: Record<string, string> = {
+  task_assigned: 'badge-accent',
+  merge_request_opened: 'badge-accent',
+}
+
 export function formatDate(iso: string): string {
   return new Date(iso).toLocaleString('tr-TR', {
     day: '2-digit',

@@ -7,6 +7,7 @@ import type {
   MergeRequest,
   MergeRequestDetail,
   MergeRequestStatus,
+  Notification,
   Person,
   Task,
   TaskStatus,
@@ -118,6 +119,10 @@ export const api = {
     request<DayCount[]>(`/api/repos/${encodeURIComponent(repo)}/activity?days=${days}`),
 
   listAudit: (limit = 100) => request<AuditEvent[]>(`/api/audit?limit=${limit}`),
+
+  listNotifications: () => request<Notification[]>('/api/notifications'),
+  markNotificationRead: (id: string) =>
+    request<void>(`/api/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' }),
 }
 
 export type {
@@ -128,6 +133,7 @@ export type {
   DiffResult,
   MergeRequest,
   MergeRequestDetail,
+  Notification,
   Person,
   Task,
   User,

@@ -99,6 +99,15 @@ export function ChartIcon({ className }: IconProps) {
   )
 }
 
+export function BellIcon({ className }: IconProps) {
+  return (
+    <svg className={className} {...base} aria-hidden="true">
+      <path d="M4 11.5V7a4 4 0 0 1 8 0v4.5l1.2 1.5H2.8z" />
+      <path d="M6.5 13.5a1.6 1.6 0 0 0 3 0" />
+    </svg>
+  )
+}
+
 export function OverviewIcon({ className }: IconProps) {
   return (
     <svg className={className} {...base} aria-hidden="true">

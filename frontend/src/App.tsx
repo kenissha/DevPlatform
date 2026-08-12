@@ -2,10 +2,12 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthContext'
 import { AppLayout } from './components/AppLayout'
 import { RequireAuth } from './components/RequireAuth'
+import { NotificationsProvider } from './notifications/NotificationsContext'
 import { AuditPage } from './pages/AuditPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 import { MergeRequestDetailPage } from './pages/MergeRequestDetailPage'
+import { NotificationsPage } from './pages/NotificationsPage'
 import { RepoBranchesPage } from './pages/RepoBranchesPage'
 import { RepoInsightsPage } from './pages/RepoInsightsPage'
 import { RepoMergeRequestsPage } from './pages/RepoMergeRequestsPage'
@@ -21,19 +23,22 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           {/* Everything below the guard renders inside AppLayout's chrome.
-              ReposProvider sits inside RequireAuth so it only fetches once
-              there's a token to fetch with. */}
+              ReposProvider/NotificationsProvider sit inside RequireAuth so
+              they only fetch once there's a token to fetch with. */}
           <Route element={<RequireAuth />}>
             <Route
               element={
                 <ReposProvider>
-                  <AppLayout />
+                  <NotificationsProvider>
+                    <AppLayout />
+                  </NotificationsProvider>
                 </ReposProvider>
               }
             >
               <Route path="/" element={<DashboardPage />} />
               <Route path="/repos" element={<ReposPage />} />
               <Route path="/audit" element={<AuditPage />} />
+              <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/repos/:repo" element={<RepoOverviewPage />} />
               <Route path="/repos/:repo/tasks" element={<RepoTasksPage />} />
               <Route path="/repos/:repo/branches" element={<RepoBranchesPage />} />

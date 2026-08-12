@@ -103,3 +103,19 @@ export interface Task {
   urgent: boolean
   createdAt: string
 }
+
+// kind is a bare string, not a union: the backend (backend/internal/notify)
+// treats it as an opaque tag its producers choose (currently
+// "task_assigned", "merge_request_opened") — new kinds can ship on the
+// backend without a frontend type change, same reasoning as AuditEvent's
+// optional fields. NOTIFICATION_KIND_LABELS in labels.ts falls back to the
+// raw kind for anything it doesn't recognise.
+export interface Notification {
+  id: string
+  recipient: string
+  kind: string
+  message: string
+  link: string
+  read: boolean
+  createdAt: string
+}
