@@ -1,6 +1,6 @@
 # DevPlatform — Nerede Kaldık
 
-Son güncelleme: 2026-08-12
+Son güncelleme: 2026-08-13
 
 Bu dosya, projeye ara verip geri döndüğünde "ne bitti, ne kaldı, nasıl
 çalıştırırım" sorularının tek cevap yeri. Tasarımın tamamı için
@@ -83,13 +83,35 @@ bağlanmadı — `internal/notify.EmailSender` arayüzü ve config'teki
 |---|---|
 | Build + versiyonlu klasör + IIS swap (temel mekanizma) | ✅ Bitti (2026-08-12), gerçek IIS'e karşı kanıtlandı |
 | Secrets deposu (AES-256-GCM şifreleme + enjeksiyon) | ✅ Bitti (2026-08-12) |
-| Onay akışına bağlama (panelden tetikleme) | ❌ Başlanmadı |
+| Onay akışına bağlama (panelden tetikleme) | ✅ Bitti (2026-08-13) |
 | Gerçek Intranet-F/Intranet-B'ye bağlanma | ❌ Başlanmadı — bilinçli olarak sonraya bırakıldı |
 
-`internal/deploy` (`Builder`, `VersionStore`, `IISSwapper`, `Pipeline`) ve
+**2026-08-13 güncelleme — panelden deploy:** `internal/deployment` artık
+`internal/deploy`'un pipeline'ını gerçek bir onay akışına bağlıyor —
+Geliştirici bir repo+ortam+branch için deploy isteği açar, Yönetici
+panelden onaylar/reddeder, onay gerçekten checkout→build→versiyon→IIS
+swap'ı çalıştırır ve sonucu (deploy edildi / başarısız + sebep) kaydeder.
+Bununla birlikte:
+
+- `deploy.Checkout` eklendi: bare bir repodan, go-git'in Clone'una
+  gitmeden (Windows'ta yerel yol/URL ayrıştırma belirsizliği taşıyor),
+  doğrudan tree'yi diske yazarak checkout yapıyor.
+- Deploy hedefleri (hangi repo+ortam → hangi recipe/IIS sitesi) sabit,
+  dosyadan yüklenen bir liste — `DEVPLATFORM_DEPLOY_TARGETS_FILE`. Boş/
+  tanımsızsa hiçbir şey deploy edilemez (güvenli varsayılan); tasarım
+  dokümanının "sabit listeden" şartı, panelden serbest metinle asla değil.
+- **Bilinçli olarak yapılmadı:** bu oturumda gerçek hiçbir IIS sitesine
+  (test ya da Intranet-F/B) dokunulmadı. Uçtan uca kanıt, gerçek IIS yerine
+  sahte bir `CommandRunner`'a karşı yazılmış bir Go testinden geliyor
+  (`TestApprove_RunsTheFullPipelineAgainstAFakeIIS` —
+  `internal/deployment/handlers_test.go`): gerçek git checkout, gerçek npm
+  build, gerçek versiyonlu klasör, sadece appcmd.exe çağrısı sahte.
+  Gerçek bir siteyi hedef almak, kimsenin izlemediği bir oturumda değil,
+  bilerek yapılacak sıradaki adım.
+
 `internal/secretsvault` (`Store`, AES-256-GCM şifreleme) hazır ve test
-edilmiş, ama şimdilik hiçbir HTTP endpoint'ine bağlı değil — sadece
-`cmd/deploydemo` ve `cmd/secretsctl` adlı bağımsız araçlardan çağrılabiliyor.
+edilmiş; `secretsTarget` alanı olan bir deploy hedefi onaylandığında
+otomatik devreye giriyor (`DEVPLATFORM_SECRETS_KEY` ayarlıysa).
 
 **Secrets deposu nasıl kullanılır:** Yönetici gerçek appsettings dosyasını
 sunucuya elle koyar, `secretsctl -repo <ad> -environment <ad> -file <yol>`
@@ -118,16 +140,17 @@ gecelik yedekleme. (Kişi *kaydı* var ama davet/yetkilendirme yok.)
 
 ## Sıradaki iş
 
-Faz 1 bitti. Faz 2'nin temel mekanizması (build+deploy+rollback) VE
-secrets deposu (şifreli appsettings enjeksiyonu) gerçek IIS'e karşı
-kanıtlanmış/test edilmiş durumda — ikisi de şu an sadece bağımsız CLI
-araçlarından (`deploydemo`, `secretsctl`) çağrılabiliyor, panele/HTTP'ye
-hiç bağlı değil. Sırada üç seçenek var: (a) Faz 2'nin devamı — ikisini
-panelden tetiklenen bir onay akışına bağlamak, sonra gerçek Intranet'e
-bağlanmak, (b) gerçek SMTP gönderimini bağlamak, (c) bekleyen küçük
-iyileştirme notlarına bakmak (aşağıdaki "Bilinmesi gereken kararlar" ve
-`docs/superpowers/plans/2026-08-12-notifications.md`'nin son inceleme
-notlarındaki Minor bulgular — hiçbiri engelleyici değil).
+Faz 1 bitti. Faz 2'nin build+deploy+rollback mekanizması artık panelden
+gerçekten tetiklenebiliyor (bkz. yukarısı). Kalan gerçek iş, kod değil,
+**ops + gözetimli bir oturum** gerektiriyor: (a) gerçek Intranet-F/
+Intranet-B'yi `DEVPLATFORM_DEPLOY_TARGETS_FILE`'a hedef olarak eklemek ve
+ilk gerçek deploy'u birlikte izlemek (IIS site adları, recipe'ler, gerçek
+appsettings için secretsctl ile secrets'ı önceden yüklemek gerekecek —
+"IIS / deploy — canlıda öğrenilen dersler" bölümündeki 3 nottan özellikle
+üçüncüsüne, içerik konumuna, dikkat), (b) gerçek SMTP gönderimini
+bağlamak, (c) bekleyen küçük iyileştirme notlarına bakmak (aşağıdaki
+"Bilinmesi gereken kararlar" ve `docs/superpowers/plans/2026-08-12-notifications.md`'nin
+son inceleme notlarındaki Minor bulgular — hiçbiri engelleyici değil).
 
 ## Bilinmesi gereken kararlar
 
@@ -151,6 +174,10 @@ notlarındaki Minor bulgular — hiçbiri engelleyici değil).
   taşınması gereken ilk yer burası.
 - **Frontend'in backend binary'sine gömülmesi henüz yapılmadı.**
   Tasarımda var (tek dosya deploy), şu an iki ayrı süreç.
+- **Deploy hedefleri de dosya tabanlı, panelden yönetilmiyor.**
+  `DEVPLATFORM_DEPLOY_TARGETS_FILE`, `[{repo, environment, recipe,
+  siteName, secretsTarget, keepVersions}, ...]` şeklinde bir JSON dosyası.
+  Boşsa/yoksa hiçbir repo deploy edilemez — güvenli varsayılan.
 
 ## IIS / deploy — canlıda öğrenilen dersler (2026-08-12)
 
@@ -183,3 +210,10 @@ cd frontend && npm run build && npm run lint
 
 Backend testleri git CLI'ye ihtiyaç duyar (gerçek `git push`/`clone` ile
 uçtan uca çalışırlar); git yoksa o testler atlanır.
+
+**Bilinen, koddan bağımsız bir test farkı:** `internal/deploy`'un
+`TestBuild_Dotnet_ProducesOutput` testi `testdata/dotnet-fixture`'ı
+`net10.0` hedefiyle build ediyor. Makinende daha eski bir .NET SDK varsa
+(`dotnet --list-sdks`) bu test NETSDK1045 hatasıyla başarısız olur — bu bir
+kod hatası değil, sadece o makinede beklenen SDK'nın kurulu olmaması.
+Diğer her şeyi etkilemez.
