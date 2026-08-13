@@ -62,7 +62,7 @@ func newTestRouter(t *testing.T) (*http.ServeMux, *repostore.Store, *access.Stor
 		Access: accessStore,
 	}
 	statsHandlers := &gitstats.Handlers{Repos: store}
-	auditHandlers := &audit.Handlers{Logger: auditLogger}
+	auditHandlers := &audit.Handlers{Logger: auditLogger, Access: accessStore}
 	notifyHandlers := &notify.Handlers{Store: notify.NewStore(filepath.Join(dataDir, "notifications"))}
 	// No Pipeline/Targets wired here: nothing in this file's tests exercises
 	// a deploy approval — that full-pipeline path (real checkout, real
@@ -490,6 +490,16 @@ func TestAccess_ManagementAPIIsAdminOnly(t *testing.T) {
 		map[string][]string{"repos": {"intranet-backend"}})
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("PUT /api/access/dev-2 as developer: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	rec = do(t, router, http.MethodDelete, "/api/access/dev-2", "dev-1", "developer", nil)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("DELETE /api/access/dev-2 as developer: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	rec = do(t, router, http.MethodDelete, "/api/access/dev-2", "admin-1", "admin", nil)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("DELETE /api/access/dev-2 as admin: status = %d, want %d", rec.Code, http.StatusNoContent)
 	}
 }
 

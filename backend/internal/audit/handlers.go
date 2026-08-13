@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+
+	"github.com/kenissha/DevPlatform/backend/internal/access"
+	"github.com/kenissha/DevPlatform/backend/internal/auth"
 )
 
 const (
@@ -22,6 +25,13 @@ const (
 // affect them.
 type Handlers struct {
 	Logger *Logger
+	// Access is optional; a nil Store means every caller sees every repo's
+	// events (see internal/access). Events span every repo already, the
+	// same cross-repo shape as taskboard/mergerequest/deployment's ListAll,
+	// so List has to do its own narrowing to keep a restricted caller from
+	// reading another repo's events through the log — see
+	// taskboard.Handlers.Access's doc comment.
+	Access *access.Store
 }
 
 // List handles GET /api/audit?limit=N, newest first.
@@ -43,6 +53,21 @@ func (h *Handlers) List(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
 		return
+	}
+
+	if user, ok := auth.UserFromContext(r.Context()); ok && user.Role != auth.RoleAdmin {
+		filtered := []Event{}
+		for _, e := range events {
+			allowed, err := h.Access.CanAccess(user.Subject, e.Repo)
+			if err != nil {
+				http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+			if allowed {
+				filtered = append(filtered, e)
+			}
+		}
+		events = filtered
 	}
 
 	w.Header().Set("Content-Type", "application/json")
