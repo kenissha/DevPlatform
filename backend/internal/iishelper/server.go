@@ -1,0 +1,67 @@
+package iishelper
+
+import (
+	"encoding/json"
+	"log"
+	"net"
+)
+
+// Executor actually runs a request that has already passed
+// ValidateRequest. Production wiring (cmd/iishelper) passes
+// deploy.RealCommandRunner{}.Run; tests pass a fake that records calls
+// without ever touching a real appcmd.exe.
+type Executor func(name string, args ...string) ([]byte, error)
+
+// Server is the transport-agnostic core of iishelper: given any
+// net.Listener, it accepts connections, validates each request against
+// AppcmdPath/AllowedSites, and only calls Execute for requests that pass.
+// Deliberately independent of the Windows-specific named-pipe setup (see
+// cmd/iishelper) so this logic — the actual security boundary — is
+// testable with a plain loopback TCP listener, no real named pipe or
+// Windows Service required.
+type Server struct {
+	AppcmdPath   string
+	AllowedSites map[string]bool
+	Execute      Executor
+}
+
+// Serve accepts connections from ln until Accept returns an error (e.g.
+// ln was closed by the caller during shutdown). Each connection carries
+// exactly one request/response pair.
+func (s *Server) Serve(ln net.Listener) error {
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			return err
+		}
+		go s.handle(conn)
+	}
+}
+
+func (s *Server) handle(conn net.Conn) {
+	defer conn.Close()
+
+	var req Request
+	if err := json.NewDecoder(conn).Decode(&req); err != nil {
+		log.Printf("iishelper: failed to decode request: %v", err)
+		return
+	}
+
+	resp := s.process(req)
+	if err := json.NewEncoder(conn).Encode(resp); err != nil {
+		log.Printf("iishelper: failed to encode response: %v", err)
+	}
+}
+
+func (s *Server) process(req Request) Response {
+	if err := ValidateRequest(req, s.AppcmdPath, s.AllowedSites); err != nil {
+		log.Printf("iishelper: rejected request: %v", err)
+		return Response{Error: err.Error()}
+	}
+
+	out, err := s.Execute(req.Name, req.Args...)
+	if err != nil {
+		return Response{Output: out, Error: err.Error()}
+	}
+	return Response{Output: out}
+}
