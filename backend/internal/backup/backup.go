@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
@@ -53,10 +54,38 @@ func Run(repos *repostore.Store, destDir string) (Result, error) {
 // temp-directory-then-rename sequence. If the copy fails partway through,
 // the previous night's good backup (if any) is left untouched instead of
 // being replaced by a truncated one that would look complete but isn't.
+//
+// Finalizing is a three-step rename swap (final -> old, tmp -> final, then
+// remove old) rather than a remove-then-rename. That way final — the path
+// restores actually read from — is never in a "gone but not yet replaced"
+// state: at every point during finalize, either the previous backup is
+// still reachable (as final or old) or the new one already is. A crash
+// between any two of those steps is recovered from at the start of the
+// next run instead of silently discarding whichever copy survived.
 func backupOne(src, destDir, name string) error {
 	final := filepath.Join(destDir, name+".git")
 	tmp := filepath.Join(destDir, name+".git.tmp")
+	old := filepath.Join(destDir, name+".git.old")
 
+	// Recover from a crash that happened after a previous run renamed
+	// final -> old but before it renamed tmp -> final: final is missing
+	// and old holds the last known-good backup. Restore it before doing
+	// anything else so final is never left absent while a good copy sits
+	// on disk under another name — including if this run's own copy then
+	// fails too.
+	if _, err := os.Stat(final); os.IsNotExist(err) {
+		if _, oldErr := os.Stat(old); oldErr == nil {
+			if err := os.Rename(old, final); err != nil {
+				return fmt.Errorf("backup: recovering previous backup of %q: %w", name, err)
+			}
+		}
+	} else if err != nil {
+		return fmt.Errorf("backup: checking previous backup of %q: %w", name, err)
+	}
+
+	// A leftover tmp is only ever an incomplete copy from an earlier run
+	// (this run recreates it from scratch below), never a finalized
+	// backup, so discarding it here is always safe.
 	if err := os.RemoveAll(tmp); err != nil {
 		return fmt.Errorf("backup: clearing stale temp dir for %q: %w", name, err)
 	}
@@ -64,15 +93,79 @@ func backupOne(src, destDir, name string) error {
 		_ = os.RemoveAll(tmp)
 		return fmt.Errorf("backup: copying %q: %w", name, err)
 	}
-	if err := os.RemoveAll(final); err != nil {
+
+	if _, err := os.Stat(final); err == nil {
+		if err := os.RemoveAll(old); err != nil {
+			_ = os.RemoveAll(tmp)
+			return fmt.Errorf("backup: clearing stale previous-backup dir for %q: %w", name, err)
+		}
+		if err := os.Rename(final, old); err != nil {
+			_ = os.RemoveAll(tmp)
+			return fmt.Errorf("backup: preserving previous backup of %q: %w", name, err)
+		}
+	} else if !os.IsNotExist(err) {
 		_ = os.RemoveAll(tmp)
-		return fmt.Errorf("backup: removing previous backup of %q: %w", name, err)
+		return fmt.Errorf("backup: checking previous backup of %q: %w", name, err)
 	}
+
 	if err := os.Rename(tmp, final); err != nil {
+		// final is now missing (or never existed) and the new copy failed
+		// to take its place — restore the previous backup from old, if any,
+		// rather than leaving nothing at final at all.
+		if _, statErr := os.Stat(final); os.IsNotExist(statErr) {
+			_ = os.Rename(old, final)
+		}
 		return fmt.Errorf("backup: finalizing %q: %w", name, err)
+	}
+	if err := os.RemoveAll(old); err != nil {
+		return fmt.Errorf("backup: removing superseded backup of %q: %w", name, err)
 	}
 	return nil
 }
+
+// PathsOverlap reports whether a and b resolve to the same directory, or
+// whether either is a filesystem subdirectory of the other. backupOne
+// operates on its destination with RemoveAll and Rename; if that
+// destination coincided with (or contained, or was contained in) the live
+// repository store's root, those calls would run against real repositories
+// instead of a backup copy. Callers should refuse to enable backup rather
+// than start it when this returns true.
+func PathsOverlap(a, b string) (bool, error) {
+	absA, err := filepath.Abs(a)
+	if err != nil {
+		return false, fmt.Errorf("backup: resolving %q: %w", a, err)
+	}
+	absB, err := filepath.Abs(b)
+	if err != nil {
+		return false, fmt.Errorf("backup: resolving %q: %w", b, err)
+	}
+	absA = filepath.Clean(absA)
+	absB = filepath.Clean(absB)
+
+	if strings.EqualFold(absA, absB) {
+		return true, nil
+	}
+	return isSubPath(absA, absB) || isSubPath(absB, absA), nil
+}
+
+// isSubPath reports whether child is a filesystem subdirectory of parent.
+// Both must already be absolute and clean. A trailing separator is added to
+// parent before the prefix comparison so that e.g. "/data/backup2" is not
+// mistaken for being inside "/data/backup".
+func isSubPath(parent, child string) bool {
+	prefix := parent + string(filepath.Separator)
+	if len(child) <= len(prefix) {
+		return false
+	}
+	return strings.EqualFold(child[:len(prefix)], prefix)
+}
+
+// readFile is copyDir's file-read step, indirected through a variable so
+// tests can force a failure partway through a multi-file copy (simulating a
+// crash or I/O error mid-backup) without relying on OS-specific permission
+// tricks that don't behave consistently across platforms. Production code
+// always leaves this as os.ReadFile.
+var readFile = os.ReadFile
 
 // copyDir recursively copies the contents of src into dst, preserving the
 // relative directory structure — the same nested-directory concern
@@ -95,7 +188,7 @@ func copyDir(src, dst string) error {
 			}
 			continue
 		}
-		data, err := os.ReadFile(srcPath)
+		data, err := readFile(srcPath)
 		if err != nil {
 			return err
 		}
