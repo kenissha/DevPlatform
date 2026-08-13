@@ -180,6 +180,40 @@ func TestSMTPEmailSender_SkipsAuthWhenServerDoesNotAdvertiseIt(t *testing.T) {
 	}
 }
 
+// TestSMTPEmailSender_RejectsACRLFLadenRecipient guards against SMTP/header
+// injection through the recipient address. Send writes to straight into the
+// "To:" header (buildMessage) and into the RCPT TO command (client.Rcpt)
+// with no sanitization of its own — the only thing standing between a
+// CRLF-laden recipient and injecting extra headers or extra RCPT commands is
+// net/smtp's own internal validateLine check, which Client.Mail/Client.Rcpt
+// run before writing anything to the wire. This test doesn't (and can't,
+// from this package) exercise that stdlib check directly, but it does pin
+// the externally-observable contract this code relies on: given a malicious
+// to, Send must fail rather than silently proceeding, and the fake server
+// must never see an injected second RCPT TO command or a DATA phase at all.
+// If net/smtp's validation were ever removed or worked around, the injected
+// line would reach fakeSMTPServer.serve's RCPT TO branch and this test would
+// start failing.
+func TestSMTPEmailSender_RejectsACRLFLadenRecipient(t *testing.T) {
+	addr, server := startFakeSMTPServer(t, false)
+	host, port, _ := net.SplitHostPort(addr)
+
+	sender := &SMTPEmailSender{Host: host, Port: port, From: "devplatform@example.com"}
+
+	maliciousTo := "victim@example.com\r\nRCPT TO:<attacker@evil.com>"
+	err := sender.Send(maliciousTo, "subj", "body")
+	if err == nil {
+		t.Fatal("expected Send to fail for a CRLF-laden recipient, got nil error")
+	}
+
+	if server.rcptTo != "" {
+		t.Errorf("fake server recorded a RCPT TO command (%q); the malicious address should never have reached the wire", server.rcptTo)
+	}
+	if server.data != "" {
+		t.Errorf("fake server received a DATA phase (%q); Send should have failed before getting that far", server.data)
+	}
+}
+
 func TestSMTPEmailSender_WrapsDialErrorForAnUnreachableServer(t *testing.T) {
 	// Port 1 is reserved and nothing listens there — Dial fails immediately
 	// rather than hanging, so this test needs no timeout handling of its own.
