@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -33,10 +34,17 @@ var idPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
 type Status string
 
 const (
-	StatusPending  Status = "pending"
-	StatusDeployed Status = "deployed"
-	StatusFailed   Status = "failed"
-	StatusRejected Status = "rejected"
+	StatusPending Status = "pending"
+	// StatusInProgress is the claimed-but-not-yet-finished state a request
+	// sits in while its deploy actually runs (see Store.Claim). It exists
+	// so a request that is mid-deploy is distinguishable from one still
+	// waiting for an admin: a second, concurrent approval of the same
+	// request is rejected the moment it sees this status, before it can
+	// start a second build racing the first one onto the same IIS site.
+	StatusInProgress Status = "in_progress"
+	StatusDeployed   Status = "deployed"
+	StatusFailed     Status = "failed"
+	StatusRejected   Status = "rejected"
 )
 
 // Request is a request to release repo's sourceBranch into environment.
@@ -67,6 +75,15 @@ type Request struct {
 // approach mergerequest and taskboard already use.
 type Store struct {
 	rootDir string
+	// mu serializes every status transition (Claim, Decide) so a
+	// read-check-write pair can't interleave with another one: without it
+	// two concurrent approvals of the same request both read StatusPending
+	// and both go on to build and swap IIS. Get takes it too, so a reader
+	// never observes a half-rewritten file. Callers must hold it before
+	// calling any of the unexported get/write helpers, and those helpers
+	// never take it themselves — that's what keeps Decide from deadlocking
+	// against its own read.
+	mu sync.Mutex
 }
 
 // NewStore returns a Store rooted at rootDir. rootDir does not need to
@@ -125,6 +142,13 @@ func (s *Store) Create(repo, environment, sourceBranch, author string) (Request,
 
 // Get returns the request identified by (repo, id).
 func (s *Store) Get(repo, id string) (Request, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.get(repo, id)
+}
+
+// get is Get without the lock; callers must already hold s.mu.
+func (s *Store) get(repo, id string) (Request, error) {
 	path, err := s.path(repo, id)
 	if err != nil {
 		return Request{}, err
@@ -182,18 +206,46 @@ func (s *Store) List(repo string) ([]Request, error) {
 	return requests, nil
 }
 
+// Claim atomically moves a StatusPending request to StatusInProgress,
+// returning ErrNotPending if someone else got there first. It is how a
+// caller reserves the right to actually run a deploy: it must be called
+// before any build or IIS work starts, so that a second concurrent
+// approval of the same request is turned away before it touches the
+// filesystem or the live site — not minutes later, at Decide time, once
+// it has already overwritten production.
+func (s *Store) Claim(repo, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	req, err := s.get(repo, id)
+	if err != nil {
+		return err
+	}
+	if req.Status != StatusPending {
+		return ErrNotPending
+	}
+
+	req.Status = StatusInProgress
+	return s.write(req)
+}
+
 // Decide transitions the request identified by (repo, id) from
-// StatusPending to a terminal status (StatusDeployed, StatusFailed, or
-// StatusRejected), recording releaseDir and/or failureReason and stamping
-// DecidedAt. It is the only way this store ever leaves StatusPending —
-// there is no path back to it, matching mergerequest's own
-// "approved/rejected exactly once" invariant (there, ErrNotOpen).
+// StatusPending or StatusInProgress to a terminal status (StatusDeployed,
+// StatusFailed, or StatusRejected), recording releaseDir and/or
+// failureReason and stamping DecidedAt. It is the only way this store ever
+// reaches a terminal status — there is no path back out of one, matching
+// mergerequest's own "approved/rejected exactly once" invariant (there,
+// ErrNotOpen). It shares Claim's lock, so the claim-then-decide pair a
+// deploy performs can't interleave with another caller's.
 func (s *Store) Decide(repo, id string, status Status, releaseDir, failureReason string) (Request, error) {
-	req, err := s.Get(repo, id)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	req, err := s.get(repo, id)
 	if err != nil {
 		return Request{}, err
 	}
-	if req.Status != StatusPending {
+	if req.Status != StatusPending && req.Status != StatusInProgress {
 		return Request{}, ErrNotPending
 	}
 
@@ -203,23 +255,28 @@ func (s *Store) Decide(repo, id string, status Status, releaseDir, failureReason
 	decidedAt := time.Now().UTC()
 	req.DecidedAt = &decidedAt
 
-	path, err := s.path(repo, id)
-	if err != nil {
+	if err := s.write(req); err != nil {
 		return Request{}, err
+	}
+	return req, nil
+}
+
+// write overwrites req's on-disk file. Callers must already hold s.mu.
+func (s *Store) write(req Request) error {
+	path, err := s.path(req.Repo, req.ID)
+	if err != nil {
+		return err
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0o640)
 	if err != nil {
-		return Request{}, err
+		return err
 	}
 	err = json.NewEncoder(f).Encode(req)
 	closeErr := f.Close()
 	if err != nil {
-		return Request{}, err
+		return err
 	}
-	if closeErr != nil {
-		return Request{}, closeErr
-	}
-	return req, nil
+	return closeErr
 }
 
 func (s *Store) path(repo, id string) (string, error) {

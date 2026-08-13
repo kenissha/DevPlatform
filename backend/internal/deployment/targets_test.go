@@ -56,6 +56,89 @@ func TestLoadTargets_ReadsConfiguredTargets(t *testing.T) {
 	}
 }
 
+// writeTargetsFile writes a targets fixture and returns its path.
+func writeTargetsFile(t *testing.T, contents string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "targets.json")
+	if err := os.WriteFile(path, []byte(contents), 0o640); err != nil {
+		t.Fatalf("failed to write fixture: %v", err)
+	}
+	return path
+}
+
+// TestLoadTargets_RejectsInvalidEntries pins down what a bad targets file
+// must do: fail loading, which in main.go means the server refuses to
+// start, rather than run with a config whose entries decide which live IIS
+// site a deploy overwrites.
+func TestLoadTargets_RejectsInvalidEntries(t *testing.T) {
+	tests := []struct {
+		name string
+		json string
+	}{
+		{
+			// The dangerous one: (repo, environment) is the deploy lookup
+			// key, so a repeat silently decided which site "production" meant.
+			name: "duplicate repo and environment",
+			json: `[
+				{"repo":"intranet-backend","environment":"production","recipe":"dotnet","siteName":"Intranet Backend"},
+				{"repo":"intranet-backend","environment":"production","recipe":"dotnet","siteName":"Someone Else's Site"}
+			]`,
+		},
+		{
+			name: "unknown recipe",
+			json: `[{"repo":"intranet-backend","environment":"production","recipe":"make","siteName":"Intranet Backend"}]`,
+		},
+		{
+			name: "secretsTarget escaping the release",
+			json: `[{"repo":"intranet-backend","environment":"production","recipe":"dotnet","siteName":"A","secretsTarget":"../../appsettings.json"}]`,
+		},
+		{
+			name: "absolute secretsTarget",
+			json: `[{"repo":"intranet-backend","environment":"production","recipe":"dotnet","siteName":"A","secretsTarget":"C:/inetpub/appsettings.json"}]`,
+		},
+		{
+			name: "empty repo",
+			json: `[{"repo":"","environment":"production","recipe":"dotnet","siteName":"A"}]`,
+		},
+		{
+			name: "empty environment",
+			json: `[{"repo":"intranet-backend","environment":"","recipe":"dotnet","siteName":"A"}]`,
+		},
+		{
+			name: "empty siteName",
+			json: `[{"repo":"intranet-backend","environment":"production","recipe":"dotnet","siteName":""}]`,
+		},
+		{
+			name: "repo escaping its directory",
+			json: `[{"repo":"../etc","environment":"production","recipe":"dotnet","siteName":"A"}]`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := LoadTargets(writeTargetsFile(t, tc.json)); err == nil {
+				t.Fatal("LoadTargets returned no error, want the config rejected")
+			}
+		})
+	}
+}
+
+func TestLoadTargets_AcceptsAValidFile(t *testing.T) {
+	path := writeTargetsFile(t, `[
+		{"repo":"intranet-backend","environment":"production","recipe":"dotnet","siteName":"Intranet Backend","secretsTarget":"appsettings.Production.json"},
+		{"repo":"intranet-backend","environment":"test","recipe":"dotnet","siteName":"Intranet Backend Test"},
+		{"repo":"intranet-frontend","environment":"production","recipe":"npm","siteName":"Intranet Frontend"}
+	]`)
+
+	targets, err := LoadTargets(path)
+	if err != nil {
+		t.Fatalf("LoadTargets returned error: %v", err)
+	}
+	if _, err := targets.Find("intranet-backend", "production"); err != nil {
+		t.Errorf("Find returned error for a valid target: %v", err)
+	}
+}
+
 func TestFind_NilTargetsIsSafe(t *testing.T) {
 	var targets *Targets
 

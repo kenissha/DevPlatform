@@ -3,10 +3,14 @@ package deployment
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"slices"
 	"sort"
+	"strings"
+	"time"
 
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -194,6 +198,56 @@ func (h *Handlers) ListAll(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, all)
 }
 
+// deployTimeout bounds one deploy attempt end to end (checkout → build →
+// IIS swap). deploy.Pipeline takes no context.Context and none of its
+// steps can be cancelled once started, so this is enforced here, at this
+// package's boundary: past the deadline the request is recorded as failed
+// instead of pinning the HTTP handler — and, worse, leaving the request
+// stuck in StatusInProgress forever with no way to retry it. It is a var,
+// not a const, only so tests can shorten it; nothing configures it at
+// runtime.
+var deployTimeout = 10 * time.Minute
+
+// deployStage names the pipeline step a failed deploy attempt died in. It
+// is what the panel-visible failure reason is derived from, so that
+// reason never has to quote the underlying error — which routinely
+// carries full build stdout/stderr (any env var, connection string, or
+// token the build script printed) and absolute server paths.
+type deployStage string
+
+const (
+	stageCheckout deployStage = "checkout"
+	stageDeploy   deployStage = "deploy"
+	stageTimeout  deployStage = "timeout"
+)
+
+// failureReason maps a failed attempt to a short, safe message for the
+// panel and the author's notification. The raw error is logged
+// server-side by the caller and deliberately never reaches this string.
+func failureReason(stage deployStage, err error) string {
+	switch stage {
+	case stageCheckout:
+		return "Checkout başarısız"
+	case stageTimeout:
+		return "Deploy zaman aşımına uğradı"
+	}
+	// Everything past checkout comes back as one error from
+	// deploy.Pipeline.Deploy, whose own wrapping (see its fmt.Errorf calls)
+	// is the only thing consulted here — matching on the stage prefix it
+	// added, never echoing the wrapped cause.
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "build failed"):
+		return "Build başarısız"
+	case strings.Contains(msg, "failed to activate release"):
+		return "IIS yayınlama başarısız"
+	case strings.Contains(msg, "secrets"):
+		return "Secrets dosyası hazırlanamadı"
+	default:
+		return "Deploy başarısız"
+	}
+}
+
 // Approve handles POST /api/repos/{repo}/deployments/{id}/approve. It
 // actually runs the deploy (checkout → build → version → IIS swap, with
 // secrets injected per the configured Target) before returning — this is
@@ -246,29 +300,34 @@ func (h *Handlers) Approve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Claim before anything is checked out, built, or swapped: this is the
+	// atomic pending → in-progress transition that makes a second,
+	// concurrent approval of the same request fail here (409) instead of
+	// racing this one onto the same live IIS site and only finding out at
+	// Decide time, after it already overwrote production.
+	if err := h.Store.Claim(repo, id); err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+
 	checkoutDir, err := os.MkdirTemp(h.CheckoutRoot, "checkout-*")
 	if err != nil {
-		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		log.Printf("deployment: failed to create checkout dir under %q for %s/%s: %v", h.CheckoutRoot, repo, id, err)
+		h.finishFailed(w, repo, id, req, stageCheckout, err)
 		return
 	}
 	defer os.RemoveAll(checkoutDir)
 
-	if _, err := deploy.Checkout(gitRepo, req.SourceBranch, checkoutDir); err != nil {
-		h.finishFailed(w, repo, id, req, err)
-		return
-	}
-
-	releaseDir, err := h.Pipeline.Deploy(
-		checkoutDir, target.Recipe, repo, req.Environment, target.SiteName, target.KeepVersions, target.SecretsTarget,
-	)
+	res := h.runPipeline(gitRepo, req, target, checkoutDir)
 	// ErrPruneFailed means the release is already live and only cleanup of
 	// old releases failed afterward — that's a successful deploy from the
 	// requester's point of view (see Pipeline.Deploy's own doc comment),
 	// so it's treated as success here too rather than StatusFailed.
-	if err != nil && !errors.Is(err, deploy.ErrPruneFailed) {
-		h.finishFailed(w, repo, id, req, err)
+	if res.err != nil && !errors.Is(res.err, deploy.ErrPruneFailed) {
+		h.finishFailed(w, repo, id, req, res.stage, res.err)
 		return
 	}
+	releaseDir := res.releaseDir
 
 	updated, storeErr := h.Store.Decide(repo, id, StatusDeployed, releaseDir, "")
 	if storeErr != nil {
@@ -283,20 +342,65 @@ func (h *Handlers) Approve(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, updated)
 }
 
+// pipelineResult is one deploy attempt's outcome, including which stage
+// failed so the panel-visible reason can be derived without the raw error.
+type pipelineResult struct {
+	releaseDir string
+	stage      deployStage
+	err        error
+}
+
+// runPipeline runs checkout → build → version → IIS swap, bounded by
+// deployTimeout. The work runs in a goroutine because none of those steps
+// is cancellable (deploy.Pipeline takes no context.Context); on timeout
+// that goroutine is left to finish on its own — the point here is that the
+// request stops being stuck in StatusInProgress and the handler returns,
+// not that the build is killed. The result channel is buffered so the
+// abandoned goroutine never blocks forever on a send nobody reads.
+func (h *Handlers) runPipeline(gitRepo *git.Repository, req Request, target Target, checkoutDir string) pipelineResult {
+	done := make(chan pipelineResult, 1)
+	go func() {
+		if _, err := deploy.Checkout(gitRepo, req.SourceBranch, checkoutDir); err != nil {
+			done <- pipelineResult{stage: stageCheckout, err: err}
+			return
+		}
+		releaseDir, err := h.Pipeline.Deploy(
+			checkoutDir, target.Recipe, req.Repo, req.Environment, target.SiteName, target.KeepVersions, target.SecretsTarget,
+		)
+		done <- pipelineResult{releaseDir: releaseDir, stage: stageDeploy, err: err}
+	}()
+
+	select {
+	case res := <-done:
+		return res
+	case <-time.After(deployTimeout):
+		return pipelineResult{stage: stageTimeout, err: fmt.Errorf("deployment: deploy exceeded %s", deployTimeout)}
+	}
+}
+
 // finishFailed records a deploy attempt that started but failed, and
 // responds 200 with the now-StatusFailed request: the HTTP call itself
 // succeeded (the approval was processed and its outcome recorded), the
 // deploy did not.
-func (h *Handlers) finishFailed(w http.ResponseWriter, repo, id string, req Request, deployErr error) {
-	updated, storeErr := h.Store.Decide(repo, id, StatusFailed, "", deployErr.Error())
+//
+// The raw error is logged server-side only. What reaches the panel and
+// the author's notification is the short, stage-derived reason instead:
+// deployErr can carry a build's entire stdout/stderr (secrets a build
+// script printed included) or an appcmd argv full of absolute server
+// paths, and FailureReason is visible to anyone with access to the repo.
+func (h *Handlers) finishFailed(w http.ResponseWriter, repo, id string, req Request, stage deployStage, deployErr error) {
+	log.Printf("deployment: deploy failed for %s/%s at stage %s: %v", repo, id, stage, deployErr)
+	reason := failureReason(stage, deployErr)
+
+	updated, storeErr := h.Store.Decide(repo, id, StatusFailed, "", reason)
 	if storeErr != nil {
 		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
 	_ = h.Audit.Log("system", audit.ActionDeploymentFailed, repo, id,
-		"Deploy başarısız: "+repo+" → "+req.Environment+" ("+deployErr.Error()+")")
-	h.notifyAuthor(req, "Deploy başarısız: "+repo+" → "+req.Environment+" — "+deployErr.Error())
+		"Deploy başarısız: "+repo+" → "+req.Environment+" ("+reason+")")
+	h.notifyAuthor(req, "Deploy başarısız: "+repo+" → "+req.Environment+" — "+reason)
 
 	writeJSON(w, http.StatusOK, updated)
 }
@@ -315,6 +419,14 @@ func (h *Handlers) Reject(w http.ResponseWriter, r *http.Request) {
 	req, err := h.Store.Get(repo, id)
 	if err != nil {
 		h.writeStoreError(w, err)
+		return
+	}
+	// A request whose deploy is already running can no longer be rejected:
+	// Decide accepts StatusInProgress (that's how a running deploy records
+	// its own outcome), so without this check a reject would race the
+	// deploy it's trying to prevent and "win" while the build carries on.
+	if req.Status != StatusPending {
+		http.Error(w, "409 deploy request is not pending", http.StatusConflict)
 		return
 	}
 

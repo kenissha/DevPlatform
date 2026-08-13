@@ -3,6 +3,7 @@ package deployment
 import (
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -135,6 +136,77 @@ func TestDecide_RecordsFailureReason(t *testing.T) {
 	}
 	if updated.Status != StatusFailed || updated.FailureReason != "build failed: exit status 1" {
 		t.Errorf("updated = %+v, unexpected fields", updated)
+	}
+}
+
+// TestClaim_OnlyOneOfManyConcurrentCallersWins is the store-level half of
+// the fix for overlapping deploys: whichever caller wins the claim is the
+// only one allowed to go on and build/swap IIS, so exactly one of N
+// concurrent claims may succeed. Run with -race.
+func TestClaim_OnlyOneOfManyConcurrentCallersWins(t *testing.T) {
+	store := NewStore(t.TempDir())
+	created, err := store.Create("intranet-backend", "production", "main", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	const callers = 8
+	var wg sync.WaitGroup
+	errs := make([]error, callers)
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			errs[i] = store.Claim("intranet-backend", created.ID)
+		}(i)
+	}
+	wg.Wait()
+
+	won := 0
+	for _, err := range errs {
+		switch err {
+		case nil:
+			won++
+		case ErrNotPending:
+		default:
+			t.Errorf("unexpected Claim error: %v", err)
+		}
+	}
+	if won != 1 {
+		t.Fatalf("%d callers won the claim, want exactly 1", won)
+	}
+
+	claimed, err := store.Get("intranet-backend", created.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if claimed.Status != StatusInProgress {
+		t.Errorf("Status = %q, want %q", claimed.Status, StatusInProgress)
+	}
+}
+
+func TestDecide_RecordsOutcomeOfAClaimedRequest(t *testing.T) {
+	store := NewStore(t.TempDir())
+	created, err := store.Create("intranet-backend", "production", "main", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if err := store.Claim("intranet-backend", created.ID); err != nil {
+		t.Fatalf("Claim failed: %v", err)
+	}
+
+	// The claimant must still be able to record its own outcome — a claim
+	// reserves the deploy, it doesn't lock the request out of being decided.
+	updated, err := store.Decide("intranet-backend", created.ID, StatusDeployed, "/releases/123", "")
+	if err != nil {
+		t.Fatalf("Decide after Claim returned error: %v", err)
+	}
+	if updated.Status != StatusDeployed {
+		t.Errorf("Status = %q, want %q", updated.Status, StatusDeployed)
+	}
+
+	if err := store.Claim("intranet-backend", created.ID); err != ErrNotPending {
+		t.Errorf("err = %v, want ErrNotPending when claiming a finished request", err)
 	}
 }
 

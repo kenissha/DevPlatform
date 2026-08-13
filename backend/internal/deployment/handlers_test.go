@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -63,6 +65,24 @@ type failingCommandRunner struct{}
 func (failingCommandRunner) Run(name string, args ...string) ([]byte, error) {
 	return nil, errors.New("appcmd exited 5: access denied")
 }
+
+// hangingVersionStore stands in for deploy.VersionStore and never returns
+// from NewRelease until released, simulating a deploy step that wedges
+// (the real-world case being a hung `npm run build`). It satisfies the
+// unexported releaseStore interface deploy.NewPipeline accepts, which is
+// what lets a test hang the pipeline right after checkout — before the
+// slow real build — so Approve's timeout path can be exercised in
+// milliseconds.
+type hangingVersionStore struct {
+	release chan struct{}
+}
+
+func (h hangingVersionStore) NewRelease(repo, environment string) (string, error) {
+	<-h.release
+	return "", errors.New("release store released after the test finished")
+}
+
+func (h hangingVersionStore) Prune(repo, environment string, keep int) error { return nil }
 
 func signTestToken(t *testing.T, subject, role string) string {
 	t.Helper()
@@ -330,6 +350,160 @@ func TestApprove_RecordsFailureWhenIISSwapFails(t *testing.T) {
 	if failed.FailureReason == "" {
 		t.Error("expected a non-empty FailureReason")
 	}
+
+	// The reason names the stage that failed and nothing else: the raw
+	// error text (here appcmd's own output, in a real build its entire
+	// stdout/stderr, plus absolute release paths) must never reach the
+	// panel, which anyone with access to the repo can read.
+	if failed.FailureReason != "IIS yayınlama başarısız" {
+		t.Errorf("FailureReason = %q, want the classified IIS message", failed.FailureReason)
+	}
+	for _, leak := range []string{"access denied", "appcmd", "deploy:", "physical path"} {
+		if strings.Contains(strings.ToLower(failed.FailureReason), leak) {
+			t.Errorf("FailureReason %q leaks raw error text %q", failed.FailureReason, leak)
+		}
+	}
+
+	// The author's notification is the same classified message, for the
+	// same reason — it's the other place the raw error used to land.
+	notifications, err := h.Notify.ListForUser("dev-1")
+	if err != nil {
+		t.Fatalf("ListForUser returned error: %v", err)
+	}
+	if len(notifications) != 1 {
+		t.Fatalf("got %d notifications, want 1", len(notifications))
+	}
+	if strings.Contains(strings.ToLower(notifications[0].Message), "access denied") {
+		t.Errorf("notification %q leaks raw error text", notifications[0].Message)
+	}
+}
+
+// TestApprove_ConcurrentApprovalsDeployOnlyOnce is the regression test for
+// the overlapping-deploy race: two admins approving the same request at
+// the same moment both used to pass the pending check and both ran the
+// whole pipeline, racing each other's IIS swap on the same live site. Run
+// with -race — the unsynchronized fakeCommandRunner below would also flag
+// a genuine concurrent second pipeline run as a data race.
+func TestApprove_ConcurrentApprovalsDeployOnlyOnce(t *testing.T) {
+	runner := &fakeCommandRunner{}
+	h, _ := newTestHandlers(t, runner)
+	mux := newMux(h)
+	created := createTestRequest(t, mux)
+
+	var wg sync.WaitGroup
+	codes := make([]int, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/deployments/"+created.ID+"/approve", nil)
+			req = addAuth(req, t, "admin-1", "admin")
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			codes[i] = rec.Code
+		}(i)
+	}
+	wg.Wait()
+
+	ok, conflict := 0, 0
+	for _, code := range codes {
+		switch code {
+		case http.StatusOK:
+			ok++
+		case http.StatusConflict:
+			conflict++
+		default:
+			t.Errorf("unexpected approve status %d", code)
+		}
+	}
+	if ok != 1 || conflict != 1 {
+		t.Fatalf("got %d OK and %d conflict responses, want exactly 1 of each: %v", ok, conflict, codes)
+	}
+
+	// The decisive assertion: IIS was swapped once, not twice.
+	if len(runner.calls) != 1 {
+		t.Fatalf("got %d IIS swap calls, want exactly 1: %v", len(runner.calls), runner.calls)
+	}
+
+	deployed, err := h.Store.Get("sample", created.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if deployed.Status != StatusDeployed {
+		t.Errorf("Status = %q, want %q (failure reason: %q)", deployed.Status, StatusDeployed, deployed.FailureReason)
+	}
+}
+
+// TestApprove_MarksFailedWhenTheDeployTimesOut covers the bounded-pipeline
+// fix: a deploy step that never returns must not pin the handler forever
+// and must not leave the request stuck mid-deploy with no way out.
+func TestApprove_MarksFailedWhenTheDeployTimesOut(t *testing.T) {
+	h, _ := newTestHandlers(t, &fakeCommandRunner{})
+
+	release := make(chan struct{})
+	// Released at cleanup so the abandoned pipeline goroutine can finish
+	// before the test's temp dirs are removed.
+	t.Cleanup(func() { close(release) })
+	h.Pipeline = deploy.NewPipeline(
+		&deploy.Builder{},
+		hangingVersionStore{release: release},
+		deploy.NewIISSwapper(&fakeCommandRunner{}),
+		nil,
+	)
+
+	previous := deployTimeout
+	deployTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { deployTimeout = previous })
+
+	mux := newMux(h)
+	created := createTestRequest(t, mux)
+
+	approveReq := httptest.NewRequest(http.MethodPost, "/api/repos/sample/deployments/"+created.ID+"/approve", nil)
+	approveReq = addAuth(approveReq, t, "admin-1", "admin")
+	approveRec := httptest.NewRecorder()
+	mux.ServeHTTP(approveRec, approveReq)
+
+	if approveRec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", approveRec.Code, http.StatusOK, approveRec.Body.String())
+	}
+	var failed Request
+	if err := json.Unmarshal(approveRec.Body.Bytes(), &failed); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if failed.Status != StatusFailed {
+		t.Fatalf("Status = %q, want %q — a timed-out deploy must not stay in progress", failed.Status, StatusFailed)
+	}
+	if failed.FailureReason != "Deploy zaman aşımına uğradı" {
+		t.Errorf("FailureReason = %q, want the timeout message", failed.FailureReason)
+	}
+
+	// And it is genuinely terminal on disk, not just in the response.
+	reread, err := h.Store.Get("sample", created.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if reread.Status != StatusFailed {
+		t.Errorf("persisted Status = %q, want %q", reread.Status, StatusFailed)
+	}
+}
+
+// createTestRequest opens one deploy request against sample/test via the
+// API, the way every approve test needs one to exist first.
+func createTestRequest(t *testing.T, mux *http.ServeMux) Request {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"environment": "test", "sourceBranch": "main"})
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/deployments", bytes.NewReader(body))
+	req = addAuth(req, t, "dev-1", "developer")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var created Request
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("failed to decode create response: %v", err)
+	}
+	return created
 }
 
 func TestApprove_RejectsNonAdmin(t *testing.T) {

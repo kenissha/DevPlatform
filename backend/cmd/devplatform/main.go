@@ -94,7 +94,7 @@ func main() {
 		Access: accessStore,
 	}
 	statsHandlers := &gitstats.Handlers{Repos: store}
-	auditHandlers := &audit.Handlers{Logger: auditLogger}
+	auditHandlers := &audit.Handlers{Logger: auditLogger, Access: accessStore}
 	notifyHandlers := &notify.Handlers{
 		Store: notifyStore,
 	}
@@ -125,6 +125,12 @@ func main() {
 		secretsStore,
 	)
 	checkoutRoot := filepath.Join(cfg.DataDir, "deploy-checkouts")
+	// Approve materializes each checkout with os.MkdirTemp(checkoutRoot,
+	// ...), which does not create checkoutRoot itself — without this, every
+	// approve on a fresh install fails with ENOENT.
+	if err := os.MkdirAll(checkoutRoot, 0o750); err != nil {
+		log.Fatalf("failed to create deploy checkout dir %s: %v", checkoutRoot, err)
+	}
 	deploymentHandlers := &deployment.Handlers{
 		Store:        deployment.NewStore(filepath.Join(cfg.DataDir, "deployments")),
 		Repos:        store,
@@ -139,10 +145,20 @@ func main() {
 
 	// BackupDir is the switch: empty means no nightly backup goroutine runs
 	// at all, exactly as before this was wired up. Set
-	// DEVPLATFORM_BACKUP_DIR to turn it on.
+	// DEVPLATFORM_BACKUP_DIR to turn it on. backupOne operates on its
+	// destination with RemoveAll and Rename, so a destination that
+	// coincides with (or contains, or is contained in) the live repo
+	// store's root would mean those calls run against real repositories —
+	// refuse to start backup rather than risk that.
 	if cfg.BackupDir != "" {
-		log.Printf("nightly repository backup enabled: copying to %q at %02d:00 daily", cfg.BackupDir, cfg.BackupHour)
-		go backup.RunNightly(context.Background(), store, cfg.BackupDir, cfg.BackupHour, 0)
+		if overlaps, err := backup.PathsOverlap(cfg.BackupDir, store.RootDir()); err != nil {
+			log.Printf("backup: could not validate DEVPLATFORM_BACKUP_DIR %q — nightly repository backup is off: %v", cfg.BackupDir, err)
+		} else if overlaps {
+			log.Printf("backup: DEVPLATFORM_BACKUP_DIR %q overlaps the repository store %q — refusing to enable nightly backup to avoid operating on live repositories", cfg.BackupDir, store.RootDir())
+		} else {
+			log.Printf("nightly repository backup enabled: copying to %q at %02d:00 daily", cfg.BackupDir, cfg.BackupHour)
+			go backup.RunNightly(context.Background(), store, cfg.BackupDir, cfg.BackupHour, 0)
+		}
 	} else {
 		log.Printf("no DEVPLATFORM_BACKUP_DIR configured — nightly repository backup is off")
 	}
