@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"testing"
+	"time"
 )
 
 // fakeHelperServer accepts exactly one connection, decodes one Request,
@@ -73,5 +74,37 @@ func TestHelperCommandRunner_ReturnsAClearErrorWhenTheHelperIsUnreachable(t *tes
 	_, err := runner.Run(testAppcmdPath, "set", "vdir", "DevPlatform Test Site/", "/physicalPath:C:\\releases\\5")
 	if err == nil {
 		t.Fatal("expected an error when Dial fails")
+	}
+}
+
+// TestHelperCommandRunner_TimesOutWhenDialHangs proves Run's dialTimeout
+// budget covers the connect phase itself, not just the post-connect
+// send/receive — a Dial implementation that never returns must still
+// cause Run to return an error promptly rather than block forever.
+func TestHelperCommandRunner_TimesOutWhenDialHangs(t *testing.T) {
+	original := dialTimeout
+	dialTimeout = 20 * time.Millisecond
+	t.Cleanup(func() { dialTimeout = original })
+
+	// unblock lets the goroutine inside dial() eventually finish (and
+	// write into its buffered result channel) once the test is done,
+	// instead of leaking blocked forever for the life of the test binary.
+	unblock := make(chan struct{})
+	t.Cleanup(func() { close(unblock) })
+
+	runner := &HelperCommandRunner{Dial: func() (net.Conn, error) {
+		<-unblock
+		return nil, errors.New("test: dial finally returned after the test's timeout fired")
+	}}
+
+	start := time.Now()
+	_, err := runner.Run(testAppcmdPath, "set", "vdir", "DevPlatform Test Site/", "/physicalPath:C:\\releases\\5")
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected an error when Dial hangs past dialTimeout")
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("Run took %v to return after a hung Dial; expected it to respect the overridden dialTimeout (20ms)", elapsed)
 	}
 }
