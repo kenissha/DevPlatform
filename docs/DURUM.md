@@ -232,6 +232,57 @@ görür).
   API sözleşmesi gerçek sunucuya karşı curl ile doğrulandı, ama "Proje
   erişimi" sayfasının kendisi bir tarayıcıda tıklanarak denenmedi.
 
+**2026-08-13 güncelleme — güvenlik incelemesi (ev oturumunun 9 commit'i):**
+Yukarıdaki dört parça (panelden deploy onayı, gerçek SMTP, gecelik yedek,
+proje bazlı yetkilendirme) bir ev oturumunda yazılmıştı ve bu projenin
+normal task-review sürecinden hiç geçmemişti. Dört ayrı, kapsamlı review
+dispatch edildi (her biri kendi diff'i + proje güvenlik kısıtlarıyla);
+bulunan ve düzeltilen gerçek hatalar:
+
+- **Kritik — eşzamanlı onay yarışı:** `deployment.Approve`'da kilit yoktu;
+  iki eşzamanlı onay isteği aynı IIS site'ına yarışarak deploy
+  edebiliyordu. `Store.Claim` eklendi (pending→in-progress, mutex'li),
+  ikinci onay artık anında reddediliyor.
+- **Kritik — checkout klasörü hiç oluşturulmuyordu:** temiz bir kurulumda
+  ilk gerçek onay `ENOENT` ile 500 dönerdi (fake `t.TempDir()` testlerde
+  görünmüyordu çünkü klasör zaten testte hazır oluşturuluyordu). `main.go`
+  artık `CheckoutRoot`'u da `MkdirAll` ediyor.
+- Deploy hatası artık panelde ham haliyle görünmüyor (build çıktısı,
+  secrets, mutlak yollar içerebiliyordu) — sınıflandırılmış kısa mesaja
+  indirgendi, ham hata sadece sunucu logunda.
+- `DEVPLATFORM_DEPLOY_TARGETS_FILE` artık başlangıçta doğrulanıyor:
+  aynı (repo, environment) çiftinin tekrarı, bilinmeyen recipe, boş
+  siteName, path-traversal'lı secretsTarget artık sunucuyu başlatmıyor
+  (sessizce yanlış konfigürasyonla ayağa kalkmak yerine).
+- Deploy artık süresiz asılı kalamıyor — zaman aşımı eklendi, aşılırsa
+  istek "failed" olarak işaretleniyor.
+- Gecelik yedekte finalize sırası değişti (önce eskiyi kenara al, yeniyi
+  yerine koy, en son eskiyi sil) — arada çökme olursa artık her ihtimalde
+  ya eski ya yeni yedek diskte duruyor, hiçbir zaman ikisi de yok değil.
+- `DEVPLATFORM_BACKUP_DIR`, repo deposunun kök diziniyle çakışırsa artık
+  yedek devre dışı kalıyor (yanlış konfigürasyonla canlı repoların
+  silinmesini önlemek için).
+- `/api/audit` artık `access.Store`'a göre süzülüyor — kısıtlı bir
+  geliştirici artık erişemediği bir reponun audit kayıtlarını göremiyor.
+- `DELETE /api/access/{subject}` için router seviyesinde admin-only testi
+  eklendi (GET/PUT zaten test ediliyordu, DELETE eksikti).
+- SMTP tarafında, CRLF içeren bir alıcı adresinin header injection'a yol
+  açamayacağını kanıtlayan bir regresyon testi eklendi (koruma zaten
+  `net/smtp`'nin kendisinden geliyordu, ama bu projenin kendi testi yoktu).
+
+Dördü de `go build`, `go vet`, `go test ./...` (21 paket) ve frontend
+`tsc -b && vite build` ile temiz. Commit'ler:
+`9f840a2` (deploy), `53500a9` (backup), `9cdfb90` (access/audit),
+`ab9273b` (SMTP).
+
+**Çözülmeden bırakılan, gerçek bir mimari karar gerektiren iki bulgu**
+(aşağıdaki "Bilinmesi gereken kararlar" bölümüne taşındı):
+1. Git push/pull hâlâ tek paylaşılan `DEVPLATFORM_GIT_USERNAME/PASSWORD`
+   kullanıyor — proje bazlı yetkilendirme sadece panelde geçerli, git
+   katmanında geçerli değil.
+2. Deploy pipeline, repo'nun kendi build script'lerini appcmd'nin
+   çalışması için Administrator yetkili bir hesapla çalıştırıyor.
+
 ## Sıradaki iş
 
 Faz 1 bitti (SMTP dahil). Faz 2'nin build+deploy+rollback mekanizması
@@ -265,6 +316,29 @@ düzeltilecekse çözüm muhtemelen her iki paketteki sıralamaya da ikincil
 bir anahtar (ör. ID) eklemek.
 
 ## Bilinmesi gereken kararlar
+
+- **Açık karar — git erişimi tek paylaşılan kimlik bilgisiyle çalışıyor
+  (2026-08-13):** `internal/access`'in proje bazlı kısıtlaması sadece
+  panel API'lerinde geçerli. `git clone`/`push`, `DEVPLATFORM_GIT_USERNAME`/
+  `_PASSWORD` ile herkes için aynı tek kullanıcı adı/şifreyi kullanıyor
+  (`gitauth.RequireBasicAuth`, `/git/` rotası `authMiddleware`'in de
+  `RequireRepoAccess`'in de dışında). Yani panelden birini bir repoya
+  kısıtlasan bile, o kişi paylaşılan git kimlik bilgileriyle her repoyu
+  doğrudan klonlayıp push'layabiliyor — bu, projenin "ikinci mühendisi tam
+  erişim vermeden işe alma" amacını bu haliyle geçersiz kılıyor. Gerçek
+  çözüm kullanıcı bazlı git kimlik doğrulama (örn. kişi başına token)
+  gerektiriyor — bu boyutta bir iş, ayrı bir brainstorm+plan hak ediyor.
+  Karar bekliyor: şimdi mi ele alınsın, yoksa ikinci mühendis işe alınana
+  kadar bilinen bir sınırlama olarak mı bırakılsın.
+- **Açık karar — build adımı Administrator yetkili hesapla çalışıyor
+  (2026-08-13):** `deploy.Pipeline`, appcmd'nin çalışabilmesi için
+  Administrator yetkisi gereken bir hesapla `npm run build`/`dotnet
+  publish`'i çalıştırıyor — yani repoya push edip deploy onayı alabilen
+  biri, host üzerinde fiilen Admin RCE'ye ulaşabiliyor. CI sistemlerinde
+  genel bir sorun (bu projeye özgü bir hata değil), ama gerçek IIS'e
+  bağlanmadan önce bilinçli bir karar gerektiriyor: ayrı, düşük yetkili
+  bir build hesabı mı, yoksa sadece IIS swap'ını yapan ayrı yükseltilmiş
+  bir yardımcı süreç mi.
 
 - **Proje erişimi varsayılan olarak kısıtlanmamış, ayrıntı için yukarıdaki
   2026-08-13 güncellemesine bakın.** Kısa özet: `internal/access`'te
