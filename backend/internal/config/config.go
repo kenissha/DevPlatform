@@ -38,6 +38,15 @@ type Config struct {
 	// BackupHour is the server-local hour (0-23) the nightly backup runs
 	// at. Only meaningful when BackupDir is set.
 	BackupHour int
+	// FrontendDir, if set, points at the built frontend's static files
+	// (frontend/dist after `npm run build`) and turns on serving them
+	// from this same process/origin as the API — the frontend's own code
+	// assumes it's always talking to its own origin (no CORS setup, no
+	// separate API base URL), so in production the frontend and API must
+	// be served from the same address. Empty by default: local
+	// development instead runs the frontend through Vite's dev server,
+	// which proxies API calls to this backend (see frontend/vite.config.ts).
+	FrontendDir string
 }
 
 // Load reads configuration from the environment, falling back to
@@ -79,6 +88,7 @@ func Load() Config {
 		DeployTargetsFile: getEnv("DEVPLATFORM_DEPLOY_TARGETS_FILE", ""),
 		BackupDir:         getEnv("DEVPLATFORM_BACKUP_DIR", ""),
 		BackupHour:        getEnvInt("DEVPLATFORM_BACKUP_HOUR", 2),
+		FrontendDir:       getEnv("DEVPLATFORM_FRONTEND_DIR", ""),
 	}
 }
 

@@ -178,6 +178,13 @@ func main() {
 		Access:         accessStore,
 	})
 
+	if cfg.FrontendDir != "" {
+		router.Handle("/", frontendHandler(cfg.FrontendDir))
+		log.Printf("serving frontend from %q", cfg.FrontendDir)
+	} else {
+		log.Printf("no DEVPLATFORM_FRONTEND_DIR configured — the panel is not served from this process")
+	}
+
 	log.Printf("devplatform listening on %s", cfg.ListenAddr)
 	if err := http.ListenAndServe(cfg.ListenAddr, router); err != nil {
 		log.Fatal(err)

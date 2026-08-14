@@ -150,6 +150,27 @@ func TestLoad_ReadsBackupSettingsFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoad_FrontendDirDefaultsToEmptyMeaningNotServed(t *testing.T) {
+	os.Unsetenv("DEVPLATFORM_FRONTEND_DIR")
+
+	cfg := Load()
+
+	if cfg.FrontendDir != "" {
+		t.Errorf("FrontendDir = %q, want empty", cfg.FrontendDir)
+	}
+}
+
+func TestLoad_ReadsFrontendDirFromEnv(t *testing.T) {
+	os.Setenv("DEVPLATFORM_FRONTEND_DIR", "C:\\inetpub\\devplatform\\frontend")
+	defer os.Unsetenv("DEVPLATFORM_FRONTEND_DIR")
+
+	cfg := Load()
+
+	if cfg.FrontendDir != "C:\\inetpub\\devplatform\\frontend" {
+		t.Errorf("FrontendDir = %q, want %q", cfg.FrontendDir, "C:\\inetpub\\devplatform\\frontend")
+	}
+}
+
 func TestLoad_FallsBackToDefaultHourWhenEnvValueIsNotAnInt(t *testing.T) {
 	os.Setenv("DEVPLATFORM_BACKUP_HOUR", "not-a-number")
 	defer os.Unsetenv("DEVPLATFORM_BACKUP_HOUR")
