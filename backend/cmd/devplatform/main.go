@@ -17,6 +17,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/gitauth"
 	"github.com/kenissha/DevPlatform/backend/internal/gitserver"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
+	"github.com/kenissha/DevPlatform/backend/internal/iishelper"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/notify"
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
@@ -121,7 +122,7 @@ func main() {
 	pipeline := deploy.NewPipeline(
 		&deploy.Builder{},
 		deploy.NewVersionStore(filepath.Join(cfg.DataDir, "releases")),
-		deploy.NewIISSwapper(deploy.RealCommandRunner{}),
+		deploy.NewIISSwapper(iishelper.NewHelperCommandRunner()),
 		secretsStore,
 	)
 	checkoutRoot := filepath.Join(cfg.DataDir, "deploy-checkouts")
