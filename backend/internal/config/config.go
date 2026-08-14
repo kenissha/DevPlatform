@@ -74,7 +74,7 @@ type Config struct {
 // Username is set AND the server advertises support for it.
 func Load() Config {
 	return Config{
-		ListenAddr:        getEnv("DEVPLATFORM_LISTEN_ADDR", ":8080"),
+		ListenAddr:        listenAddr(),
 		DataDir:           getEnv("DEVPLATFORM_DATA_DIR", "./data"),
 		GitUsername:       getEnv("DEVPLATFORM_GIT_USERNAME", "dev"),
 		GitPassword:       getEnv("DEVPLATFORM_GIT_PASSWORD", "dev"),
@@ -90,6 +90,27 @@ func Load() Config {
 		BackupHour:        getEnvInt("DEVPLATFORM_BACKUP_HOUR", 2),
 		FrontendDir:       getEnv("DEVPLATFORM_FRONTEND_DIR", ""),
 	}
+}
+
+// listenAddr resolves the address to serve on, preferring IIS's
+// HTTP_PLATFORM_PORT over DEVPLATFORM_LISTEN_ADDR.
+//
+// When IIS's httpPlatformHandler launches this process it picks a free
+// port, passes it as HTTP_PLATFORM_PORT, and forwards requests arriving
+// at the site's own binding to that port. Ignoring it and listening on a
+// fixed port of our own would mean traffic reaching us without ever
+// passing through IIS — IIS would see an application with no traffic,
+// idle it out, and then have no way to wake it, since the next request
+// would again bypass it. That failure mode cost a full debugging session
+// on 2026-08-14; see docs/DURUM.md.
+//
+// Outside IIS (local development, or running as a Windows service) the
+// variable is unset and DEVPLATFORM_LISTEN_ADDR applies as before.
+func listenAddr() string {
+	if port := os.Getenv("HTTP_PLATFORM_PORT"); port != "" {
+		return ":" + port
+	}
+	return getEnv("DEVPLATFORM_LISTEN_ADDR", ":8080")
 }
 
 func getEnv(key, fallback string) string {

@@ -150,6 +150,31 @@ func TestLoad_ReadsBackupSettingsFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoad_PrefersIISAssignedPortOverListenAddr(t *testing.T) {
+	os.Setenv("HTTP_PLATFORM_PORT", "51234")
+	os.Setenv("DEVPLATFORM_LISTEN_ADDR", ":8081")
+	defer os.Unsetenv("HTTP_PLATFORM_PORT")
+	defer os.Unsetenv("DEVPLATFORM_LISTEN_ADDR")
+
+	cfg := Load()
+
+	if cfg.ListenAddr != ":51234" {
+		t.Errorf("ListenAddr = %q, want %q — ignoring IIS's assigned port makes traffic bypass IIS entirely", cfg.ListenAddr, ":51234")
+	}
+}
+
+func TestLoad_UsesListenAddrWhenNotLaunchedByIIS(t *testing.T) {
+	os.Unsetenv("HTTP_PLATFORM_PORT")
+	os.Setenv("DEVPLATFORM_LISTEN_ADDR", ":8081")
+	defer os.Unsetenv("DEVPLATFORM_LISTEN_ADDR")
+
+	cfg := Load()
+
+	if cfg.ListenAddr != ":8081" {
+		t.Errorf("ListenAddr = %q, want %q", cfg.ListenAddr, ":8081")
+	}
+}
+
 func TestLoad_FrontendDirDefaultsToEmptyMeaningNotServed(t *testing.T) {
 	os.Unsetenv("DEVPLATFORM_FRONTEND_DIR")
 
