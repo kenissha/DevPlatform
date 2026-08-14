@@ -283,6 +283,33 @@ Dördü de `go build`, `go vet`, `go test ./...` (21 paket) ve frontend
 2. Deploy pipeline, repo'nun kendi build script'lerini appcmd'nin
    çalışması için Administrator yetkili bir hesapla çalıştırıyor.
 
+**2026-08-13 güncelleme — IIS yardımcı servisi (yetki ayrımı):**
+`internal/iishelper` ve `cmd/iishelper` eklendi. `devplatform.exe` artık
+appcmd.exe'yi hiç doğrudan çalıştırmıyor — appcmd'yi çalıştıran tek şey,
+ayrı, küçük bir Windows Service (`iishelper`), `LocalSystem` hesabıyla
+çalışıyor ve yerel bir named pipe üzerinden sadece tek bir işlemi kabul
+ediyor: bilinen bir IIS site'ının fiziksel yolunu mutlak bir dizine
+çevirmek. Gelen her istek bu tek şekle tam uymuyorsa reddediliyor —
+çağıranın (`devplatform.exe`) gönderdiği appcmd yoluna güvenilmiyor,
+servis kendi yolunu bağımsızca hesaplayıp karşılaştırıyor.
+
+Sonuç: `devplatform.exe` artık hiçbir zaman Administrator yetkisiyle
+çalışmasına gerek yok — repo'nun kendi build script'i (`npm run build`/
+`dotnet publish`) her zaman olduğu gibi çalışıyor ama artık Admin
+yetkisiyle değil. Sadece `iishelper` servisi (dar, sabit, tek işlemli)
+yükseltilmiş yetkiyle çalışıyor.
+
+Kurulum: `backend/cmd/iishelper/install.ps1`, bir kere elevated
+PowerShell'den çalıştırılır, servisi kaydeder ve named pipe'ı
+`devplatform.exe`'nin çalıştığı hesaba kısıtlayacak `DEVPLATFORM_IISHELPER_SDDL`
+değerini üretip ekrana yazar — bu değeri servisin ortam değişkenlerine
+elle eklemek gerekiyor (diğer `DEVPLATFORM_*` gizli değerleri gibi).
+
+**Henüz yapılmadı:** gerçek servis kurulup, mevcut test IIS site'ına
+karşı uçtan uca canlı doğrulama (bkz. plan dosyasının sonundaki
+"gözetimli doğrulama" adımları) — bu, orijinal IIS kanıtlamasında
+yapıldığı gibi birlikte, elle yapılacak.
+
 ## Sıradaki iş
 
 Faz 1 bitti (SMTP dahil). Faz 2'nin build+deploy+rollback mekanizması
@@ -330,15 +357,13 @@ bir anahtar (ör. ID) eklemek.
   gerektiriyor — bu boyutta bir iş, ayrı bir brainstorm+plan hak ediyor.
   Karar bekliyor: şimdi mi ele alınsın, yoksa ikinci mühendis işe alınana
   kadar bilinen bir sınırlama olarak mı bırakılsın.
-- **Açık karar — build adımı Administrator yetkili hesapla çalışıyor
-  (2026-08-13):** `deploy.Pipeline`, appcmd'nin çalışabilmesi için
-  Administrator yetkisi gereken bir hesapla `npm run build`/`dotnet
-  publish`'i çalıştırıyor — yani repoya push edip deploy onayı alabilen
-  biri, host üzerinde fiilen Admin RCE'ye ulaşabiliyor. CI sistemlerinde
-  genel bir sorun (bu projeye özgü bir hata değil), ama gerçek IIS'e
-  bağlanmadan önce bilinçli bir karar gerektiriyor: ayrı, düşük yetkili
-  bir build hesabı mı, yoksa sadece IIS swap'ını yapan ayrı yükseltilmiş
-  bir yardımcı süreç mi.
+- **Çözüldü — build adımı artık Administrator yetkisiyle çalışmıyor
+  (2026-08-13):** bkz. yukarıdaki "IIS yardımcı servisi" güncellemesi.
+  `deploy.Pipeline`'ın build adımı hâlâ `devplatform.exe` içinde
+  çalışıyor ama artık asla yükseltilmiş yetkiyle değil; appcmd'yi
+  çalıştıran tek şey ayrı, dar yetkili `iishelper` servisi. Kalan tek
+  gerçek iş: gerçek sunucuda servisi kurup canlı doğrulamak (kod değil,
+  ops adımı).
 
 - **Proje erişimi varsayılan olarak kısıtlanmamış, ayrıntı için yukarıdaki
   2026-08-13 güncellemesine bakın.** Kısa özet: `internal/access`'te
