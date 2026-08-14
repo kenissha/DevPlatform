@@ -35,7 +35,7 @@
 - Produces: `deploy.AppcmdPath() string` (renamed from the unexported `appcmdPath`)
 - Consumes: nothing from earlier tasks (this is the first task)
 
-- [ ] **Step 1: Rename `appcmdPath` to the exported `AppcmdPath` in `internal/deploy`**
+- [x] **Step 1: Rename `appcmdPath` to the exported `AppcmdPath` in `internal/deploy`**
 
 Edit `backend/internal/deploy/iisswap.go`. Change the doc comment and function signature:
 
@@ -63,16 +63,16 @@ Update the one call site in the same file (`SetPhysicalPath`):
 	_, err := s.runner.Run(AppcmdPath(), "set", "vdir", siteName+"/", "/physicalPath:"+path)
 ```
 
-- [ ] **Step 2: Update the renamed call in the existing test**
+- [x] **Step 2: Update the renamed call in the existing test**
 
 Edit `backend/internal/deploy/iisswap_test.go:39` — change `appcmdPath()` to `AppcmdPath()`.
 
-- [ ] **Step 3: Run the deploy package tests to confirm the rename didn't break anything**
+- [x] **Step 3: Run the deploy package tests to confirm the rename didn't break anything**
 
 Run: `cd backend && go test ./internal/deploy/... -run TestSetPhysicalPath -v`
 Expected: PASS (same tests as before, just recompiled against the renamed function)
 
-- [ ] **Step 4: Write the protocol types**
+- [x] **Step 4: Write the protocol types**
 
 Create `backend/internal/iishelper/protocol.go`:
 
@@ -117,7 +117,7 @@ type Response struct {
 }
 ```
 
-- [ ] **Step 5: Write the failing tests for ValidateRequest**
+- [x] **Step 5: Write the failing tests for ValidateRequest**
 
 Create `backend/internal/iishelper/validate_test.go`:
 
@@ -223,12 +223,12 @@ func TestValidateRequest_RejectsFourthArgumentMissingPhysicalPathPrefix(t *testi
 }
 ```
 
-- [ ] **Step 6: Run the tests to verify they fail**
+- [x] **Step 6: Run the tests to verify they fail**
 
 Run: `cd backend && go test ./internal/iishelper/... -v`
 Expected: FAIL — `ValidateRequest`/`ErrInvalidRequest`/`Request` undefined (validate.go doesn't exist yet)
 
-- [ ] **Step 7: Implement ValidateRequest**
+- [x] **Step 7: Implement ValidateRequest**
 
 Create `backend/internal/iishelper/validate.go`:
 
@@ -288,12 +288,12 @@ func ValidateRequest(req Request, appcmdPath string, allowedSites map[string]boo
 }
 ```
 
-- [ ] **Step 8: Run the tests to verify they pass**
+- [x] **Step 8: Run the tests to verify they pass**
 
 Run: `cd backend && go test ./internal/iishelper/... -v`
 Expected: PASS — all 8 `TestValidateRequest_*` tests green
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 cd backend
@@ -313,7 +313,7 @@ git commit -m "feat: add iishelper request protocol and the fixed-shape request 
 - Consumes: nothing from Task 1
 - Produces: `iishelper.LoadAllowedSites(path string) (map[string]bool, error)` — used by Task 6 (cmd/iishelper) and referenced by Task 1's `ValidateRequest` as the shape of `allowedSites`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `backend/internal/iishelper/sites_test.go`:
 
@@ -380,12 +380,12 @@ func TestLoadAllowedSites_MalformedJSONIsAnError(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd backend && go test ./internal/iishelper/... -run TestLoadAllowedSites -v`
 Expected: FAIL — `LoadAllowedSites` undefined
 
-- [ ] **Step 3: Implement LoadAllowedSites**
+- [x] **Step 3: Implement LoadAllowedSites**
 
 Create `backend/internal/iishelper/sites.go`:
 
@@ -440,12 +440,12 @@ func LoadAllowedSites(path string) (map[string]bool, error) {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd backend && go test ./internal/iishelper/... -v`
 Expected: PASS — all Task 1 and Task 2 tests green
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd backend
@@ -465,7 +465,7 @@ git commit -m "feat: load the allowed IIS site list from the deploy targets file
 - Consumes: `Request`, `Response` (Task 1), `ValidateRequest` (Task 1)
 - Produces: `iishelper.Executor` (type `func(name string, args ...string) ([]byte, error)`), `iishelper.Server{AppcmdPath string, AllowedSites map[string]bool, Execute Executor}`, `(*Server).Serve(ln net.Listener) error` — used by Task 6 (cmd/iishelper)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `backend/internal/iishelper/server_test.go`:
 
@@ -628,12 +628,12 @@ var errExecFailed = errors.New("test: simulated execution failure")
 
 (add `"errors"` to the import block)
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd backend && go test ./internal/iishelper/... -run TestServer -v`
 Expected: FAIL — `Server`/`Executor` undefined
 
-- [ ] **Step 3: Implement Server**
+- [x] **Step 3: Implement Server**
 
 Create `backend/internal/iishelper/server.go`:
 
@@ -707,12 +707,12 @@ func (s *Server) process(req Request) Response {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd backend && go test ./internal/iishelper/... -v`
 Expected: PASS — all Task 1, 2, and 3 tests green
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd backend
@@ -732,7 +732,7 @@ git commit -m "feat: add iishelper's transport-agnostic request server"
 - Consumes: `Request`, `Response` (Task 1)
 - Produces: `iishelper.HelperCommandRunner{Dial func() (net.Conn, error)}`, `(*HelperCommandRunner).Run(name string, args ...string) ([]byte, error)` (satisfies `deploy.CommandRunner`), `iishelper.NewHelperCommandRunner() *HelperCommandRunner` — used by Task 6 (devplatform.exe wiring)
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `backend/internal/iishelper/client_test.go`:
 
@@ -816,12 +816,12 @@ func TestHelperCommandRunner_ReturnsAClearErrorWhenTheHelperIsUnreachable(t *tes
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cd backend && go test ./internal/iishelper/... -run TestHelperCommandRunner -v`
 Expected: FAIL — `HelperCommandRunner` undefined
 
-- [ ] **Step 3: Implement HelperCommandRunner**
+- [x] **Step 3: Implement HelperCommandRunner**
 
 Create `backend/internal/iishelper/client.go`:
 
@@ -893,17 +893,17 @@ func (h *HelperCommandRunner) Run(name string, args ...string) ([]byte, error) {
 }
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cd backend && go test ./internal/iishelper/... -v`
 Expected: PASS — all Task 1-4 tests green (note: this step requires `go-winio` to be resolvable; Step 5 below promotes it to a direct dependency)
 
-- [ ] **Step 5: Promote go-winio to a direct dependency and verify the whole module still builds**
+- [x] **Step 5: Promote go-winio to a direct dependency and verify the whole module still builds**
 
 Run: `cd backend && go mod tidy && go build ./... && go vet ./...`
 Expected: `go.mod`'s `github.com/Microsoft/go-winio` line loses its `// indirect` marker (it was already present transitively via go-git, so no new module version is downloaded); build and vet both clean.
 
-- [ ] **Step 6: Verify deploy.IISSwapper is a valid consumer of HelperCommandRunner (compile-time interface check)**
+- [x] **Step 6: Verify deploy.IISSwapper is a valid consumer of HelperCommandRunner (compile-time interface check)**
 
 Add this line near the top of `backend/internal/iishelper/client.go`, right after the type declaration, to catch any signature drift at compile time rather than only at wiring time in Task 6:
 
@@ -916,7 +916,7 @@ var _ interface {
 Run: `cd backend && go build ./...`
 Expected: clean (this is a compile-time-only check; there's no runtime behavior to test)
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 cd backend
@@ -936,7 +936,7 @@ git commit -m "feat: add HelperCommandRunner, the pipe-transport CommandRunner i
 - Consumes: `iishelper.LoadAllowedSites`, `iishelper.Server`, `iishelper.PipeName` (Tasks 2-3), `deploy.AppcmdPath`, `deploy.RealCommandRunner` (Task 1 / existing)
 - Produces: the `iishelper.exe` binary; nothing else consumes this package (it's `package main`)
 
-- [ ] **Step 1: Write `setup()`, the part of main that's actually testable**
+- [x] **Step 1: Write `setup()`, the part of main that's actually testable**
 
 Create `backend/cmd/iishelper/main.go`:
 
@@ -1067,7 +1067,7 @@ func (w *windowsService) Execute(args []string, r <-chan svc.ChangeRequest, s ch
 }
 ```
 
-- [ ] **Step 2: Write the failing test for `setup()`**
+- [x] **Step 2: Write the failing test for `setup()`**
 
 Create `backend/cmd/iishelper/main_test.go`:
 
@@ -1112,17 +1112,17 @@ func TestSetup_LoadsSitesAndOpensListener(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: Run the test**
+- [x] **Step 3: Run the test**
 
 Run: `cd backend && go test ./cmd/iishelper/... -v`
 Expected: PASS. (If it fails with a pipe-already-exists error, no other process is expected to be listening on `\\.\pipe\devplatform-iishelper` yet at this point in the plan — check nothing was left running from earlier manual testing.)
 
-- [ ] **Step 4: Full module build/vet/test check**
+- [x] **Step 4: Full module build/vet/test check**
 
 Run: `cd backend && go build ./... && go vet ./... && go test ./...`
 Expected: all packages pass, including the pre-existing ones — this task only added new files.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd backend
@@ -1142,7 +1142,7 @@ git commit -m "feat: add the iishelper Windows Service binary"
 **Interfaces:**
 - Consumes: `iishelper.NewHelperCommandRunner()` (Task 4)
 
-- [ ] **Step 1: Swap the CommandRunner in devplatform.exe**
+- [x] **Step 1: Swap the CommandRunner in devplatform.exe**
 
 Edit `backend/cmd/devplatform/main.go`. Add the import:
 
@@ -1162,12 +1162,12 @@ to:
 		deploy.NewIISSwapper(iishelper.NewHelperCommandRunner()),
 ```
 
-- [ ] **Step 2: Verify the whole backend still builds, vets, and tests clean**
+- [x] **Step 2: Verify the whole backend still builds, vets, and tests clean**
 
 Run: `cd backend && go build ./... && go vet ./... && go test ./...`
 Expected: clean. Note: `internal/deployment`'s existing tests use a fake `CommandRunner` directly (never `RealCommandRunner` or the new `HelperCommandRunner`), so they are unaffected by this wiring change — this step exists to catch any compile-time mismatch, not a test regression.
 
-- [ ] **Step 3: Write the one-time install script**
+- [x] **Step 3: Write the one-time install script**
 
 Create `backend/cmd/iishelper/install.ps1`:
 
@@ -1222,7 +1222,7 @@ Write-Host ""
 Write-Host "Then: Start-Service DevPlatformIISHelper"
 ```
 
-- [ ] **Step 4: Update docs/DURUM.md**
+- [x] **Step 4: Update docs/DURUM.md**
 
 Edit `docs/DURUM.md`. Find the line containing exactly `## Sıradaki iş` and insert this new subsection immediately before it (i.e. right after the end of the security-review update block that precedes it):
 
@@ -1281,7 +1281,7 @@ and replace it with:
   ops adımı).
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd backend
