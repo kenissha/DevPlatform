@@ -24,8 +24,10 @@ export function RepoMergeRequestsPage() {
         setBranches(b)
         setSourceBranch((cur) => cur || b[0] || '')
         // "main" is the protected default branch, so it's the target
-        // essentially every time — preselect it when it exists.
-        setTargetBranch((cur) => cur || (b.includes('main') ? 'main' : b[1] || ''))
+        // essentially every time — preselect it even when the repo has no
+        // commits on main yet (targetOptions always offers "main" as a
+        // choice in that case, see below, so this must match).
+        setTargetBranch((cur) => cur || 'main')
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
   }
@@ -149,7 +151,7 @@ export function RepoMergeRequestsPage() {
                   <button
                     type="submit"
                     className="btn-primary"
-                    disabled={creating || !title.trim() || sourceBranch === targetBranch}
+                    disabled={creating || !title.trim() || !sourceBranch || !targetBranch || sourceBranch === targetBranch}
                   >
                     {creating ? 'Oluşturuluyor...' : 'Merge isteği oluştur'}
                   </button>
