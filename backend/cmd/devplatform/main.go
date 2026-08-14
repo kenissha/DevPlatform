@@ -26,6 +26,8 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/server"
 	"github.com/kenissha/DevPlatform/backend/internal/taskboard"
 	"github.com/kenissha/DevPlatform/backend/internal/users"
+
+	"golang.org/x/sys/windows/svc"
 )
 
 func main() {
@@ -185,8 +187,22 @@ func main() {
 		log.Printf("no DEVPLATFORM_FRONTEND_DIR configured — the panel is not served from this process")
 	}
 
+	httpServer := &http.Server{Addr: cfg.ListenAddr, Handler: router}
+
+	isService, err := svc.IsWindowsService()
+	if err != nil {
+		log.Fatalf("failed to determine execution context: %v", err)
+	}
+	if isService {
+		log.Printf("devplatform listening on %s (running as the %q Windows service)", cfg.ListenAddr, serviceName)
+		if err := svc.Run(serviceName, &windowsService{server: httpServer}); err != nil {
+			log.Fatalf("service run failed: %v", err)
+		}
+		return
+	}
+
 	log.Printf("devplatform listening on %s", cfg.ListenAddr)
-	if err := http.ListenAndServe(cfg.ListenAddr, router); err != nil {
+	if err := httpServer.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }
