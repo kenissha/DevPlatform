@@ -312,6 +312,13 @@ yapıldığı gibi birlikte, elle yapılacak.
 
 ## Sıradaki iş
 
+**2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`
+artık gerçek (başka canlı projeleri de barındıran) sunucuda, IIS
+`httpPlatformHandler` ile çalışıyor durumda; panelde Yönetici olarak
+giriş doğrulandı. Henüz yapılmayanlar: git kısmı (repo yok), gerçek
+deploy hedefleri, dışarıdan (sunucunun dışından) erişim, ve hâlâ açık
+duran git kimlik doğrulama kararı (bkz. "Bilinmesi gereken kararlar").
+
 Faz 1 bitti (SMTP dahil). Faz 2'nin build+deploy+rollback mekanizması
 artık panelden gerçekten tetiklenebiliyor (bkz. yukarısı). Faz 3'ten
 gecelik yedek ve proje bazlı yetkilendirme bitti; kişi ekleme/davet akışı
@@ -389,8 +396,14 @@ bir anahtar (ör. ID) eklemek.
   bare git repoları, `tasks/`, `merge-requests/`, `users.json`,
   `audit.jsonl`. 2 kişilik ekip için kasıtlı bir tercih; büyürse
   taşınması gereken ilk yer burası.
-- **Frontend'in backend binary'sine gömülmesi henüz yapılmadı.**
-  Tasarımda var (tek dosya deploy), şu an iki ayrı süreç.
+- **Frontend artık `devplatform.exe`'nin kendisinden servis edilebiliyor
+  (2026-08-14).** Gerçek `go:embed` değil ama aynı sonucu veriyor:
+  `DEVPLATFORM_FRONTEND_DIR` build edilmiş `frontend/dist`'e işaret
+  ederse, backend onu SPA-fallback'li şekilde aynı origin'den sunuyor
+  (`cmd/devplatform/frontend.go`). Boşsa (yerel geliştirmede olduğu
+  gibi) hiçbir şey değişmiyor. Bunun sebebi kozmetik değildi: frontend
+  kodu CORS/ayrı API adresi hiç desteklemiyor, üretimde ikisi aynı
+  origin'den gelmek zorunda.
 - **Deploy hedefleri de dosya tabanlı, panelden yönetilmiyor.**
   `DEVPLATFORM_DEPLOY_TARGETS_FILE`, `[{repo, environment, recipe,
   siteName, secretsTarget, keepVersions}, ...]` şeklinde bir JSON dosyası.
@@ -417,6 +430,50 @@ Faz 2'nin temel mekanizmasını (`internal/deploy`: build → versiyonlu klasör
   `C:\inetpub\...` gibi, kullanıcı profilinin dışında bir yerde tutulmalı —
   gerçek Intranet'e bağlanırken deploy verisinin kök klasörü buna göre
   seçilmeli (`DEVPLATFORM_DATA_DIR` ya da deploy'a özel ayrı bir kök).
+
+## IIS `httpPlatformHandler` ile gerçek sunucuya kurulum — öğrenilen dersler (2026-08-14)
+
+DevPlatform ilk kez gerçek (canlı başka projeleri de barındıran) sunucuya
+kuruldu — kod değişikliği gerekmedi, tamamen IIS/işletim sistemi tarafında
+4 gerçek engel çıktı. Kullanılan desen: `OasRapor\go backend\web.config`'te
+zaten kanıtlanmış olan desenin aynısı — backend `httpPlatformHandler` ile
+IIS'e bir "site" olarak tanıtılıyor (sabit bir portta dinliyor, örn.
+`:8081`), frontend ayrı bir statik IIS site'ı olarak duruyor ve kendi
+`web.config`'indeki `<rewrite>` kurallarıyla `/api/*` ve `/healthz`'i
+`127.0.0.1:8081`'e yönlendiriyor (reverse proxy). Tarayıcı tek bir origin
+görüyor, CORS sorunu hiç çıkmıyor.
+
+- **`httpPlatformHandler`, `stdoutLogFile`'ın klasörünü kendisi
+  oluşturmuyor.** `web.config`'te `stdoutLogFile="...\logs\stdout"`
+  yazsan bile `logs` klasörü elle, önceden oluşturulmuş olmalı — yoksa
+  process başlatılamıyor (log da hiç yazılmıyor, sessizce 502 dönüyor).
+- **Reverse-proxy `<rewrite>` kuralları, sunucu genelinde "Enable
+  proxy" açık olmadan çalışmaz.** IIS Manager'da sunucu düğümü →
+  Application Request Routing Cache → Server Proxy Settings → "Enable
+  proxy" işaretli olmalı. Bu kapalıyken hedef adres (`127.0.0.1:8081`)
+  kendisi tamamen sağlıklı olsa bile (`/healthz` doğrudan çalışıyor
+  olsa bile) rewrite üzerinden gelen her istek 502 ile geri dönüyor —
+  yanıltıcı çünkü "backend çalışmıyor" izlenimi veriyor, aslında
+  backend'le hiç ilgisi yok.
+- **`httpPlatformHandler`'la başlatılan backend'in kendi IIS site
+  binding'i (`127.0.0.1:8082` gibi) gerçek trafik için önemli değil.**
+  O binding sadece IIS'in process'i "bir site" olarak tanıyıp
+  başlatabilmesi için var; gerçek trafik doğrudan `DEVPLATFORM_LISTEN_ADDR`
+  ile backend'in kendi dinlediği sabit porta gidiyor (frontend'in
+  `web.config`'i o adrese yönlendiriyor). Bu port'a bağlanmaya çalışmak
+  yanlış teşhise götürebilir — asıl test edilmesi gereken, backend'in
+  kendi gerçek portu.
+- **Aynı porta birden fazla site bağlı olabilir, IIS bunu sessizce
+  çözüyor.** Yeni bir site için port seçerken, o portun listede
+  başka bir site tarafından da kullanılmadığından emin olunmalı — yoksa
+  hangi site'ın cevap vereceği belirsiz/yanıltıcı olabiliyor (bizde,
+  yanlış site'a tıklanmış olması asıl sorunla karışıp vakit kaybettirdi).
+- **En sık karışıklık kaynağı, kod değil insan hatasıydı:** frontend'in
+  fiziksel klasörüne yanlışlıkla başka bir projenin build çıktısı
+  kopyalanmıştı. IIS Manager'da bir site'ın **Explore** (fiziksel
+  klasörü aç) seçeneğiyle "gerçekten hangi dosyalar orada" diye
+  doğrulamak, port/binding'le uğraşmadan önce ilk kontrol edilecek şey
+  olmalı.
 
 ## Kontroller
 
