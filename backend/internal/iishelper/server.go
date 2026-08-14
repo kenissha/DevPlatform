@@ -2,8 +2,10 @@ package iishelper
 
 import (
 	"encoding/json"
+	"io"
 	"log"
 	"net"
+	"time"
 )
 
 // Executor actually runs a request that has already passed
@@ -41,8 +43,10 @@ func (s *Server) Serve(ln net.Listener) error {
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
 
+	conn.SetDeadline(time.Now().Add(30 * time.Second))
+
 	var req Request
-	if err := json.NewDecoder(conn).Decode(&req); err != nil {
+	if err := json.NewDecoder(io.LimitReader(conn, 64*1024)).Decode(&req); err != nil {
 		log.Printf("iishelper: failed to decode request: %v", err)
 		return
 	}

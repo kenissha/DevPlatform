@@ -58,8 +58,9 @@ func main() {
 //
 // DEVPLATFORM_IISHELPER_SDDL is an optional Windows security descriptor
 // string restricting which account may connect to the named pipe. Left
-// empty, go-winio applies its own default pipe security (owner and
-// Administrators only) — safe for local development, but production
+// empty, go-winio applies its own default pipe security, which also
+// grants Everyone read access — fine for local development, but not
+// something production should rely on for restricting access. Production
 // should set this explicitly to the one account devplatform.exe runs
 // as (see the install script for how to generate this value).
 func setup() (net.Listener, *iishelper.Server, error) {
@@ -73,6 +74,8 @@ func setup() (net.Listener, *iishelper.Server, error) {
 	var pipeConfig *winio.PipeConfig
 	if sddl := os.Getenv("DEVPLATFORM_IISHELPER_SDDL"); sddl != "" {
 		pipeConfig = &winio.PipeConfig{SecurityDescriptor: sddl}
+	} else {
+		log.Printf("iishelper: WARNING - DEVPLATFORM_IISHELPER_SDDL is not set; the named pipe is using go-winio's default security (readable by Everyone, not restricted to devplatform.exe's account) - see install.ps1 for how to set this before production use")
 	}
 	ln, err := winio.ListenPipe(iishelper.PipeName, pipeConfig)
 	if err != nil {

@@ -1,3 +1,4 @@
+#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
   One-time setup for the DevPlatform IIS helper service.
@@ -28,8 +29,10 @@ param(
     [Parameter(Mandatory = $true)][string]$DevPlatformAccount
 )
 
+$ErrorActionPreference = 'Stop'
+
 New-Service -Name "DevPlatformIISHelper" `
-    -BinaryPathName $ExePath `
+    -BinaryPathName "$ExePath" `
     -DisplayName "DevPlatform IIS Helper" `
     -Description "Runs appcmd.exe on behalf of devplatform.exe. Do not run devplatform.exe itself elevated - only this service needs Administrator rights." `
     -StartupType Automatic
@@ -43,6 +46,29 @@ Write-Host "Before starting it, restrict the named pipe to $DevPlatformAccount b
 Write-Host "environment variable on the DevPlatformIISHelper service (System Properties >"
 Write-Host "Environment Variables, or 'setx' for a machine-wide value, then restart the service):"
 Write-Host ""
-Write-Host "  DEVPLATFORM_IISHELPER_SDDL = D:P(A;;GA;;;$sid)"
+Write-Host "  DEVPLATFORM_IISHELPER_SDDL = D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;GA;;;$sid)"
 Write-Host ""
-Write-Host "Then: Start-Service DevPlatformIISHelper"
+Write-Host "(This grants full access to LocalSystem (SY) and Builtin Administrators (BA) in"
+Write-Host "addition to $DevPlatformAccount. LocalSystem must be included: the iishelper"
+Write-Host "service itself runs as LocalSystem, and go-winio only applies this security"
+Write-Host "descriptor to the pipe's first instance - every later instance, including the one"
+Write-Host "created on the first incoming connection, is opened against the existing pipe"
+Write-Host "object and access-checked against this same DACL. Without an ACE for SY, that"
+Write-Host "check fails, the pipe Accept() errors out, and the service dies moments after"
+Write-Host "starting.)"
+Write-Host ""
+Write-Host "The helper also needs DEVPLATFORM_DEPLOY_TARGETS_FILE set to the exact same file"
+Write-Host "path devplatform.exe uses. If it is empty or unset, iishelper starts with zero"
+Write-Host "allowed sites and rejects every deploy request with 'not a configured deploy"
+Write-Host "target site'."
+Write-Host ""
+Write-Host "IMPORTANT: Windows Services do NOT inherit a logged-in user's environment. Setting"
+Write-Host "either DEVPLATFORM_IISHELPER_SDDL or DEVPLATFORM_DEPLOY_TARGETS_FILE with a plain"
+Write-Host "user-scoped 'setx' or in a PowerShell profile will NOT be visible to this service."
+Write-Host "Both variables must be set as machine-scoped environment variables - System"
+Write-Host "Properties > Environment Variables > System variables (not User variables), or:"
+Write-Host ""
+Write-Host "  [Environment]::SetEnvironmentVariable('DEVPLATFORM_IISHELPER_SDDL', '<value>', 'Machine')"
+Write-Host "  [Environment]::SetEnvironmentVariable('DEVPLATFORM_DEPLOY_TARGETS_FILE', '<path>', 'Machine')"
+Write-Host ""
+Write-Host "Then restart the service so it picks up the new values: Start-Service DevPlatformIISHelper"
