@@ -475,6 +475,24 @@ görüyor, CORS sorunu hiç çıkmıyor.
   doğrulamak, port/binding'le uğraşmadan önce ilk kontrol edilecek şey
   olmalı.
 
+**Sonuç: backend artık `httpPlatformHandler` ile barındırılmıyor
+(2026-08-14).** Yukarıdaki ayarları (`AlwaysRunning`, `Idle Time-out=0`,
+`Preload Enabled`) doğru yapsak bile süreç durmaya devam etti; asıl
+mesele ayar değil, **model uyumsuzluğuydu**: `httpPlatformHandler`
+"istek gelince çalış, gelmeyince uyu" mantığında, ama bu süreç istek
+olmadan da iş yapmak zorunda — gecelik yedek zamanlayıcıyla çalışıyor,
+onaylanan bir deploy ise kendisini tetikleyen HTTP isteği çoktan
+cevaplandıktan sonra dakikalarca sürüyor. İkisi de sessizce atlanır ya
+da yarıda kesilirdi. Bu yüzden `devplatform.exe` artık **Windows
+Servisi** olarak çalışıyor (`cmd/devplatform/install.ps1`), tıpkı
+`iishelper` gibi. IIS'in rolü değişmedi: frontend site'ı hâlâ `/api`,
+`/healthz` ve `/git`'i servisin portuna reverse-proxy'liyor.
+
+**Genel ders:** IIS'in `httpPlatformHandler`'ı, arka planda zamanlanmış
+işi ya da isteğin ömrünü aşan işi olan bir süreç için yanlış barındırma
+modeli. Böyle bir süreç Windows Servisi olmalı; IIS sadece önüne
+proxy olarak konulmalı.
+
 ## Kontroller
 
 ```bash
