@@ -10,6 +10,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/deployment"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
+	"github.com/kenissha/DevPlatform/backend/internal/gittoken"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/notify"
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
@@ -47,6 +48,11 @@ type Deps struct {
 	// requires access.RequireRepoAccess to pass, and /api/access exposes
 	// the admin-only management API.
 	Access *access.Store
+	// GitTokens issues and revokes the per-person git credentials that
+	// gate the /git/ route (see internal/gittoken). Not optional in
+	// practice — cmd/devplatform/main.go always constructs one — but
+	// nil-checking it here would only mask a wiring bug at startup.
+	GitTokens *gittoken.Handlers
 }
 
 // NewRouter builds the top-level HTTP router.
@@ -61,6 +67,7 @@ func NewRouter(deps Deps) *http.ServeMux {
 	notifications := deps.Notifications
 	deployments := deps.Deployments
 	accessHandlers := &access.Handlers{Store: deps.Access}
+	gitTokens := deps.GitTokens
 
 	// repoScoped wraps a handler for any route with a {repo} path value:
 	// authentication first, then access.RequireRepoAccess (a nil
@@ -162,6 +169,14 @@ func NewRouter(deps Deps) *http.ServeMux {
 	mux.Handle("GET /api/access", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(accessHandlers.List))))
 	mux.Handle("PUT /api/access/{subject}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(accessHandlers.Set))))
 	mux.Handle("DELETE /api/access/{subject}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(accessHandlers.Clear))))
+
+	// Per-person git credentials (see internal/gittoken). Anyone can mint
+	// their own (no {subject} in the path — it always targets the
+	// caller's own JWT subject); only an Admin can revoke someone else's,
+	// the same split /api/access uses between "sees own" and "manages
+	// everyone".
+	mux.Handle("POST /api/me/git-token", authMiddleware(http.HandlerFunc(gitTokens.GenerateMine)))
+	mux.Handle("DELETE /api/git-token/{subject}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(gitTokens.Revoke))))
 
 	return mux
 }

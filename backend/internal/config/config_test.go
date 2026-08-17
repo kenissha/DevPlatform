@@ -35,22 +35,6 @@ func TestLoad_ReadsFromEnv(t *testing.T) {
 	}
 }
 
-func TestLoad_ReadsGitCredentialsFromEnv(t *testing.T) {
-	os.Setenv("DEVPLATFORM_GIT_USERNAME", "devuser")
-	os.Setenv("DEVPLATFORM_GIT_PASSWORD", "devpass")
-	defer os.Unsetenv("DEVPLATFORM_GIT_USERNAME")
-	defer os.Unsetenv("DEVPLATFORM_GIT_PASSWORD")
-
-	cfg := Load()
-
-	if cfg.GitUsername != "devuser" {
-		t.Errorf("GitUsername = %q, want %q", cfg.GitUsername, "devuser")
-	}
-	if cfg.GitPassword != "devpass" {
-		t.Errorf("GitPassword = %q, want %q", cfg.GitPassword, "devpass")
-	}
-}
-
 func TestLoad_ReadsJWTSecretFromEnv(t *testing.T) {
 	os.Setenv("DEVPLATFORM_JWT_SECRET", "super-secret")
 	defer os.Unsetenv("DEVPLATFORM_JWT_SECRET")

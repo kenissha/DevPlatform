@@ -27,8 +27,8 @@ const Prefix = "/git"
 // The returned handler is wrapped with withReceivePackAuthShim, a
 // permanent go-git v6-alpha workaround (see that function's doc comment)
 // — it stays regardless of DevPlatform's own auth, since this constructor
-// has no guarantee callers wrap it with gitauth.RequireBasicAuth (this
-// package's own tests call it directly, unwrapped).
+// has no guarantee callers wrap it with gittoken.RequireTokenAndAccess
+// (this package's own tests call it directly, unwrapped).
 func NewHandler(dataDir string) http.Handler {
 	loader := transport.NewFilesystemLoader(osfs.New(dataDir), false)
 	protected := newProtectingLoader(loader)
@@ -49,19 +49,19 @@ func NewHandler(dataDir string) http.Handler {
 // (see its Loader/ErrorLog/Prefix field list) — it's simply not
 // configurable in this alpha release.
 //
-// This is unrelated to DevPlatform's own auth (internal/gitauth), which
+// This is unrelated to DevPlatform's own auth (internal/gittoken), which
 // wraps this handler from the outside in main.go and rejects unauthorized
 // requests before they ever reach here — by the time a request reaches
 // this shim through that path, it already carries a real, validated
 // Authorization header, so the synthetic header below is never applied in
 // production. It only fires for callers that invoke NewHandler directly
-// without gitauth in front (this package's own integration tests), where
+// without gittoken in front (this package's own integration tests), where
 // it supplies a synthetic, unvalidated Authorization header purely so
 // go-git's internal sanity check doesn't hang/reject the request; it
 // performs no credential validation of its own and grants no capability
 // beyond what the wrapping handler already allows. WARNING: this means an
-// unwrapped NewHandler() (i.e. not behind gitauth.RequireBasicAuth or
-// equivalent) allows fully anonymous push — the shim removes go-git's own
+// unwrapped NewHandler() (i.e. not behind gittoken.RequireTokenAndAccess
+// or equivalent) allows fully anonymous push — the shim removes go-git's own
 // incidental header-less-401 barrier, so any future caller that mounts
 // NewHandler's output directly (e.g. a second, intentionally read-only
 // route reusing this handler) must not skip real authentication. Remove

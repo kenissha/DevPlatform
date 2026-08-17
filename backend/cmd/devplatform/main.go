@@ -14,9 +14,9 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/config"
 	"github.com/kenissha/DevPlatform/backend/internal/deploy"
 	"github.com/kenissha/DevPlatform/backend/internal/deployment"
-	"github.com/kenissha/DevPlatform/backend/internal/gitauth"
 	"github.com/kenissha/DevPlatform/backend/internal/gitserver"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
+	"github.com/kenissha/DevPlatform/backend/internal/gittoken"
 	"github.com/kenissha/DevPlatform/backend/internal/iishelper"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/notify"
@@ -45,7 +45,6 @@ func main() {
 	log.Printf("repository store ready at %s (%d repos)", cfg.DataDir, len(repos))
 
 	gitHandler := gitserver.NewHandler(cfg.DataDir)
-	authedGitHandler := gitauth.RequireBasicAuth(cfg.GitUsername, cfg.GitPassword, gitHandler)
 	jwtSecret := []byte(cfg.JWTSecret)
 	authMiddleware := func(next http.Handler) http.Handler {
 		return auth.RequireAuth(jwtSecret, next)
@@ -58,6 +57,11 @@ func main() {
 	// PUT /api/access/{subject} for a specific person (see
 	// internal/access's doc comment for why unrestricted is the default).
 	accessStore := access.NewStore(filepath.Join(cfg.DataDir, "access.json"))
+	// gitTokenStore holds the per-person git credentials that replace the
+	// single shared DEVPLATFORM_GIT_USERNAME/_PASSWORD pair — see
+	// docs/superpowers/specs/2026-08-17-per-user-git-access-design.md.
+	gitTokenStore := gittoken.NewStore(filepath.Join(cfg.DataDir, "git-tokens.json"))
+	authedGitHandler := gittoken.RequireTokenAndAccess(gitTokenStore, accessStore, usersStore, gitHandler)
 
 	// SMTPHost is the switch: empty means NoopEmailSender-equivalent
 	// behavior (notifications stay panel-only), exactly as before this was
@@ -89,6 +93,7 @@ func main() {
 		Access: accessStore,
 	}
 	repoHandlers := &repoapi.Handlers{Repos: store, Audit: auditLogger, Access: accessStore}
+	gitTokenHandlers := &gittoken.Handlers{Store: gitTokenStore}
 	taskHandlers := &taskboard.Handlers{
 		Store:  taskboard.NewStore(filepath.Join(cfg.DataDir, "tasks")),
 		Repos:  store,
@@ -178,6 +183,7 @@ func main() {
 		Deployments:    deploymentHandlers,
 		Users:          usersStore,
 		Access:         accessStore,
+		GitTokens:      gitTokenHandlers,
 	})
 
 	if cfg.FrontendDir != "" {

@@ -351,19 +351,19 @@ bir anahtar (ör. ID) eklemek.
 
 ## Bilinmesi gereken kararlar
 
-- **Açık karar — git erişimi tek paylaşılan kimlik bilgisiyle çalışıyor
-  (2026-08-13):** `internal/access`'in proje bazlı kısıtlaması sadece
-  panel API'lerinde geçerli. `git clone`/`push`, `DEVPLATFORM_GIT_USERNAME`/
-  `_PASSWORD` ile herkes için aynı tek kullanıcı adı/şifreyi kullanıyor
-  (`gitauth.RequireBasicAuth`, `/git/` rotası `authMiddleware`'in de
-  `RequireRepoAccess`'in de dışında). Yani panelden birini bir repoya
-  kısıtlasan bile, o kişi paylaşılan git kimlik bilgileriyle her repoyu
-  doğrudan klonlayıp push'layabiliyor — bu, projenin "ikinci mühendisi tam
-  erişim vermeden işe alma" amacını bu haliyle geçersiz kılıyor. Gerçek
-  çözüm kullanıcı bazlı git kimlik doğrulama (örn. kişi başına token)
-  gerektiriyor — bu boyutta bir iş, ayrı bir brainstorm+plan hak ediyor.
-  Karar bekliyor: şimdi mi ele alınsın, yoksa ikinci mühendis işe alınana
-  kadar bilinen bir sınırlama olarak mı bırakılsın.
+- **Çözüldü — git artık kişi başına anahtarla çalışıyor (2026-08-17):**
+  `internal/gitauth`'ın tek paylaşılan `DEVPLATFORM_GIT_USERNAME`/
+  `_PASSWORD` çifti tamamen kaldırıldı (geçiş dönemi yok). Yeni
+  `internal/gittoken`, kişi başına tek bir anahtarın SHA-256 hash'ini
+  saklıyor; ham anahtar hiç diskte durmuyor, sadece üretildiği an bir
+  kere gösteriliyor (panelde "Hesabım" sayfası, `POST /api/me/git-token`).
+  `/git/` rotasının önündeki `RequireTokenAndAccess` ara katmanı, panelin
+  zaten kullandığı `access.Store.CanAccess`'in **aynısını** çağırıyor —
+  git için ayrı bir yetki sistemi yok. Ayrıntı için
+  `docs/superpowers/specs/2026-08-17-per-user-git-access-design.md`.
+  Paylaşılan şifreyle git kullanan biri varsa (şimdiye kadar sadece biz),
+  bu değişiklikten sonra Hesabım sayfasından yeni bir anahtar üretmesi
+  gerekiyor — eski paylaşılan şifre artık hiçbir yerde geçerli değil.
 - **Çözüldü — build adımı artık Administrator yetkisiyle çalışmıyor
   (2026-08-13):** bkz. yukarıdaki "IIS yardımcı servisi" güncellemesi.
   `deploy.Pipeline`'ın build adımı hâlâ `devplatform.exe` içinde

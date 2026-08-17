@@ -20,9 +20,9 @@
   change — only what starts and supervises the backend process does.
 
   Config goes into the service's own registry Environment value rather
-  than machine-wide environment variables, so the JWT secret and git
-  password are not readable from every process on the box, and so
-  nothing else on this server can be affected by a name collision.
+  than machine-wide environment variables, so the JWT secret is not
+  readable from every process on the box, and so nothing else on this
+  server can be affected by a name collision.
 
 .PARAMETER ExePath
   Full path to devplatform.exe.
@@ -43,23 +43,17 @@
 .PARAMETER JwtSecret
   HMAC secret shared with whatever system issues login tokens.
 
-.PARAMETER GitUsername
-.PARAMETER GitPassword
-  Credentials git clients present when pushing/pulling over HTTP.
-
 .EXAMPLE
   .\install.ps1 -ExePath D:\inetpub\wwwroot\DevPlatform\Backend\devplatform.exe `
                 -DataDir D:\inetpub\wwwroot\DevPlatform\data `
                 -ListenAddr ":8081" `
-                -JwtSecret "..." -GitUsername devplatform -GitPassword "..."
+                -JwtSecret "..."
 #>
 param(
     [Parameter(Mandatory = $true)][string]$ExePath,
     [Parameter(Mandatory = $true)][string]$DataDir,
     [Parameter(Mandatory = $true)][string]$ListenAddr,
     [Parameter(Mandatory = $true)][string]$JwtSecret,
-    [Parameter(Mandatory = $true)][string]$GitUsername,
-    [Parameter(Mandatory = $true)][string]$GitPassword,
     [string]$FrontendDir = ""
 )
 
@@ -92,9 +86,7 @@ New-Service -Name $serviceName `
 $env_lines = @(
     "DEVPLATFORM_DATA_DIR=$DataDir",
     "DEVPLATFORM_LISTEN_ADDR=$ListenAddr",
-    "DEVPLATFORM_JWT_SECRET=$JwtSecret",
-    "DEVPLATFORM_GIT_USERNAME=$GitUsername",
-    "DEVPLATFORM_GIT_PASSWORD=$GitPassword"
+    "DEVPLATFORM_JWT_SECRET=$JwtSecret"
 )
 if ($FrontendDir -ne "") {
     $env_lines += "DEVPLATFORM_FRONTEND_DIR=$FrontendDir"

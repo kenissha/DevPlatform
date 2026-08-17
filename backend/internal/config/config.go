@@ -9,8 +9,6 @@ import (
 type Config struct {
 	ListenAddr   string
 	DataDir      string
-	GitUsername  string
-	GitPassword  string
 	JWTSecret    string
 	SMTPHost     string
 	SMTPPort     string
@@ -52,11 +50,6 @@ type Config struct {
 // Load reads configuration from the environment, falling back to
 // development-friendly defaults when a variable is unset.
 //
-// The GitUsername/GitPassword "dev"/"dev" defaults exist only so the server
-// boots without configuration during local development. They are not real
-// credentials — every environment beyond a developer's own machine must set
-// DEVPLATFORM_GIT_USERNAME and DEVPLATFORM_GIT_PASSWORD explicitly.
-//
 // JWTSecret's "dev-not-a-real-secret" default is the same kind of
 // placeholder: internal/auth validates incoming JWTs (issued by an
 // external identity system this platform trusts, rather than DevPlatform
@@ -76,8 +69,6 @@ func Load() Config {
 	return Config{
 		ListenAddr:        listenAddr(),
 		DataDir:           getEnv("DEVPLATFORM_DATA_DIR", "./data"),
-		GitUsername:       getEnv("DEVPLATFORM_GIT_USERNAME", "dev"),
-		GitPassword:       getEnv("DEVPLATFORM_GIT_PASSWORD", "dev"),
 		JWTSecret:         getEnv("DEVPLATFORM_JWT_SECRET", "dev-not-a-real-secret"),
 		SMTPHost:          getEnv("DEVPLATFORM_SMTP_HOST", ""),
 		SMTPPort:          getEnv("DEVPLATFORM_SMTP_PORT", "25"),
