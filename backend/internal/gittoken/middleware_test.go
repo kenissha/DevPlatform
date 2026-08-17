@@ -248,6 +248,61 @@ func TestRequireTokenAndAccess_RejectsSuffixlessTraversalTarget(t *testing.T) {
 	}
 }
 
+// TestRequireTokenAndAccess_AllowsGitReceivePackForGrantedRepo exercises
+// the write path end-to-end, not just as a table-row regex assertion:
+// git-receive-pack (push) is the route where an authorization bypass
+// would let an unauthorized user write to a repo, not merely read it,
+// so it's the highest-value case to prove passes through the allow-list
+// for a restricted user's own granted repo.
+func TestRequireTokenAndAccess_AllowsGitReceivePackForGrantedRepo(t *testing.T) {
+	tokens := NewStore(t.TempDir() + "/git-tokens.json")
+	token, err := tokens.Generate("dev-1")
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	accessStore := access.NewStore(t.TempDir() + "/access.json")
+	if err := accessStore.Set("dev-1", []string{"intranet-backend"}); err != nil {
+		t.Fatalf("Set returned error: %v", err)
+	}
+	usersStore := users.NewStore(t.TempDir() + "/users.json")
+	handler := RequireTokenAndAccess(tokens, accessStore, usersStore, stubGitHandler())
+
+	req := httptest.NewRequest(http.MethodPost, "/git/intranet-backend.git/git-receive-pack", nil)
+	req.SetBasicAuth("dev-1", token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (git-receive-pack for a granted repo must reach next)", rec.Code, http.StatusOK)
+	}
+}
+
+// TestRequireTokenAndAccess_BlocksGitReceivePackForUngrantedRepo is the
+// forbidden-side counterpart: a restricted user pushing to a repo they
+// were never granted must be blocked before reaching the write handler.
+func TestRequireTokenAndAccess_BlocksGitReceivePackForUngrantedRepo(t *testing.T) {
+	tokens := NewStore(t.TempDir() + "/git-tokens.json")
+	token, err := tokens.Generate("dev-1")
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	accessStore := access.NewStore(t.TempDir() + "/access.json")
+	if err := accessStore.Set("dev-1", []string{"intranet-frontend"}); err != nil {
+		t.Fatalf("Set returned error: %v", err)
+	}
+	usersStore := users.NewStore(t.TempDir() + "/users.json")
+	handler := RequireTokenAndAccess(tokens, accessStore, usersStore, stubGitHandler())
+
+	req := httptest.NewRequest(http.MethodPost, "/git/intranet-backend.git/git-receive-pack", nil)
+	req.SetBasicAuth("dev-1", token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d (git-receive-pack for an ungranted repo must be blocked)", rec.Code, http.StatusForbidden)
+	}
+}
+
 func TestRepoNameFromPath(t *testing.T) {
 	cases := []struct {
 		path     string
@@ -261,11 +316,100 @@ func TestRepoNameFromPath(t *testing.T) {
 		{"/git/", "", false},
 		{"/git/allowed.git/../secret.git/info/refs", "", false},
 		{"/git/allowed.git/../secret/info/refs", "", false},
+		// The backslash-based bypass that got round 2 BLOCKED:
+		// strings.Cut(rest, "/") only splits on a forward slash, so
+		// "..\\secret.git" was a single opaque segment as far as
+		// path.Clean (slash-only) was concerned — it never saw a
+		// standalone ".." component to collapse, even though
+		// Windows/go-billy's filesystem layer treats backslash as a
+		// real separator and resolves this to the sibling repo on
+		// disk. The allow-list rejects it because the remainder
+		// "..\\secret.git/info/refs" matches none of the fixed
+		// suffix patterns.
+		{"/git/allowed.git/..\\secret.git/info/refs", "", false},
 	}
 	for _, c := range cases {
 		repo, ok := repoNameFromPath(c.path)
 		if repo != c.wantRepo || ok != c.wantOK {
 			t.Errorf("repoNameFromPath(%q) = (%q, %v), want (%q, %v)", c.path, repo, ok, c.wantRepo, c.wantOK)
+		}
+	}
+}
+
+// TestRequireTokenAndAccess_RejectsBackslashTraversalPath is the
+// end-to-end version of the backslash regression case above: sends the
+// exact request shape that round 2's verification proved was a live
+// bypass against the real gitserver handler stack (see
+// task-2-report.md's "fix round 2" section), authenticated as a user
+// granted only "allowed", and asserts it's rejected with 400 before any
+// authorization decision is made.
+func TestRequireTokenAndAccess_RejectsBackslashTraversalPath(t *testing.T) {
+	tokens := NewStore(t.TempDir() + "/git-tokens.json")
+	token, err := tokens.Generate("dev-1")
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	accessStore := access.NewStore(t.TempDir() + "/access.json")
+	if err := accessStore.Set("dev-1", []string{"allowed"}); err != nil {
+		t.Fatalf("Set returned error: %v", err)
+	}
+	usersStore := users.NewStore(t.TempDir() + "/users.json")
+	handler := RequireTokenAndAccess(tokens, accessStore, usersStore, stubGitHandler())
+
+	req := httptest.NewRequest(http.MethodGet, "/git/allowed.git/..\\secret.git/info/refs", nil)
+	req.SetBasicAuth("dev-1", token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d (backslash traversal path must be rejected before authorization)", rec.Code, http.StatusBadRequest)
+	}
+}
+
+// TestIsKnownSuffix_AllowsEveryRealGoGitRoute proves the allow-list
+// accepts a representative remainder for each of the 11 route patterns
+// go-git's backend/http.go httpServices table actually recognizes
+// (verified against the pinned go-git/v6@v6.0.0-alpha.5 module), so the
+// allow-list doesn't accidentally break real git operations by being
+// too narrow.
+func TestIsKnownSuffix_AllowsEveryRealGoGitRoute(t *testing.T) {
+	sha1 := "b1689f4f906338b00adb9c83ff75dec7ed5fb972" // 40 hex chars
+	cases := []string{
+		"HEAD",
+		"info/refs",
+		"objects/info/alternates",
+		"objects/info/http-alternates",
+		"objects/info/packs",
+		"objects/b1/689f4f906338b00adb9c83ff75dec7ed5fb972", // 2 + 40 hex chars
+		"objects/pack/pack-" + sha1 + ".pack",
+		"objects/pack/pack-" + sha1 + ".idx",
+		"git-upload-pack",
+		"git-receive-pack",
+		"git-upload-archive",
+		"", // bare "/git/<name>.git" with nothing after
+	}
+	for _, remainder := range cases {
+		if !isKnownSuffix(remainder) {
+			t.Errorf("isKnownSuffix(%q) = false, want true", remainder)
+		}
+	}
+}
+
+// TestIsKnownSuffix_RejectsAdversarialRemainders covers a few more
+// remainder shapes that must not slip through the allow-list, beyond the
+// specific traversal cases already covered above.
+func TestIsKnownSuffix_RejectsAdversarialRemainders(t *testing.T) {
+	cases := []string{
+		"not-a-real-route",              // unrecognized literal
+		"info\\refs",                    // backslash-containing
+		"info/refs/../../../secret.git", // trailing traversal after a valid-looking prefix
+		"objects/pack/pack-nothex.pack", // non-hex where hex is required
+		"git-upload-pack/extra.git",     // unexpected extra .git-like suffix
+		"HEAD.git",                      // extra .git suffix on an otherwise-valid literal
+	}
+	for _, remainder := range cases {
+		if isKnownSuffix(remainder) {
+			t.Errorf("isKnownSuffix(%q) = true, want false", remainder)
 		}
 	}
 }
