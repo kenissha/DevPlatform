@@ -190,6 +190,64 @@ func TestRequireTokenAndAccess_RejectsTraversalPath(t *testing.T) {
 	}
 }
 
+// TestRequireTokenAndAccess_RejectsEncodedTraversalPath is the realistic
+// version of the round-1 table case that tried (and failed) to exercise
+// URL-decoding: it builds the request via httptest.NewRequest with a raw
+// %2F-encoded path so that net/url performs the same decoding real git
+// clients' requests go through, then confirms the decoded ".." is still
+// rejected before authorization.
+func TestRequireTokenAndAccess_RejectsEncodedTraversalPath(t *testing.T) {
+	tokens := NewStore(t.TempDir() + "/git-tokens.json")
+	token, err := tokens.Generate("dev-1")
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	accessStore := access.NewStore(t.TempDir() + "/access.json")
+	if err := accessStore.Set("dev-1", []string{"allowed"}); err != nil {
+		t.Fatalf("Set returned error: %v", err)
+	}
+	usersStore := users.NewStore(t.TempDir() + "/users.json")
+	handler := RequireTokenAndAccess(tokens, accessStore, usersStore, stubGitHandler())
+
+	req := httptest.NewRequest(http.MethodGet, "/git/allowed.git/..%2Fsecret.git/info/refs", nil)
+	req.SetBasicAuth("dev-1", token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d (encoded traversal path must be rejected before authorization)", rec.Code, http.StatusBadRequest)
+	}
+}
+
+// TestRequireTokenAndAccess_RejectsSuffixlessTraversalTarget proves the
+// class of bypass round 1 missed: gitserver.NewHandler's loader runs
+// strict=false, so go-git auto-appends ".git" while resolving a target
+// that doesn't carry the suffix in the request path at all. Round 1's
+// "reject a second literal .git in the remainder" check would let this
+// path through, because "secret" never appears with ".git" attached.
+func TestRequireTokenAndAccess_RejectsSuffixlessTraversalTarget(t *testing.T) {
+	tokens := NewStore(t.TempDir() + "/git-tokens.json")
+	token, err := tokens.Generate("dev-1")
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	accessStore := access.NewStore(t.TempDir() + "/access.json")
+	if err := accessStore.Set("dev-1", []string{"allowed"}); err != nil {
+		t.Fatalf("Set returned error: %v", err)
+	}
+	usersStore := users.NewStore(t.TempDir() + "/users.json")
+	handler := RequireTokenAndAccess(tokens, accessStore, usersStore, stubGitHandler())
+
+	req := httptest.NewRequest(http.MethodGet, "/git/allowed.git/../secret/info/refs", nil)
+	req.SetBasicAuth("dev-1", token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d (suffix-less traversal target must be rejected before authorization)", rec.Code, http.StatusBadRequest)
+	}
+}
+
 func TestRepoNameFromPath(t *testing.T) {
 	cases := []struct {
 		path     string
@@ -202,7 +260,7 @@ func TestRepoNameFromPath(t *testing.T) {
 		{"/api/repos", "", false},
 		{"/git/", "", false},
 		{"/git/allowed.git/../secret.git/info/refs", "", false},
-		{"/git/allowed.git/..%2Fsecret.git/info/refs", "", false},
+		{"/git/allowed.git/../secret/info/refs", "", false},
 	}
 	for _, c := range cases {
 		repo, ok := repoNameFromPath(c.path)

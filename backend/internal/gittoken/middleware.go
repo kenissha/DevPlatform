@@ -2,6 +2,7 @@ package gittoken
 
 import (
 	"net/http"
+	"path"
 	"regexp"
 	"strings"
 
@@ -63,48 +64,36 @@ var validRepoName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // repoNameFromPath extracts "foo" from a git smart-HTTP request path like
 // "/git/foo.git/info/refs" (gitserver.Prefix + "/" + name + ".git" +
-// anything), and validates it before returning it.
-//
-// Two checks are load-bearing here, not decorative:
-//
-//  1. The naming-pattern check (^[a-zA-Z0-9_-]+$, matching repostore's own
-//     rule at repo-creation time) rejects garbage/injection in the
-//     extracted substring.
-//
-//  2. The "second .git" check rejects any path where another ".git"
-//     appears after the first one. This is the one that actually closes
-//     the path-traversal bypass a security review caught: this function
-//     cuts at the FIRST ".git" (so "/git/allowed.git/../secret.git/info/refs"
-//     extracts "allowed" — a perfectly valid, allow-listed name, which the
-//     naming-pattern check alone would happily pass), while go-git's own
-//     backend (backend/http.go) parses the same request path independently
-//     and cuts at the LAST service-suffix segment, so after go-billy's
-//     Chroot cleans "allowed.git/../secret.git" down to "secret.git" (which
-//     stays inside the chroot root, so the boundary check doesn't reject
-//     it), go-git actually resolves and serves "secret". A regex on
-//     character class can never catch that divergence, because the
-//     attacker's chosen prefix ("allowed") is by construction a
-//     clean, valid-shaped name — the mismatch is structural (first-cut vs.
-//     last-cut disagreement), not lexical. Legitimate git smart-HTTP
-//     suffixes (info/refs, git-upload-pack, git-receive-pack, objects/...,
-//     HEAD) never contain a second literal ".git", so this does not
-//     false-positive on real traffic.
-func repoNameFromPath(path string) (repo string, ok bool) {
-	rest, ok := strings.CutPrefix(path, gitserver.Prefix+"/")
+// anything). It parses by path segment, not by searching for ".git"
+// anywhere in the string: only the FIRST segment is ever treated as the
+// repo name, it must exactly equal "<name>.git" with name matching
+// repostore's own naming rule, and everything after it must already be a
+// clean relative path (no ".." anywhere). This agrees with go-git's own
+// resolution by construction rather than by enumerating attack shapes —
+// an earlier version that only rejected a second literal ".git" in the
+// remainder was proven bypassable, because gitserver.NewHandler's loader
+// runs strict=false and auto-appends ".git" during resolution, so a
+// target repo need not appear with a ".git" suffix in the request path
+// at all (e.g. "/git/allowed.git/../secret/info/refs" resolves to the
+// on-disk "secret.git" even though "secret" never appears with ".git" in
+// the request). Requiring the remainder to already be ".."-free closes
+// that and every other shape in the same class, since any successful
+// escape into a sibling repo's directory necessarily routes through a
+// ".." component somewhere in the remainder.
+func repoNameFromPath(urlPath string) (repo string, ok bool) {
+	rest, ok := strings.CutPrefix(urlPath, gitserver.Prefix+"/")
 	if !ok {
 		return "", false
 	}
-	repo, after, found := strings.Cut(rest, ".git")
-	if !found || repo == "" {
+	segment, remainder, _ := strings.Cut(rest, "/")
+	name, hasSuffix := strings.CutSuffix(segment, ".git")
+	if !hasSuffix || name == "" || !validRepoName.MatchString(name) {
 		return "", false
 	}
-	if strings.Contains(after, ".git") {
+	if remainder != "" && path.Clean("/"+remainder) != "/"+remainder {
 		return "", false
 	}
-	if !validRepoName.MatchString(repo) {
-		return "", false
-	}
-	return repo, true
+	return name, true
 }
 
 func isAdmin(usersStore *users.Store, subject string) (bool, error) {
