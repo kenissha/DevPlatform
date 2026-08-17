@@ -30,26 +30,35 @@ export function LoginPage() {
           oradan devredilir.
         </p>
 
-        <div className="login-divider">Geliştirme girişi</div>
+        {/* Ham JWT yapıştırma kutusu: gerçek giriş yolu değil, sadece
+            DevPlatform'un kendisini geliştirirken elle token denemek için bir
+            kısayol — production build'de (gerçek kullanıcıların gördüğü
+            sürümde) hiç render edilmiyor, sadece `npm run dev` ile yerel
+            geliştirmede görünür. */}
+        {import.meta.env.DEV && (
+          <>
+            <div className="login-divider">Geliştirme girişi</div>
 
-        <form onSubmit={handleSubmit}>
-          <div className="field">
-            <label htmlFor="token">JWT</label>
-            <textarea
-              id="token"
-              value={tokenInput}
-              onChange={(e) => setTokenInput(e.target.value)}
-              rows={4}
-              placeholder="eyJhbGciOi..."
-              spellCheck={false}
-            />
-          </div>
-          <div className="form-actions">
-            <button type="submit" className="btn-primary" disabled={!tokenInput.trim()}>
-              Giriş yap
-            </button>
-          </div>
-        </form>
+            <form onSubmit={handleSubmit}>
+              <div className="field">
+                <label htmlFor="token">JWT</label>
+                <textarea
+                  id="token"
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                  rows={4}
+                  placeholder="eyJhbGciOi..."
+                  spellCheck={false}
+                />
+              </div>
+              <div className="form-actions">
+                <button type="submit" className="btn-primary" disabled={!tokenInput.trim()}>
+                  Giriş yap
+                </button>
+              </div>
+            </form>
+          </>
+        )}
       </div>
     </div>
   )
