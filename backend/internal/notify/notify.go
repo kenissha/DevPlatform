@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -97,6 +98,9 @@ type Store struct {
 	// notification itself always stores the relative Link unchanged — this
 	// only affects the copy of it that goes out as mail.
 	BaseURL string
+
+	mu            sync.Mutex
+	lastCreatedAt time.Time
 }
 
 // NewStore returns a Store rooted at rootDir, with no email sending
@@ -104,6 +108,27 @@ type Store struct {
 // returned Store to enable it). rootDir does not need to exist yet.
 func NewStore(rootDir string) *Store {
 	return &Store{rootDir: rootDir}
+}
+
+// nextCreatedAt returns the current time (UTC), guaranteed strictly after
+// every value this Store has returned before — even when two Create calls
+// land in the same clock tick, which happens occasionally on this
+// project's dev/CI machines. Without this, two notifications created back
+// to back could get an identical CreatedAt, leaving ListForUser's
+// CreatedAt.After-based sort to fall back on sort.Slice's unstable
+// ordering for the tied pair — the exact cause of a flaky
+// TestListForUser_NewestFirst (see docs/DURUM.md, "Sıradaki iş"). Bumping
+// by a nanosecond keeps creation order exact without touching the sort
+// itself. Mirrors internal/mergerequest.Store's identical fix.
+func (s *Store) nextCreatedAt() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now().UTC()
+	if !now.After(s.lastCreatedAt) {
+		now = s.lastCreatedAt.Add(time.Nanosecond)
+	}
+	s.lastCreatedAt = now
+	return now
 }
 
 // Create persists a new, unread notification for recipient and returns it
@@ -124,7 +149,7 @@ func (s *Store) Create(recipient, kind, message, link string) (Notification, err
 		Message:   message,
 		Link:      link,
 		Read:      false,
-		CreatedAt: time.Now().UTC(),
+		CreatedAt: s.nextCreatedAt(),
 	}
 
 	// Retry on the astronomically unlikely chance a random ID collides

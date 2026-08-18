@@ -65,6 +65,19 @@ func TestGet_RejectsInvalidID(t *testing.T) {
 	}
 }
 
+func TestNextCreatedAt_IsStrictlyMonotonicEvenUnderClockTies(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	prev := store.nextCreatedAt()
+	for i := 0; i < 1000; i++ {
+		next := store.nextCreatedAt()
+		if !next.After(prev) {
+			t.Fatalf("nextCreatedAt() call %d = %v, want strictly after %v", i, next, prev)
+		}
+		prev = next
+	}
+}
+
 func TestList_ReturnsAllRequestsNewestFirst(t *testing.T) {
 	store := NewStore(t.TempDir())
 	first, err := store.Create("intranet-backend", "First", "a", "main", "dev-1")
