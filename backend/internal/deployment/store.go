@@ -22,6 +22,7 @@ import (
 )
 
 var ErrNoTarget = errors.New("deployment: no deploy target configured for this repo and environment")
+var ErrInvalidTarget = errors.New("deployment: invalid deploy target")
 
 // Target is one (repo, environment) pair this platform is allowed to
 // deploy, and exactly how: which build recipe, which IIS site, and which
@@ -69,17 +70,17 @@ var validEnvironmentName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 func validateTarget(t Target, allowedSites map[string]bool) error {
 	switch {
 	case !validRepoName.MatchString(t.Repo):
-		return fmt.Errorf("deployment: invalid repo %q", t.Repo)
+		return fmt.Errorf("%w: invalid repo %q", ErrInvalidTarget, t.Repo)
 	case !validEnvironmentName.MatchString(t.Environment):
-		return fmt.Errorf("deployment: invalid environment %q", t.Environment)
+		return fmt.Errorf("%w: invalid environment %q", ErrInvalidTarget, t.Environment)
 	case t.Recipe != deploy.RecipeDotnet && t.Recipe != deploy.RecipeNpm:
-		return fmt.Errorf("deployment: unknown recipe %q", t.Recipe)
+		return fmt.Errorf("%w: unknown recipe %q", ErrInvalidTarget, t.Recipe)
 	case strings.TrimSpace(t.SiteName) == "":
-		return fmt.Errorf("deployment: siteName is required")
+		return fmt.Errorf("%w: siteName is required", ErrInvalidTarget)
 	case !allowedSites[t.SiteName]:
-		return fmt.Errorf("deployment: %q is not an approved IIS site — ask an operator to add it to the allowed-sites file", t.SiteName)
+		return fmt.Errorf("%w: %q is not an approved IIS site — ask an operator to add it to the allowed-sites file", ErrInvalidTarget, t.SiteName)
 	case t.SecretsTarget != "" && !filepath.IsLocal(t.SecretsTarget):
-		return fmt.Errorf("deployment: secretsTarget %q must be a relative path inside the release", t.SecretsTarget)
+		return fmt.Errorf("%w: secretsTarget %q must be a relative path inside the release", ErrInvalidTarget, t.SecretsTarget)
 	}
 	return nil
 }

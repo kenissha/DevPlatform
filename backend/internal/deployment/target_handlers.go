@@ -2,6 +2,7 @@ package deployment
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sort"
 
@@ -58,7 +59,11 @@ func (h *Handlers) SetTarget(w http.ResponseWriter, r *http.Request) {
 		KeepVersions:  req.KeepVersions,
 	}
 	if err := h.Targets.Set(target, h.AllowedSites); err != nil {
-		http.Error(w, "400 "+err.Error(), http.StatusBadRequest)
+		if errors.Is(err, ErrInvalidTarget) {
+			http.Error(w, "400 "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, http.StatusOK, target)
