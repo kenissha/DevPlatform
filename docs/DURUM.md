@@ -178,7 +178,7 @@ Diğer küçük notlar (acil değil): `Deploy`'da henüz `context.Context` yok
 |---|---|
 | İç git deposu yedeği (gecelik) | ✅ Bitti (2026-08-13) |
 | Proje bazlı yetkilendirme | ✅ Bitti (2026-08-13) |
-| Kişi ekleme/davet akışı | ❌ Başlanmadı (Kişi *kaydı* var — girişte otomatik — ama yönetici tarafından davet yok) |
+| Kişi ekleme/davet akışı | ✅ Bitti (2026-08-18 — DevPlatform'un kendi kodunda değil, Intranet-B/F'de) |
 
 **2026-08-13 güncelleme — gecelik yedek:** `internal/backup` eklendi.
 Sunucu her gün (varsayılan 02:00, `DEVPLATFORM_BACKUP_HOUR` ile
@@ -315,6 +315,27 @@ karşı uçtan uca canlı doğrulama (bkz. plan dosyasının sonundaki
 "gözetimli doğrulama" adımları) — bu, orijinal IIS kanıtlamasında
 yapıldığı gibi birlikte, elle yapılacak.
 
+**2026-08-18 güncelleme — kişi ekleme/davet akışı (Faz 3'ün son parçası):**
+Bu iş DevPlatform'un kendi kodunda değil, **Intranet-B/F'de** çözüldü —
+DevPlatform zaten SSO üzerinden Intranet'e güveniyor, dolayısıyla "kişi
+ekleme" zaten Intranet-B'nin `DevPlatformYetkiController`'ı üzerinden
+(admin panelden rol atama) çalışıyordu; eksik olan tek şey, rol
+verildiğinde kişiye haber veren bir şeydi.
+
+- Intranet-B: `SetKullaniciYetkisi`, birine **ilk kez** DevPlatform rolü
+  verildiğinde (rol değişiminde veya kaldırmada değil), mevcut
+  `IEmailQueue`/`EmailService` altyapısı üzerinden kurumsal imzalı
+  şablonla bir davet maili kuyruğa ekliyor.
+- Intranet-F: yeni `/devplatform-giris` rotası (`PrivateRoute` arkasında)
+  — mail linkine tıklandığında kişi zaten Intranet'e girişliyse anında
+  DevPlatform'a yönlendiriliyor; girişli değilse normal AD login
+  ekranını görüp giriş yapınca otomatik olarak buraya (ve oradan
+  DevPlatform'a) dönüyor. **Bilinçli tasarım kararı:** mail'in içine
+  hazır bir DevPlatform token'ı gömülmüyor — güven her zaman o anki
+  Intranet oturumundan geliyor, mail sadece oraya bir kısayol.
+- DevPlatform tarafında değişen hiçbir şey yok; bu not sadece Faz 3'ün
+  tamamlandığını kayda geçirmek için burada.
+
 ## Sıradaki iş
 
 **2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`
@@ -325,10 +346,13 @@ deploy hedefleri, dışarıdan (sunucunun dışından) erişim, ve hâlâ açık
 duran git kimlik doğrulama kararı (bkz. "Bilinmesi gereken kararlar").
 
 Faz 1 bitti (SMTP dahil). Faz 2'nin build+deploy+rollback mekanizması
-artık panelden gerçekten tetiklenebiliyor (bkz. yukarısı). Faz 3'ten
-gecelik yedek ve proje bazlı yetkilendirme bitti; kişi ekleme/davet akışı
-kaldı. Kalan gerçek iş büyük ölçüde kod değil, **ops + gözetimli bir
-oturum** gerektiriyor: gerçek Intranet-F/Intranet-B'yi
+artık panelden gerçekten tetiklenebiliyor (bkz. yukarısı). Faz 3
+tamamen bitti: gecelik yedek, proje bazlı yetkilendirme, git seviyesinde
+kişi başına erişim (bkz. "Bilinmesi gereken kararlar") ve kişi
+ekleme/davet akışı (bkz. yukarıdaki 2026-08-18 güncellemesi — bu son
+parça DevPlatform'un kendi kodunda değil, Intranet-B/F'de çözüldü).
+Kalan gerçek iş artık tamamen kod değil, **ops + gözetimli bir oturum**
+gerektiriyor: gerçek Intranet-F/Intranet-B'yi
 `DEVPLATFORM_DEPLOY_TARGETS_FILE`'a hedef olarak eklemek ve ilk gerçek
 deploy'u birlikte izlemek (IIS site adları, recipe'ler, gerçek appsettings
 için secretsctl ile secrets'ı önceden yüklemek gerekecek — "IIS / deploy —
@@ -336,13 +360,6 @@ canlıda öğrenilen dersler" bölümündeki 3 nottan özellikle üçüncüsüne
 içerik konumuna, dikkat). Gerçek SMTP sunucu bilgilerini
 (`DEVPLATFORM_SMTP_*`) ve gerçek yedek hedefini (`DEVPLATFORM_BACKUP_DIR`)
 girmek de aynı şekilde senin elinle, gözetimli yapılacak birer adım.
-
-Kod tarafında kalan gerçek iş: Faz 3'ün kişi ekleme/davet akışı. Tasarımda
-"kurumsal personel veritabanından seçerek ekleme" olarak tanımlı — bizim
-gerçek bir kurumsal veritabanına erişimimiz yok, bu yüzden muhtemelen
-SMTP'de izlenen desenle aynı şekilde ele alınacak: yönetici panelden
-e-posta/kimlik girerek davet kaydı oluşturur (gerçek AD/HR entegrasyonu
-olmadan), davet e-postası zaten kurulu SMTP altyapısıyla gider.
 
 Küçük, engelleyici olmayan bir not: aynı `CreatedAt`-tabanlı "en yeni
 önce" sıralama flake'i artık iki yerde görüldü — `internal/mergerequest`'te
