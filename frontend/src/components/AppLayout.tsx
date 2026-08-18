@@ -8,6 +8,7 @@ import {
   BranchIcon,
   ChartIcon,
   DeployIcon,
+  KeyIcon,
   LockIcon,
   LogoMark,
   MergeIcon,
@@ -87,6 +88,12 @@ export function AppLayout() {
                   <BellIcon />
                   <span className="nav-label">Bildirimler</span>
                   {unreadCount > 0 && <span className="nav-count">{unreadCount}</span>}
+                </NavLink>
+              </li>
+              <li>
+                <NavLink end to="/hesabim" className={navClass}>
+                  <KeyIcon />
+                  <span className="nav-label">Hesabım</span>
                 </NavLink>
               </li>
               {user?.role === 'admin' && (

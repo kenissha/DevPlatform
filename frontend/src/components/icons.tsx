@@ -138,3 +138,13 @@ export function LockIcon({ className }: IconProps) {
     </svg>
   )
 }
+
+export function KeyIcon({ className }: IconProps) {
+  return (
+    <svg className={className} {...base} aria-hidden="true">
+      <circle cx="5" cy="10" r="2.5" />
+      <path d="M7 8.5L13 2.5" />
+      <path d="M10.5 5L12.5 7" />
+    </svg>
+  )
+}

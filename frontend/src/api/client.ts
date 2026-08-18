@@ -161,6 +161,14 @@ export const api = {
     }),
   clearAccess: (subject: string) =>
     request<void>(`/api/access/${encodeURIComponent(subject)}`, { method: 'DELETE' }),
+
+  // Per-person git credential (Admin-only revoke; anyone can mint their
+  // own — see backend/internal/gittoken). The raw token in
+  // generateGitToken's response is shown to the caller exactly once;
+  // DevPlatform never stores or re-displays it.
+  generateGitToken: () => request<{ token: string }>('/api/me/git-token', { method: 'POST' }),
+  revokeGitToken: (subject: string) =>
+    request<void>(`/api/git-token/${encodeURIComponent(subject)}`, { method: 'DELETE' }),
 }
 
 export type {
