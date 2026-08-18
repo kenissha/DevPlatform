@@ -66,6 +66,7 @@ export function AccessPage() {
                     <span className={`badge ${restricted ? 'badge-accent' : 'badge-neutral'}`}>
                       {restricted ? `${allowed.length} repo` : 'Tüm repolar'}
                     </span>
+                    <GitTokenRevokeButton subject={person.subject} />
                     <button type="button" className="btn-ghost" onClick={() => setOpenSubject(isOpen ? null : person.subject)}>
                       {isOpen ? 'Kapat' : 'Düzenle'}
                     </button>
@@ -86,6 +87,33 @@ export function AccessPage() {
         )}
       </div>
     </div>
+  )
+}
+
+function GitTokenRevokeButton({ subject }: { subject: string }) {
+  const [revoking, setRevoking] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+
+  async function revoke() {
+    setRevoking(true)
+    setMessage(null)
+    try {
+      await api.revokeGitToken(subject)
+      setMessage('İptal edildi')
+    } catch (err) {
+      setMessage(err instanceof ApiError ? err.message : 'İptal edilemedi')
+    } finally {
+      setRevoking(false)
+    }
+  }
+
+  return (
+    <>
+      <button type="button" className="btn-ghost" disabled={revoking} onClick={revoke}>
+        Git anahtarını iptal et
+      </button>
+      {message && <span className="muted">{message}</span>}
+    </>
   )
 }
 
