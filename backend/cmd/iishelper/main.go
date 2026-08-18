@@ -52,9 +52,13 @@ func main() {
 // share identical setup, and so it can be tested without needing a real
 // Service Control Manager.
 //
-// DEVPLATFORM_DEPLOY_TARGETS_FILE is read directly via os.Getenv rather
+// DEVPLATFORM_ALLOWED_SITES_FILE is read directly via os.Getenv rather
 // than through internal/config.Load(), which would pull in config fields
-// (SMTP, JWT secret, etc.) this single-purpose binary has no use for.
+// (SMTP, JWT secret, etc.) this single-purpose binary has no use for. It
+// points at a small, ops-edited JSON array of IIS site names — see
+// internal/iishelper.LoadAllowedSites's doc comment for why this file is
+// deliberately not the same one internal/deployment's panel-writable
+// Store uses.
 //
 // DEVPLATFORM_IISHELPER_SDDL is an optional Windows security descriptor
 // string restricting which account may connect to the named pipe. Left
@@ -64,12 +68,12 @@ func main() {
 // should set this explicitly to the one account devplatform.exe runs
 // as (see the install script for how to generate this value).
 func setup() (net.Listener, *iishelper.Server, error) {
-	targetsFile := os.Getenv("DEVPLATFORM_DEPLOY_TARGETS_FILE")
-	allowedSites, err := iishelper.LoadAllowedSites(targetsFile)
+	sitesFile := os.Getenv("DEVPLATFORM_ALLOWED_SITES_FILE")
+	allowedSites, err := iishelper.LoadAllowedSites(sitesFile)
 	if err != nil {
 		return nil, nil, err
 	}
-	log.Printf("iishelper: %d allowed site(s) loaded from %q", len(allowedSites), targetsFile)
+	log.Printf("iishelper: %d allowed site(s) loaded from %q", len(allowedSites), sitesFile)
 
 	var pipeConfig *winio.PipeConfig
 	if sddl := os.Getenv("DEVPLATFORM_IISHELPER_SDDL"); sddl != "" {

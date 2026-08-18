@@ -6,23 +6,16 @@ import (
 	"os"
 )
 
-// targetEntry mirrors only the one field of internal/deployment.Target
-// this package cares about. Deliberately not importing internal/deployment
-// itself — this package's job (deciding which physical-path changes are
-// allowed) is independent of that package's request/approval business
-// logic, and duplicating one field name is cheaper than adding a
-// dependency between them.
-type targetEntry struct {
-	SiteName string `json:"siteName"`
-}
-
-// LoadAllowedSites reads the same deploy targets file
-// internal/deployment.LoadTargets reads (path comes from the same
-// DEVPLATFORM_DEPLOY_TARGETS_FILE environment variable) and returns the
-// set of SiteName values it declares — the only sites this helper will
-// ever agree to repoint. An empty path returns an empty set with no
-// error, matching this codebase's established "no targets file
-// configured means nothing is deployable" safe default.
+// LoadAllowedSites reads a JSON array of IIS site names from path — the
+// only sites this helper will ever agree to repoint. This file is
+// deliberately separate from internal/deployment's panel-writable
+// target store: it is the actual security boundary (see
+// docs/superpowers/specs/2026-08-18-deploy-target-management-design.md's
+// "Güvenlik" section), so it is edited only by hand on the server,
+// pointed at via DEVPLATFORM_ALLOWED_SITES_FILE, and read once at this
+// process's startup — never through any API. An empty path returns an
+// empty set with no error, matching this codebase's established "no
+// file configured means nothing is allowed" safe default.
 func LoadAllowedSites(path string) (map[string]bool, error) {
 	sites := map[string]bool{}
 	if path == "" {
@@ -31,17 +24,17 @@ func LoadAllowedSites(path string) (map[string]bool, error) {
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("iishelper: failed to read deploy targets file %q: %w", path, err)
+		return nil, fmt.Errorf("iishelper: failed to read allowed sites file %q: %w", path, err)
 	}
 
-	var entries []targetEntry
-	if err := json.Unmarshal(data, &entries); err != nil {
-		return nil, fmt.Errorf("iishelper: failed to parse deploy targets file %q: %w", path, err)
+	var names []string
+	if err := json.Unmarshal(data, &names); err != nil {
+		return nil, fmt.Errorf("iishelper: failed to parse allowed sites file %q: %w", path, err)
 	}
 
-	for _, e := range entries {
-		if e.SiteName != "" {
-			sites[e.SiteName] = true
+	for _, name := range names {
+		if name != "" {
+			sites[name] = true
 		}
 	}
 	return sites, nil

@@ -16,13 +16,10 @@ func TestLoadAllowedSites_EmptyPathReturnsEmptySet(t *testing.T) {
 	}
 }
 
-func TestLoadAllowedSites_ReadsSiteNamesFromTheTargetsFile(t *testing.T) {
+func TestLoadAllowedSites_ReadsSiteNames(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "targets.json")
-	const contents = `[
-		{"repo": "Intranet-F", "environment": "test", "recipe": "npm", "siteName": "Intranet-F Test", "keepVersions": 5},
-		{"repo": "Intranet-B", "environment": "test", "recipe": "dotnet", "siteName": "Intranet-B Test", "keepVersions": 5}
-	]`
+	path := filepath.Join(dir, "allowed-sites.json")
+	const contents = `["Intranet-F Test", "Intranet-B Test"]`
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatalf("failed to write fixture: %v", err)
 	}
@@ -48,7 +45,7 @@ func TestLoadAllowedSites_MissingFileIsAnError(t *testing.T) {
 
 func TestLoadAllowedSites_MalformedJSONIsAnError(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "targets.json")
+	path := filepath.Join(dir, "allowed-sites.json")
 	if err := os.WriteFile(path, []byte("not json"), 0o600); err != nil {
 		t.Fatalf("failed to write fixture: %v", err)
 	}

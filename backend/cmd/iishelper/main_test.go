@@ -16,11 +16,11 @@ import (
 // assumptions (see docs/DURUM.md's dotnet SDK version note).
 func TestSetup_LoadsSitesAndOpensListener(t *testing.T) {
 	dir := t.TempDir()
-	targetsFile := filepath.Join(dir, "targets.json")
-	if err := os.WriteFile(targetsFile, []byte(`[{"siteName":"Test Site"}]`), 0o600); err != nil {
-		t.Fatalf("failed to write fixture targets file: %v", err)
+	sitesFile := filepath.Join(dir, "allowed-sites.json")
+	if err := os.WriteFile(sitesFile, []byte(`["Test Site"]`), 0o600); err != nil {
+		t.Fatalf("failed to write fixture allowed-sites file: %v", err)
 	}
-	t.Setenv("DEVPLATFORM_DEPLOY_TARGETS_FILE", targetsFile)
+	t.Setenv("DEVPLATFORM_ALLOWED_SITES_FILE", sitesFile)
 	t.Setenv("DEVPLATFORM_IISHELPER_SDDL", "")
 
 	ln, srv, err := setup()
