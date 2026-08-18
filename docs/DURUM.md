@@ -19,7 +19,6 @@ go run ./cmd/devplatform
 
 Varsayılan olarak `./data` klasörünü kullanır. Ortam değişkenleriyle
 değiştirilebilir: `DEVPLATFORM_DATA_DIR`, `DEVPLATFORM_LISTEN_ADDR`,
-`DEVPLATFORM_GIT_USERNAME`, `DEVPLATFORM_GIT_PASSWORD`,
 `DEVPLATFORM_JWT_SECRET`. Gerçek e-posta göndermek için (varsayılan:
 kapalı, sadece panel içi bildirim): `DEVPLATFORM_SMTP_HOST`,
 `DEVPLATFORM_SMTP_PORT`, `DEVPLATFORM_SMTP_USERNAME`,
@@ -52,13 +51,19 @@ Gerçek giriş, kurumun mevcut sisteminden gelen bir JWT ile olacak (bkz.
 
 ### Git ile kullanmak
 
+Git artık kişi başına anahtarla çalışıyor — paylaşılan kullanıcı adı/şifre
+yok. Panelde "Hesabım" sayfasından (`POST /api/me/git-token`) kendi
+anahtarını üret; ham anahtar sadece üretildiği an bir kere gösterilir, o an
+kopyala — sonradan tekrar görüntülenemez.
+
 ```bash
-git remote add origin http://dev:dev@localhost:8080/git/<repo-adi>.git
+git remote add origin http://<kendi-subject-iniz>:<git-token>@localhost:8080/git/<repo-adi>.git
 git push origin <branch>
 ```
 
-Kullanıcı/şifre `DEVPLATFORM_GIT_USERNAME` / `_PASSWORD` ile ayarlanır.
-`main`'e doğrudan push **reddedilir** — merge isteği açman gerekir.
+Kullanıcı adı, JWT'deki kendi `sub` claim'in; şifre ise üretilen git
+anahtarı. `main`'e doğrudan push **reddedilir** — merge isteği açman
+gerekir.
 
 ## Durum
 
