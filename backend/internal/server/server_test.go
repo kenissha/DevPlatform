@@ -72,7 +72,7 @@ func newTestRouter(t *testing.T) (*http.ServeMux, *repostore.Store, *access.Stor
 	deploymentHandlers := &deployment.Handlers{
 		Store:        deployment.NewStore(filepath.Join(dataDir, "deployments")),
 		Repos:        store,
-		Targets:      deployment.NewTargets(nil),
+		Targets:      deployment.NewTargetStore(filepath.Join(dataDir, "deploy-targets.json")),
 		CheckoutRoot: t.TempDir(),
 		Audit:        auditLogger,
 		Access:       accessStore,
@@ -517,6 +517,36 @@ func TestGitToken_RevokeIsAdminOnly(t *testing.T) {
 	rec = do(t, router, http.MethodDelete, "/api/git-token/dev-2", "admin-1", "admin", nil)
 	if rec.Code != http.StatusNoContent {
 		t.Errorf("DELETE /api/git-token/dev-2 as admin: status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+}
+
+func TestDeployTargets_ManagementAPIIsAdminOnly(t *testing.T) {
+	router, _, _ := newTestRouter(t)
+
+	rec := do(t, router, http.MethodGet, "/api/deploy-targets", "dev-1", "developer", nil)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("GET /api/deploy-targets as developer: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	rec = do(t, router, http.MethodPut, "/api/deploy-targets/sample/test", "dev-1", "developer",
+		map[string]any{"recipe": "npm", "siteName": "A"})
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("PUT /api/deploy-targets/sample/test as developer: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	rec = do(t, router, http.MethodDelete, "/api/deploy-targets/sample/test", "dev-1", "developer", nil)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("DELETE /api/deploy-targets/sample/test as developer: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	rec = do(t, router, http.MethodGet, "/api/allowed-sites", "dev-1", "developer", nil)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("GET /api/allowed-sites as developer: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	rec = do(t, router, http.MethodGet, "/api/deploy-targets", "admin-1", "admin", nil)
+	if rec.Code != http.StatusOK {
+		t.Errorf("GET /api/deploy-targets as admin: status = %d, want %d", rec.Code, http.StatusOK)
 	}
 }
 

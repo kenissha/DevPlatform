@@ -435,10 +435,23 @@ bir anahtar (ör. ID) eklemek.
   gibi) hiçbir şey değişmiyor. Bunun sebebi kozmetik değildi: frontend
   kodu CORS/ayrı API adresi hiç desteklemiyor, üretimde ikisi aynı
   origin'den gelmek zorunda.
-- **Deploy hedefleri de dosya tabanlı, panelden yönetilmiyor.**
-  `DEVPLATFORM_DEPLOY_TARGETS_FILE`, `[{repo, environment, recipe,
-  siteName, secretsTarget, keepVersions}, ...]` şeklinde bir JSON dosyası.
-  Boşsa/yoksa hiçbir repo deploy edilemez — güvenli varsayılan.
+- **Çözüldü — deploy hedefleri artık panelden yönetiliyor (2026-08-18):**
+  Eski tek dosyanın iki işi ayrıldı. Hedefin içeriği (repo, environment,
+  recipe, siteName, secretsTarget, keepVersions) artık
+  `internal/deployment.TargetStore` diye panelden CRUD edilen bir depoda
+  (`DataDir/deploy-targets.json`) — yeni "Deploy Hedefleri" admin
+  sayfası, `GET/PUT/DELETE /api/deploy-targets(/{repo}/{environment})`.
+  Hangi IIS site adlarına dokunulabileceği ise hâlâ sadece sunucuya elle
+  yazılan, küçük, ayrı bir dosyada (`DEVPLATFORM_ALLOWED_SITES_FILE`,
+  eski `DEVPLATFORM_DEPLOY_TARGETS_FILE`'ın yerine geçti) — panel bu
+  listeye asla yazamaz, sadece `GET /api/allowed-sites` ile okuyup bir
+  dropdown'da gösterir. Bu ayrım kasıtlı: `iishelper`'ın var oluş
+  sebebini (devplatform.exe ele geçirilse bile appcmd'nin sadece
+  önceden onaylı site'lara dokunabilmesi) koruyor. Ayrıntı için
+  `docs/superpowers/specs/2026-08-18-deploy-target-management-design.md`.
+  Site listesi değiştiğinde (yeni bir IIS site'ı elle açıldığında) hem
+  `iishelper` hem `devplatform.exe` yeniden başlatılmalı — ikisi de bu
+  dosyayı sadece süreç başlarken bir kere okuyor.
 
 ## IIS / deploy — canlıda öğrenilen dersler (2026-08-12)
 

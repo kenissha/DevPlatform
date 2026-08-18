@@ -180,6 +180,17 @@ func TestLoad_ReadsFrontendDirFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoad_ReadsAllowedSitesFileFromEnv(t *testing.T) {
+	os.Setenv("DEVPLATFORM_ALLOWED_SITES_FILE", "C:\\inetpub\\devplatform\\allowed-sites.json")
+	defer os.Unsetenv("DEVPLATFORM_ALLOWED_SITES_FILE")
+
+	cfg := Load()
+
+	if cfg.AllowedSitesFile != "C:\\inetpub\\devplatform\\allowed-sites.json" {
+		t.Errorf("AllowedSitesFile = %q, want %q", cfg.AllowedSitesFile, "C:\\inetpub\\devplatform\\allowed-sites.json")
+	}
+}
+
 func TestLoad_FallsBackToDefaultHourWhenEnvValueIsNotAnInt(t *testing.T) {
 	os.Setenv("DEVPLATFORM_BACKUP_HOUR", "not-a-number")
 	defer os.Unsetenv("DEVPLATFORM_BACKUP_HOUR")

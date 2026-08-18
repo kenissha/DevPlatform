@@ -107,12 +107,15 @@ func main() {
 		Store: notifyStore,
 	}
 
-	targets, err := deployment.LoadTargets(cfg.DeployTargetsFile)
+	targets := deployment.NewTargetStore(filepath.Join(cfg.DataDir, "deploy-targets.json"))
+	allowedSites, err := iishelper.LoadAllowedSites(cfg.AllowedSitesFile)
 	if err != nil {
-		log.Fatalf("failed to load deploy targets from %q: %v", cfg.DeployTargetsFile, err)
+		log.Fatalf("failed to load allowed IIS sites from %q: %v", cfg.AllowedSitesFile, err)
 	}
-	if cfg.DeployTargetsFile == "" {
-		log.Printf("no DEVPLATFORM_DEPLOY_TARGETS_FILE configured — deploy requests can be opened but never approved until one is set")
+	if cfg.AllowedSitesFile == "" {
+		log.Printf("no DEVPLATFORM_ALLOWED_SITES_FILE configured — deploy targets can be viewed but none can ever be saved until an operator approves at least one IIS site")
+	} else {
+		log.Printf("%d allowed IIS site(s) loaded from %q", len(allowedSites), cfg.AllowedSitesFile)
 	}
 
 	// A missing/invalid secrets key is not fatal: it only means deploy
@@ -149,6 +152,7 @@ func main() {
 		Notify:       notifyStore,
 		Users:        usersStore,
 		Access:       accessStore,
+		AllowedSites: allowedSites,
 	}
 
 	// BackupDir is the switch: empty means no nightly backup goroutine runs

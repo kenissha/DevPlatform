@@ -164,6 +164,18 @@ func NewRouter(deps Deps) *http.ServeMux {
 	mux.Handle("POST /api/repos/{repo}/deployments/{id}/reject", repoScopedAdmin(http.HandlerFunc(deployments.Reject)))
 	mux.Handle("GET /api/deployments", authMiddleware(http.HandlerFunc(deployments.ListAll)))
 
+	// Deploy-target management: entirely Admin-only, not repo-scoped —
+	// unlike a deploy request, a target isn't attached to one already-visible
+	// repo the caller is proven to see first, so this follows /api/access's
+	// pattern (auth.RequireRole directly) rather than repoScopedAdmin's.
+	// GET /api/allowed-sites is the read-only, ops-managed site list this
+	// API validates siteName against but can never write to — see
+	// docs/superpowers/specs/2026-08-18-deploy-target-management-design.md.
+	mux.Handle("GET /api/deploy-targets", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(deployments.ListTargets))))
+	mux.Handle("PUT /api/deploy-targets/{repo}/{environment}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(deployments.SetTarget))))
+	mux.Handle("DELETE /api/deploy-targets/{repo}/{environment}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(deployments.DeleteTarget))))
+	mux.Handle("GET /api/allowed-sites", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(deployments.ListAllowedSites))))
+
 	// Per-project authorization management: entirely Admin-only, not
 	// repo-scoped by access.RequireRepoAccess itself (that middleware
 	// checks whether the caller can see one {repo}; this is the API that

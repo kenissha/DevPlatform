@@ -21,13 +21,17 @@ type Config struct {
 	// text. Empty by default — no sensible local-dev default exists, since
 	// it depends on wherever this server is actually reachable from.
 	BaseURL string
-	// DeployTargetsFile points at a JSON file listing the (repo,
-	// environment) pairs this server is allowed to deploy (see
-	// deployment.LoadTargets). Empty by default: no target is deployable
-	// until an admin deliberately creates this file, matching the design
-	// doc's "sabit listeden" requirement — a deploy target is server-side
-	// configuration, never something typed into the panel.
-	DeployTargetsFile string
+	// AllowedSitesFile points at a small, ops-edited JSON array of IIS
+	// site names (see internal/iishelper.LoadAllowedSites) — the only
+	// sites a deploy target's siteName may ever name. Empty by default:
+	// no site is approved until an operator deliberately creates this
+	// file. Deploy target *content* (which repo/environment maps to
+	// which of these sites) is panel-managed (see
+	// internal/deployment.TargetStore) — this file is deliberately the one
+	// piece that stays outside the panel's reach, see
+	// docs/superpowers/specs/2026-08-18-deploy-target-management-design.md's
+	// "Güvenlik" section.
+	AllowedSitesFile string
 	// BackupDir, if set, turns on internal/backup's nightly job: every
 	// repository is copied into this directory once a day at BackupHour.
 	// Empty by default — no backup runs until an operator points this at a
@@ -76,7 +80,7 @@ func Load() Config {
 		SMTPPassword:      getEnv("DEVPLATFORM_SMTP_PASSWORD", ""),
 		SMTPFrom:          getEnv("DEVPLATFORM_SMTP_FROM", "devplatform@localhost"),
 		BaseURL:           getEnv("DEVPLATFORM_BASE_URL", ""),
-		DeployTargetsFile: getEnv("DEVPLATFORM_DEPLOY_TARGETS_FILE", ""),
+		AllowedSitesFile:  getEnv("DEVPLATFORM_ALLOWED_SITES_FILE", ""),
 		BackupDir:         getEnv("DEVPLATFORM_BACKUP_DIR", ""),
 		BackupHour:        getEnvInt("DEVPLATFORM_BACKUP_HOUR", 2),
 		FrontendDir:       getEnv("DEVPLATFORM_FRONTEND_DIR", ""),
