@@ -32,7 +32,11 @@ import (
 type Handlers struct {
 	Store   *Store
 	Repos   *repostore.Store
-	Targets *Targets
+	// Targets is the panel-writable deploy-target store (see
+	// internal/deployment/store.go). Find/Environments below are the same
+	// methods it always had; Set/Delete/List (new) back the admin
+	// management API in target_handlers.go.
+	Targets *TargetStore
 	// Pipeline is optional in the same nil-safe spirit as Audit/Notify
 	// elsewhere: without one, Create still works (a request can be
 	// opened and reviewed) but Approve always fails clearly rather than
@@ -50,6 +54,14 @@ type Handlers struct {
 	// (see internal/access). ListAll is the only place this package needs
 	// it — see taskboard.Handlers.Access's doc comment for why.
 	Access *access.Store
+	// AllowedSites is the ops-managed set of IIS site names a deploy
+	// target's SiteName may name (see internal/iishelper.LoadAllowedSites).
+	// Loaded once at startup from DEVPLATFORM_ALLOWED_SITES_FILE — no API
+	// here ever writes to it. A nil map behaves as "nothing is allowed"
+	// (a Go nil-map read is always the zero value, so every SetTarget call
+	// is rejected rather than panicking), matching this codebase's other
+	// fail-closed defaults.
+	AllowedSites map[string]bool
 }
 
 type createRequest struct {

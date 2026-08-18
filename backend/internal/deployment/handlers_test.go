@@ -117,6 +117,10 @@ func newMux(h *Handlers) *http.ServeMux {
 	mux.Handle("POST /api/repos/{repo}/deployments/{id}/reject",
 		authMW(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(h.Reject))))
 	mux.Handle("GET /api/deployments", authMW(http.HandlerFunc(h.ListAll)))
+	mux.Handle("GET /api/deploy-targets", authMW(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(h.ListTargets))))
+	mux.Handle("PUT /api/deploy-targets/{repo}/{environment}", authMW(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(h.SetTarget))))
+	mux.Handle("DELETE /api/deploy-targets/{repo}/{environment}", authMW(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(h.DeleteTarget))))
+	mux.Handle("GET /api/allowed-sites", authMW(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(h.ListAllowedSites))))
 	return mux
 }
 
@@ -151,9 +155,13 @@ func newTestHandlers(t *testing.T, runner deploy.CommandRunner) (*Handlers, *rep
 	runGit(t, work, "commit", "-m", "initial commit")
 	runGit(t, work, "push", "origin", "main")
 
-	targets := NewTargets([]Target{
-		{Repo: "sample", Environment: "test", Recipe: deploy.RecipeNpm, SiteName: "Fake Site"},
-	})
+	targets := NewTargetStore(filepath.Join(dataDir, "deploy-targets.json"))
+	if err := targets.Set(
+		Target{Repo: "sample", Environment: "test", Recipe: deploy.RecipeNpm, SiteName: "Fake Site"},
+		map[string]bool{"Fake Site": true},
+	); err != nil {
+		t.Fatalf("failed to seed deploy target: %v", err)
+	}
 
 	pipeline := deploy.NewPipeline(
 		&deploy.Builder{},
@@ -582,10 +590,16 @@ func TestListAll_SpansRepos(t *testing.T) {
 	if _, err := repos.Create("other"); err != nil {
 		t.Fatalf("failed to create second repo: %v", err)
 	}
-	h.Targets = NewTargets([]Target{
+	h.Targets = NewTargetStore(filepath.Join(t.TempDir(), "deploy-targets.json"))
+	allowedSites := map[string]bool{"A": true, "B": true}
+	for _, target := range []Target{
 		{Repo: "sample", Environment: "test", Recipe: deploy.RecipeNpm, SiteName: "A"},
 		{Repo: "other", Environment: "test", Recipe: deploy.RecipeNpm, SiteName: "B"},
-	})
+	} {
+		if err := h.Targets.Set(target, allowedSites); err != nil {
+			t.Fatalf("failed to seed deploy target: %v", err)
+		}
+	}
 	mux := newMux(h)
 
 	// "other" has no branches at all, but Create only needs a target and a
@@ -625,9 +639,13 @@ func TestListAll_NarrowsToAllowedReposForARestrictedDeveloper(t *testing.T) {
 	if _, err := repos.Create("other"); err != nil {
 		t.Fatalf("failed to create second repo: %v", err)
 	}
-	h.Targets = NewTargets([]Target{
-		{Repo: "sample", Environment: "test", Recipe: deploy.RecipeNpm, SiteName: "A"},
-	})
+	h.Targets = NewTargetStore(filepath.Join(t.TempDir(), "deploy-targets.json"))
+	if err := h.Targets.Set(
+		Target{Repo: "sample", Environment: "test", Recipe: deploy.RecipeNpm, SiteName: "A"},
+		map[string]bool{"A": true},
+	); err != nil {
+		t.Fatalf("failed to seed deploy target: %v", err)
+	}
 	h.Access = access.NewStore(t.TempDir() + "/access.json")
 	if err := h.Access.Set("dev-1", []string{"other"}); err != nil {
 		t.Fatalf("Set failed: %v", err)
