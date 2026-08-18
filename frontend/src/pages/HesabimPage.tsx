@@ -30,12 +30,16 @@ export function HesabimPage() {
 
   async function copy() {
     if (!token) return
-    await navigator.clipboard.writeText(token)
-    setCopied(true)
+    try {
+      await navigator.clipboard.writeText(token)
+      setCopied(true)
+    } catch {
+      setError('Panoya kopyalanamadı — anahtarı aşağıdaki kutudan seçip elle kopyalayın.')
+    }
   }
 
   const subject = user?.subject ?? ''
-  const cloneExample = `git clone http://${subject}:${token ?? '<anahtar>'}@${window.location.host}/git/<repo>.git`
+  const cloneExample = `git clone http://${encodeURIComponent(subject)}:${token ?? '<anahtar>'}@${window.location.host}/git/<repo>.git`
 
   return (
     <div className="page">

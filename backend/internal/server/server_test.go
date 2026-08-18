@@ -15,6 +15,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/deployment"
+	"github.com/kenissha/DevPlatform/backend/internal/gittoken"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/notify"
@@ -76,6 +77,7 @@ func newTestRouter(t *testing.T) (*http.ServeMux, *repostore.Store, *access.Stor
 		Audit:        auditLogger,
 		Access:       accessStore,
 	}
+	gitTokenHandlers := &gittoken.Handlers{Store: gittoken.NewStore(filepath.Join(dataDir, "git-tokens.json"))}
 
 	router := NewRouter(Deps{
 		GitHandler:     http.NotFoundHandler(),
@@ -89,6 +91,7 @@ func newTestRouter(t *testing.T) (*http.ServeMux, *repostore.Store, *access.Stor
 		Deployments:    deploymentHandlers,
 		Users:          users.NewStore(filepath.Join(dataDir, "users.json")),
 		Access:         accessStore,
+		GitTokens:      gitTokenHandlers,
 	})
 	return router, store, accessStore
 }
@@ -500,6 +503,50 @@ func TestAccess_ManagementAPIIsAdminOnly(t *testing.T) {
 	rec = do(t, router, http.MethodDelete, "/api/access/dev-2", "admin-1", "admin", nil)
 	if rec.Code != http.StatusNoContent {
 		t.Errorf("DELETE /api/access/dev-2 as admin: status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+}
+
+func TestGitToken_RevokeIsAdminOnly(t *testing.T) {
+	router, _, _ := newTestRouter(t)
+
+	rec := do(t, router, http.MethodDelete, "/api/git-token/dev-2", "dev-1", "developer", nil)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("DELETE /api/git-token/dev-2 as developer: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	rec = do(t, router, http.MethodDelete, "/api/git-token/dev-2", "admin-1", "admin", nil)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("DELETE /api/git-token/dev-2 as admin: status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+}
+
+func TestGitToken_GenerateMineRejectsUnauthenticatedRequest(t *testing.T) {
+	router, _, _ := newTestRouter(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/me/git-token", bytes.NewReader(nil))
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestGitToken_GenerateMineReturnsATokenForAnyAuthenticatedUser(t *testing.T) {
+	router, _, _ := newTestRouter(t)
+	rec := do(t, router, http.MethodPost, "/api/me/git-token", "dev-1", "developer", nil)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if got.Token == "" {
+		t.Errorf("token = %q, want non-empty", got.Token)
 	}
 }
 

@@ -149,10 +149,23 @@ bir sonraki git isteği 401 alır (yeni anahtar üretene kadar).
 - `POST /api/me/git-token`'da path parametresi yok — kimse başkasının
   anahtarını path'e subject yazarak üretemez, her zaman **çağıranın kendi**
   JWT kimliği kullanılır.
-- Repo adı çıkarımı, `repostore`'un zaten uyguladığı isim doğrulamasına
-  güveniyor (repo adları zaten `^[a-zA-Z0-9_-]+$` ile sınırlı) — adres
-  ayrıştırmasında path-traversal riski yok, çünkü `access.CanAccess`'e
-  giden değer sadece bir karşılaştırma anahtarı, dosya sistemi yolu değil.
+- **Düzeltme/ders (uygulama sırasında iki gerçek güvenlik açığından sonra
+  eklendi):** İlk tasarımda burada "adres ayrıştırmasında path-traversal
+  riski yok, çünkü `access.CanAccess`'e giden değer sadece bir
+  karşılaştırma anahtarı, dosya sistemi yolu değil" deniyordu. Bu akıl
+  yürütme **yanlış** — tam da uygulama sırasında bulunan iki güvenlik
+  açığına yol açan düşünceydi. Tehlike, çıkarılan karşılaştırma anahtarının
+  kendisinde değildi; tehlike, doğrulanmamış orijinal istek path'inin
+  aynı zamanda downstream'de go-git'e de iletiliyor olmasıydı — go-git
+  o path'i kendi başına, karşılaştırma anahtarından bağımsız olarak
+  ayrıştırıyor. "İyi görünen" bir karşılaştırma değeri, aynı path içinde
+  başka bir yerde duran tehlikeli içeriği gizleyebiliyor. Bu yüzden nihai
+  uygulama, sadece çıkarılan repo adını doğrulamak yerine, bilinen-güvenli
+  istek path'i şekillerinin **tüketici bir allow-list'ini** gerektirdi
+  (bkz. `985a528`, `9330eb6`, `33a611a` commit'leri). URL ayrıştırması
+  içeren gelecekteki bir plan bu bölümü referans alırsa, orijinal
+  (yanlış) "sadece karşılaştırma anahtarı, güvenli" akıl yürütmesini
+  tekrarlamamalı.
 
 ## Test
 

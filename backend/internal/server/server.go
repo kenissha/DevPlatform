@@ -50,8 +50,11 @@ type Deps struct {
 	Access *access.Store
 	// GitTokens issues and revokes the per-person git credentials that
 	// gate the /git/ route (see internal/gittoken). Not optional in
-	// practice — cmd/devplatform/main.go always constructs one — but
-	// nil-checking it here would only mask a wiring bug at startup.
+	// practice — cmd/devplatform/main.go always constructs one — but a
+	// nil GitTokens wouldn't fail at startup (a method value on a nil
+	// pointer receiver binds fine); it would panic on the first request
+	// to either route below. Nil-checking it here wouldn't change that,
+	// so it's left to a caller to wire correctly.
 	GitTokens *gittoken.Handlers
 }
 

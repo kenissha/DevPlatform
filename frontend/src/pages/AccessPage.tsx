@@ -95,6 +95,9 @@ function GitTokenRevokeButton({ subject }: { subject: string }) {
   const [message, setMessage] = useState<string | null>(null)
 
   async function revoke() {
+    if (!window.confirm('Bu kişinin git anahtarını iptal etmek istediğinizden emin misiniz?')) {
+      return
+    }
     setRevoking(true)
     setMessage(null)
     try {

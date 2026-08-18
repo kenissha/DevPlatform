@@ -369,6 +369,15 @@ bir anahtar (ör. ID) eklemek.
   Paylaşılan şifreyle git kullanan biri varsa (şimdiye kadar sadece biz),
   bu değişiklikten sonra Hesabım sayfasından yeni bir anahtar üretmesi
   gerekiyor — eski paylaşılan şifre artık hiçbir yerde geçerli değil.
+- **Bilinçli karar — git kimlik bilgileri açık HTTP üzerinden düz metin
+  gidiyor:** Panel ve `/git/` şu an düz HTTP üzerinden sunulduğu için
+  (yukarıya bakın), git Basic Auth kimlik bilgileri ve anahtar üretme
+  cevabındaki ham anahtar ağda düz metin olarak taşınıyor. Bu, kişi
+  başına anahtar geçişiyle gelen yeni bir zafiyet **değil** — eski
+  paylaşılan şifre de aynı şekilde açıktı. Ama kişiye özel bir anahtar,
+  herkesin zaten bildiği tek bir paylaşılan şifreden bir saldırgan için
+  daha değerli, bu yüzden bu maruziyetin örtük bir varsayım değil, kayıtlı
+  ve bilinçli bir karar olması gerekiyor.
 - **Çözüldü — build adımı artık Administrator yetkisiyle çalışmıyor
   (2026-08-13):** bkz. yukarıdaki "IIS yardımcı servisi" güncellemesi.
   `deploy.Pipeline`'ın build adımı hâlâ `devplatform.exe` içinde
