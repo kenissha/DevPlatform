@@ -16,6 +16,7 @@ export function DeployTargetsPage() {
   const [targets, setTargets] = useState<DeployTarget[] | null>(null)
   const [allowedSites, setAllowedSites] = useState<string[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [editingTarget, setEditingTarget] = useState<DeployTarget | null>(null)
 
   function reload() {
     Promise.all([api.listDeployTargets(), api.listAllowedSites()])
@@ -63,12 +64,20 @@ export function DeployTargetsPage() {
                   <span className="spacer" />
                   <span className="badge badge-neutral">{t.recipe}</span>
                   <span className="badge badge-neutral">{t.siteName}</span>
+                  {t.secretsTarget && <span className="badge badge-neutral">{t.secretsTarget}</span>}
+                  <span className="badge badge-neutral">{t.keepVersions} sürüm</span>
+                  <button type="button" className="btn-ghost" onClick={() => setEditingTarget(t)}>
+                    Düzenle
+                  </button>
                   <button
                     type="button"
                     className="btn-ghost"
                     onClick={async () => {
                       try {
                         await api.deleteDeployTarget(t.repo, t.environment)
+                        if (editingTarget?.repo === t.repo && editingTarget?.environment === t.environment) {
+                          setEditingTarget(null)
+                        }
                         reload()
                       } catch (err) {
                         setError(err instanceof ApiError ? err.message : 'Silinemedi')
@@ -85,25 +94,38 @@ export function DeployTargetsPage() {
       </div>
 
       <div className="section-title">
-        <h2>Yeni deploy hedefi</h2>
+        <h2>{editingTarget ? 'Deploy hedefini düzenle' : 'Yeni deploy hedefi'}</h2>
       </div>
       <div className="card">
         <div className="card-body">
-          <NewTargetForm repos={repos ?? []} allowedSites={allowedSites ?? []} onCreated={reload} />
+          <TargetForm
+            repos={repos ?? []}
+            allowedSites={allowedSites ?? []}
+            editingTarget={editingTarget}
+            onDone={() => {
+              setEditingTarget(null)
+              reload()
+            }}
+            onCancel={() => setEditingTarget(null)}
+          />
         </div>
       </div>
     </div>
   )
 }
 
-function NewTargetForm({
+function TargetForm({
   repos,
   allowedSites,
-  onCreated,
+  editingTarget,
+  onDone,
+  onCancel,
 }: {
   repos: string[]
   allowedSites: string[]
-  onCreated: () => void
+  editingTarget?: DeployTarget | null
+  onDone: () => void
+  onCancel?: () => void
 }) {
   const [repo, setRepo] = useState('')
   const [environment, setEnvironment] = useState('')
@@ -113,6 +135,25 @@ function NewTargetForm({
   const [keepVersions, setKeepVersions] = useState(5)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (editingTarget) {
+      setRepo(editingTarget.repo)
+      setEnvironment(editingTarget.environment)
+      setRecipe(editingTarget.recipe)
+      setSiteName(editingTarget.siteName)
+      setSecretsTarget(editingTarget.secretsTarget ?? '')
+      setKeepVersions(editingTarget.keepVersions)
+    } else {
+      setRepo('')
+      setEnvironment('')
+      setRecipe('dotnet')
+      setSiteName('')
+      setSecretsTarget('')
+      setKeepVersions(5)
+    }
+    setFormError(null)
+  }, [editingTarget])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -126,9 +167,7 @@ function NewTargetForm({
         secretsTarget: secretsTarget.trim() || undefined,
         keepVersions,
       })
-      setEnvironment('')
-      setSecretsTarget('')
-      onCreated()
+      onDone()
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : 'Kaydedilemedi')
     } finally {
@@ -138,28 +177,39 @@ function NewTargetForm({
 
   return (
     <form onSubmit={handleSubmit} className="stacked-form">
-      <div className="field">
-        <label htmlFor="target-repo">Repo</label>
-        <select id="target-repo" value={repo} onChange={(e) => setRepo(e.target.value)}>
-          <option value="">Seçin...</option>
-          {repos.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {editingTarget ? (
+        <div className="field">
+          <label>Repo → Ortam</label>
+          <p>
+            {editingTarget.repo} → {editingTarget.environment}
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="field">
+            <label htmlFor="target-repo">Repo</label>
+            <select id="target-repo" value={repo} onChange={(e) => setRepo(e.target.value)}>
+              <option value="">Seçin...</option>
+              {repos.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-      <div className="field">
-        <label htmlFor="target-environment">Ortam</label>
-        <input
-          id="target-environment"
-          type="text"
-          value={environment}
-          onChange={(e) => setEnvironment(e.target.value)}
-          placeholder="production"
-        />
-      </div>
+          <div className="field">
+            <label htmlFor="target-environment">Ortam</label>
+            <input
+              id="target-environment"
+              type="text"
+              value={environment}
+              onChange={(e) => setEnvironment(e.target.value)}
+              placeholder="production"
+            />
+          </div>
+        </>
+      )}
 
       <div className="field">
         <label htmlFor="target-recipe">Recipe</label>
@@ -208,8 +258,13 @@ function NewTargetForm({
 
       <div className="form-actions">
         <button type="submit" className="btn-primary" disabled={saving || !repo || !environment.trim() || !siteName}>
-          {saving ? 'Kaydediliyor...' : 'Kaydet'}
+          {saving ? 'Kaydediliyor...' : editingTarget ? 'Güncelle' : 'Kaydet'}
         </button>
+        {editingTarget && (
+          <button type="button" className="btn-ghost" onClick={onCancel}>
+            Vazgeç
+          </button>
+        )}
       </div>
       {formError && <p className="error">{formError}</p>}
     </form>
