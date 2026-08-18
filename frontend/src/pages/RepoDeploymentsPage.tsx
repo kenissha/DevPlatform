@@ -161,8 +161,9 @@ export function RepoDeploymentsPage() {
         <div className="card-body">
           {environments.length === 0 ? (
             <p className="empty-state">
-              Bu repo için henüz deploy hedefi tanımlanmamış. Sunucu yöneticisi
-              deploy-targets dosyasına bu repoyu eklemeden deploy isteği açılamaz.
+              Bu repo için henüz deploy hedefi tanımlanmamış. Bir yönetici "Deploy
+              Hedefleri" sayfasından bu repo için bir hedef eklemeden deploy isteği
+              açılamaz.
             </p>
           ) : (
             <form onSubmit={handleCreate}>

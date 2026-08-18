@@ -4,6 +4,8 @@ import type {
   Commit,
   Contributor,
   DayCount,
+  DeployRecipe,
+  DeployTarget,
   DeploymentRequest,
   DeploymentStatus,
   DiffResult,
@@ -151,6 +153,22 @@ export const api = {
   listAllDeployments: (status?: DeploymentStatus) =>
     request<DeploymentRequest[]>(`/api/deployments${status ? `?status=${status}` : ''}`),
 
+  // Deploy-target management (Admin-only on the backend). siteName is
+  // validated server-side against the ops-managed allow-list — see
+  // listAllowedSites — never accepted as free text.
+  listDeployTargets: () => request<DeployTarget[]>('/api/deploy-targets'),
+  setDeployTarget: (repo: string, environment: string, target: Omit<DeployTarget, 'repo' | 'environment'>) =>
+    request<DeployTarget>(
+      `/api/deploy-targets/${encodeURIComponent(repo)}/${encodeURIComponent(environment)}`,
+      { method: 'PUT', body: JSON.stringify(target) },
+    ),
+  deleteDeployTarget: (repo: string, environment: string) =>
+    request<void>(
+      `/api/deploy-targets/${encodeURIComponent(repo)}/${encodeURIComponent(environment)}`,
+      { method: 'DELETE' },
+    ),
+  listAllowedSites: () => request<string[]>('/api/allowed-sites'),
+
   // Per-project authorization (Admin-only on the backend). A subject
   // absent from listAccess's result is unrestricted — see AccessRegistry.
   listAccess: () => request<AccessRegistry>('/api/access'),
@@ -177,6 +195,8 @@ export type {
   Commit,
   Contributor,
   DayCount,
+  DeployRecipe,
+  DeployTarget,
   DeploymentRequest,
   DiffResult,
   MergeRequest,

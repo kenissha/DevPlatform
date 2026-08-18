@@ -133,6 +133,21 @@ export interface DeploymentRequest {
   decidedAt?: string
 }
 
+export type DeployRecipe = 'dotnet' | 'npm'
+
+// One (repo, environment) pair's deploy configuration — mirrors
+// backend/internal/deployment.Target. Managed from the panel's "Deploy
+// Hedefleri" page (Admin-only); siteName must be one of
+// GET /api/allowed-sites's values, enforced server-side.
+export interface DeployTarget {
+  repo: string
+  environment: string
+  recipe: DeployRecipe
+  siteName: string
+  secretsTarget?: string
+  keepVersions: number
+}
+
 export interface Notification {
   id: string
   recipient: string

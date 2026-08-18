@@ -6,6 +6,7 @@ import { NotificationsProvider } from './notifications/NotificationsContext'
 import { AccessPage } from './pages/AccessPage'
 import { AuditPage } from './pages/AuditPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { DeployTargetsPage } from './pages/DeployTargetsPage'
 import { HesabimPage } from './pages/HesabimPage'
 import { LoginPage } from './pages/LoginPage'
 import { MergeRequestDetailPage } from './pages/MergeRequestDetailPage'
@@ -42,6 +43,7 @@ export default function App() {
               <Route path="/repos" element={<ReposPage />} />
               <Route path="/audit" element={<AuditPage />} />
               <Route path="/access" element={<AccessPage />} />
+              <Route path="/deploy-targets" element={<DeployTargetsPage />} />
               <Route path="/hesabim" element={<HesabimPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/repos/:repo" element={<RepoOverviewPage />} />

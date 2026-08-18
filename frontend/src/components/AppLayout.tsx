@@ -104,6 +104,14 @@ export function AppLayout() {
                   </NavLink>
                 </li>
               )}
+              {user?.role === 'admin' && (
+                <li>
+                  <NavLink end to="/deploy-targets" className={navClass}>
+                    <DeployIcon />
+                    <span className="nav-label">Deploy hedefleri</span>
+                  </NavLink>
+                </li>
+              )}
             </ul>
           </div>
 
