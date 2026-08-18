@@ -262,6 +262,9 @@ bulunan ve düzeltilen gerçek hatalar:
   aynı (repo, environment) çiftinin tekrarı, bilinmeyen recipe, boş
   siteName, path-traversal'lı secretsTarget artık sunucuyu başlatmıyor
   (sessizce yanlış konfigürasyonla ayağa kalkmak yerine).
+  **(Çözüldü — 2026-08-18: bu doğrulama artık başlangıçta değil, panelden
+  bir hedef kaydedilirken yapılıyor — `TargetStore.Set`, bkz. "Bilinmesi
+  gereken kararlar" bölümündeki 2026-08-18 güncellemesi.)**
 - Deploy artık süresiz asılı kalamıyor — zaman aşımı eklendi, aşılırsa
   istek "failed" olarak işaretleniyor.
 - Gecelik yedekte finalize sırası değişti (önce eskiyi kenara al, yeniyi
@@ -356,8 +359,8 @@ ekleme/davet akışı (bkz. yukarıdaki 2026-08-18 güncellemesi — bu son
 parça DevPlatform'un kendi kodunda değil, Intranet-B/F'de çözüldü).
 Kalan gerçek iş artık tamamen kod değil, **ops + gözetimli bir oturum**
 gerektiriyor: sunucuda `DEVPLATFORM_ALLOWED_SITES_FILE`'ı gerçek IIS site
-adlarıyla oluşturmak (bkz. "Bilinmesi gereken kararlar"deki 2026-08-18
-güncellemesi), sonra gerçek Intranet-F/Intranet-B hedeflerini panelden
+adlarıyla oluşturmak (bkz. "Bilinmesi gereken kararlar" bölümündeki
+2026-08-18 güncellemesi), sonra gerçek Intranet-F/Intranet-B hedeflerini panelden
 ("Deploy Hedefleri" sayfası) eklemek ve ilk gerçek deploy'u birlikte
 izlemek (recipe'ler, gerçek appsettings için secretsctl ile secrets'ı
 önceden yüklemek gerekecek — "IIS / deploy — canlıda öğrenilen dersler"
