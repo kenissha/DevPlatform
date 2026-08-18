@@ -121,7 +121,7 @@ func main() {
 	// A missing/invalid secrets key is not fatal: it only means deploy
 	// targets that ask for a secretsTarget will fail at approval time with
 	// a clear error (see deploy.Pipeline.Deploy), the same "misconfigured,
-	// not crashed" posture LoadTargets' empty-path case already takes.
+	// not crashed" posture LoadAllowedSites' empty-path case already takes.
 	var secretsStore *secretsvault.Store
 	if key, err := secretsvault.LoadKey(); err != nil {
 		log.Printf("secrets vault not available (%v) — deploy targets with a secretsTarget will fail until DEVPLATFORM_SECRETS_KEY is set", err)

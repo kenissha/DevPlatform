@@ -139,6 +139,9 @@ Bununla birlikte:
   dosyadan yüklenen bir liste — `DEVPLATFORM_DEPLOY_TARGETS_FILE`. Boş/
   tanımsızsa hiçbir şey deploy edilemez (güvenli varsayılan); tasarım
   dokümanının "sabit listeden" şartı, panelden serbest metinle asla değil.
+  **(Çözüldü — 2026-08-18: deploy hedefinin içeriği artık panelden
+  yönetiliyor; sadece IIS site adları listesi hâlâ dosya tabanlı, bkz.
+  "Bilinmesi gereken kararlar".)**
 - **Bilinçli olarak yapılmadı:** bu oturumda gerçek hiçbir IIS sitesine
   (test ya da Intranet-F/B) dokunulmadı. Uçtan uca kanıt, gerçek IIS yerine
   sahte bir `CommandRunner`'a karşı yazılmış bir Go testinden geliyor
@@ -352,24 +355,16 @@ kişi başına erişim (bkz. "Bilinmesi gereken kararlar") ve kişi
 ekleme/davet akışı (bkz. yukarıdaki 2026-08-18 güncellemesi — bu son
 parça DevPlatform'un kendi kodunda değil, Intranet-B/F'de çözüldü).
 Kalan gerçek iş artık tamamen kod değil, **ops + gözetimli bir oturum**
-gerektiriyor: gerçek Intranet-F/Intranet-B'yi
-`DEVPLATFORM_DEPLOY_TARGETS_FILE`'a hedef olarak eklemek ve ilk gerçek
-deploy'u birlikte izlemek (IIS site adları, recipe'ler, gerçek appsettings
-için secretsctl ile secrets'ı önceden yüklemek gerekecek — "IIS / deploy —
-canlıda öğrenilen dersler" bölümündeki 3 nottan özellikle üçüncüsüne,
-içerik konumuna, dikkat). Gerçek SMTP sunucu bilgilerini
-(`DEVPLATFORM_SMTP_*`) ve gerçek yedek hedefini (`DEVPLATFORM_BACKUP_DIR`)
-girmek de aynı şekilde senin elinle, gözetimli yapılacak birer adım.
-
-Küçük, engelleyici olmayan bir not: aynı `CreatedAt`-tabanlı "en yeni
-önce" sıralama flake'i artık iki yerde görüldü — `internal/mergerequest`'te
-`TestList_ReturnsAllRequestsNewestFirst` ve `internal/notify`'da
-`TestListForUser_NewestFirst`. Arka arkaya iki `Create` çağrısı aynı
-`time.Now().UTC()` değerine denk gelirse sıralama kararsız oluyor. Bu
-oturumda da dokunulmadı (proje kapsamı dışında, önceden var olan kod);
-izole çalıştırıldığında hep geçiyor, tek seferlik bir tesadüf. İleride
-düzeltilecekse çözüm muhtemelen her iki paketteki sıralamaya da ikincil
-bir anahtar (ör. ID) eklemek.
+gerektiriyor: sunucuda `DEVPLATFORM_ALLOWED_SITES_FILE`'ı gerçek IIS site
+adlarıyla oluşturmak (bkz. "Bilinmesi gereken kararlar"deki 2026-08-18
+güncellemesi), sonra gerçek Intranet-F/Intranet-B hedeflerini panelden
+("Deploy Hedefleri" sayfası) eklemek ve ilk gerçek deploy'u birlikte
+izlemek (recipe'ler, gerçek appsettings için secretsctl ile secrets'ı
+önceden yüklemek gerekecek — "IIS / deploy — canlıda öğrenilen dersler"
+bölümündeki 3 nottan özellikle üçüncüsüne, içerik konumuna, dikkat).
+Gerçek SMTP sunucu bilgilerini (`DEVPLATFORM_SMTP_*`) ve gerçek yedek
+hedefini (`DEVPLATFORM_BACKUP_DIR`) girmek de aynı şekilde senin elinle,
+gözetimli yapılacak birer adım.
 
 ## Bilinmesi gereken kararlar
 
