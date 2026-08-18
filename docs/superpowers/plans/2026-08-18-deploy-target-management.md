@@ -8,7 +8,7 @@ deploys to which IIS site) from the panel, instead of hand-editing
 
 **Architecture:** Split the deploy-targets file's two jobs apart. The
 target *content* (repo, environment, recipe, siteName, secretsTarget,
-keepVersions) moves into a new `internal/deployment.Store` — a panel-writable
+keepVersions) moves into a new `internal/deployment.TargetStore` — a panel-writable
 JSON file under `DataDir`, matching every other Store in this codebase
 (`access`, `users`, `gittoken`). Which IIS site *names* are touchable at
 all stays a small, ops-only file (`DEVPLATFORM_ALLOWED_SITES_FILE`)
@@ -45,7 +45,7 @@ already independently load the old combined file today.
 
 ---
 
-### Task 1: `internal/deployment.Store` (replaces `Targets`)
+### Task 1: `internal/deployment.TargetStore` (replaces `Targets`)
 
 **Files:**
 - Delete: `backend/internal/deployment/targets.go`
@@ -54,13 +54,13 @@ already independently load the old combined file today.
 - Create: `backend/internal/deployment/store_test.go`
 
 **Interfaces:**
-- Produces: `deployment.NewStore(path string) *Store`,
-  `(*Store).Find(repo, environment string) (Target, error)` (same
+- Produces: `deployment.NewTargetStore(path string) *TargetStore`,
+  `(*TargetStore).Find(repo, environment string) (Target, error)` (same
   signature `Handlers.Create` already calls),
-  `(*Store).Environments(repo string) []string` (same signature
-  `Handlers.Environments` already calls), `(*Store).List() ([]Target, error)`,
-  `(*Store).Set(target Target, allowedSites map[string]bool) error`,
-  `(*Store).Delete(repo, environment string) error`. `Target` struct and
+  `(*TargetStore).Environments(repo string) []string` (same signature
+  `Handlers.Environments` already calls), `(*TargetStore).List() ([]Target, error)`,
+  `(*TargetStore).Set(target Target, allowedSites map[string]bool) error`,
+  `(*TargetStore).Delete(repo, environment string) error`. `Target` struct and
   `ErrNoTarget` are unchanged from the deleted file. Tasks 3 and 4 depend
   on these exact signatures.
 
@@ -78,7 +78,7 @@ import (
 )
 
 func TestFind_ReturnsErrNoTargetWhenStoreIsEmpty(t *testing.T) {
-	store := NewStore(t.TempDir() + "/deploy-targets.json")
+	store := NewTargetStore(t.TempDir() + "/deploy-targets.json")
 
 	if _, err := store.Find("intranet-backend", "production"); err != ErrNoTarget {
 		t.Fatalf("err = %v, want ErrNoTarget", err)
@@ -86,7 +86,7 @@ func TestFind_ReturnsErrNoTargetWhenStoreIsEmpty(t *testing.T) {
 }
 
 func TestSet_ThenFind_ReturnsTheStoredTarget(t *testing.T) {
-	store := NewStore(t.TempDir() + "/deploy-targets.json")
+	store := NewTargetStore(t.TempDir() + "/deploy-targets.json")
 	allowed := map[string]bool{"Intranet Backend": true}
 
 	target := Target{
@@ -111,7 +111,7 @@ func TestSet_ThenFind_ReturnsTheStoredTarget(t *testing.T) {
 }
 
 func TestSet_DefaultsKeepVersionsTo5WhenOmitted(t *testing.T) {
-	store := NewStore(t.TempDir() + "/deploy-targets.json")
+	store := NewTargetStore(t.TempDir() + "/deploy-targets.json")
 	allowed := map[string]bool{"A": true}
 
 	if err := store.Set(Target{Repo: "r", Environment: "e", Recipe: deploy.RecipeNpm, SiteName: "A"}, allowed); err != nil {
@@ -127,7 +127,7 @@ func TestSet_DefaultsKeepVersionsTo5WhenOmitted(t *testing.T) {
 }
 
 func TestSet_ReplacesAnExistingTargetRatherThanDuplicating(t *testing.T) {
-	store := NewStore(t.TempDir() + "/deploy-targets.json")
+	store := NewTargetStore(t.TempDir() + "/deploy-targets.json")
 	allowed := map[string]bool{"A": true, "B": true}
 
 	if err := store.Set(Target{Repo: "r", Environment: "e", Recipe: deploy.RecipeNpm, SiteName: "A"}, allowed); err != nil {
@@ -150,7 +150,7 @@ func TestSet_ReplacesAnExistingTargetRatherThanDuplicating(t *testing.T) {
 }
 
 func TestSet_RejectsASiteNameNotInTheAllowList(t *testing.T) {
-	store := NewStore(t.TempDir() + "/deploy-targets.json")
+	store := NewTargetStore(t.TempDir() + "/deploy-targets.json")
 	allowed := map[string]bool{"Approved Site": true}
 
 	err := store.Set(Target{Repo: "r", Environment: "e", Recipe: deploy.RecipeNpm, SiteName: "Someone Else's Site"}, allowed)
@@ -179,7 +179,7 @@ func TestSet_RejectsInvalidFields(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			store := NewStore(t.TempDir() + "/deploy-targets.json")
+			store := NewTargetStore(t.TempDir() + "/deploy-targets.json")
 			if err := store.Set(tc.target, allowed); err == nil {
 				t.Fatal("Set returned no error, want the target rejected")
 			}
@@ -188,7 +188,7 @@ func TestSet_RejectsInvalidFields(t *testing.T) {
 }
 
 func TestDelete_RemovesTheTarget(t *testing.T) {
-	store := NewStore(t.TempDir() + "/deploy-targets.json")
+	store := NewTargetStore(t.TempDir() + "/deploy-targets.json")
 	allowed := map[string]bool{"A": true}
 	if err := store.Set(Target{Repo: "r", Environment: "e", Recipe: deploy.RecipeNpm, SiteName: "A"}, allowed); err != nil {
 		t.Fatalf("Set returned error: %v", err)
@@ -203,7 +203,7 @@ func TestDelete_RemovesTheTarget(t *testing.T) {
 }
 
 func TestDelete_NonexistentTargetIsNotAnError(t *testing.T) {
-	store := NewStore(t.TempDir() + "/deploy-targets.json")
+	store := NewTargetStore(t.TempDir() + "/deploy-targets.json")
 
 	if err := store.Delete("r", "e"); err != nil {
 		t.Errorf("Delete on a nonexistent target returned error: %v", err)
@@ -211,7 +211,7 @@ func TestDelete_NonexistentTargetIsNotAnError(t *testing.T) {
 }
 
 func TestEnvironments_ReturnsOnlyMatchingRepo(t *testing.T) {
-	store := NewStore(t.TempDir() + "/deploy-targets.json")
+	store := NewTargetStore(t.TempDir() + "/deploy-targets.json")
 	allowed := map[string]bool{"A": true, "B": true, "C": true}
 	if err := store.Set(Target{Repo: "intranet-backend", Environment: "production", Recipe: deploy.RecipeDotnet, SiteName: "A"}, allowed); err != nil {
 		t.Fatalf("Set returned error: %v", err)
@@ -230,7 +230,7 @@ func TestEnvironments_ReturnsOnlyMatchingRepo(t *testing.T) {
 }
 
 func TestList_ReturnsEveryTarget(t *testing.T) {
-	store := NewStore(t.TempDir() + "/deploy-targets.json")
+	store := NewTargetStore(t.TempDir() + "/deploy-targets.json")
 	allowed := map[string]bool{"A": true, "B": true}
 	if err := store.Set(Target{Repo: "r1", Environment: "e", Recipe: deploy.RecipeNpm, SiteName: "A"}, allowed); err != nil {
 		t.Fatalf("Set returned error: %v", err)
@@ -248,17 +248,17 @@ func TestList_ReturnsEveryTarget(t *testing.T) {
 	}
 }
 
-func TestStore_PersistsAcrossInstances(t *testing.T) {
+func TestTargetStore_PersistsAcrossInstances(t *testing.T) {
 	path := t.TempDir() + "/deploy-targets.json"
-	store1 := NewStore(path)
+	store1 := NewTargetStore(path)
 	allowed := map[string]bool{"A": true}
 	if err := store1.Set(Target{Repo: "r", Environment: "e", Recipe: deploy.RecipeNpm, SiteName: "A"}, allowed); err != nil {
 		t.Fatalf("Set returned error: %v", err)
 	}
 
-	store2 := NewStore(path)
+	store2 := NewTargetStore(path)
 	if _, err := store2.Find("r", "e"); err != nil {
-		t.Errorf("a fresh Store instance backed by the same file does not see the earlier Set: %v", err)
+		t.Errorf("a fresh TargetStore instance backed by the same file does not see the earlier Set: %v", err)
 	}
 }
 ```
@@ -266,7 +266,7 @@ func TestStore_PersistsAcrossInstances(t *testing.T) {
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `cd backend && go test ./internal/deployment/... -run TestFind_ReturnsErrNoTargetWhenStoreIsEmpty -v`
-Expected: FAIL — package fails to compile (`NewStore`/`Store`/`Set` undefined; also `targets_test.go` still referencing the soon-to-be-removed `LoadTargets`/`NewTargets`/`ValidateTargets` will fail to compile once `targets.go` is deleted). This is expected — Step 3 deletes the old files and adds the new implementation in the same step.
+Expected: FAIL — package fails to compile (`NewTargetStore`/`TargetStore`/`Set` undefined; also `targets_test.go` still referencing the soon-to-be-removed `LoadTargets`/`NewTargets`/`ValidateTargets` will fail to compile once `targets.go` is deleted). This is expected — Step 3 deletes the old files and adds the new implementation in the same step.
 
 - [ ] **Step 3: Delete the old files and write the implementation**
 
@@ -308,7 +308,7 @@ var ErrNoTarget = errors.New("deployment: no deploy target configured for this r
 // one, e.g. a test environment with no real credentials).
 //
 // SiteName is the field the security boundary actually runs through:
-// Store.Set only accepts a SiteName present in the caller-supplied
+// TargetStore.Set only accepts a SiteName present in the caller-supplied
 // allowedSites set — see docs/superpowers/specs/2026-08-18-deploy-target-management-design.md's
 // "Güvenlik" section for why that set is loaded from a separate,
 // ops-only file (DEVPLATFORM_ALLOWED_SITES_FILE) that no API here can
@@ -322,12 +322,14 @@ type Target struct {
 	KeepVersions  int           `json:"keepVersions"`
 }
 
-// validRepoName mirrors repostore's own name validation. Duplicated rather
-// than imported so this package's on-disk path-building stays safe against
-// path traversal even if repostore's validation is only ever checked by a
-// caller further up the stack, not here.
-var validRepoName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
-
+// validRepoName is not redeclared here — it already exists as a
+// package-level var in deployment.go (`var validRepoName =
+// regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)`, used by the deploy-request
+// side of this package), and Go's flat package namespace means a second
+// `var validRepoName` in this file would be a compile error
+// ("validRepoName redeclared"). validateTarget below calls that
+// existing var directly.
+//
 // validEnvironmentName mirrors validRepoName: an environment name ends up
 // in release directory paths (see deploy.VersionStore) just like a repo
 // name does, so it gets the same allow-list rather than a looser one.
@@ -335,7 +337,7 @@ var validEnvironmentName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 // validateTarget rejects a Target that would be unsafe or ambiguous to
 // deploy. It is the single-entry counterpart to what used to be a
-// whole-file bulk validator (ValidateTargets, now removed): Store.Set
+// whole-file bulk validator (ValidateTargets, now removed): TargetStore.Set
 // calls it on every write instead of once at file-load time, and there
 // is no duplicate-entry check anymore because (Repo, Environment) is the
 // map-like key Set replaces by, not something that can silently
@@ -360,22 +362,22 @@ func validateTarget(t Target, allowedSites map[string]bool) error {
 	return nil
 }
 
-// Store persists deploy targets as a JSON array of Target under a single
+// TargetStore persists deploy targets as a JSON array of Target under a single
 // file — the same shape the old ops-edited DEVPLATFORM_DEPLOY_TARGETS_FILE
 // used, now read fresh on every call (like internal/access.Store) and
 // writable through Set/Delete instead of loaded once at process startup.
-type Store struct {
+type TargetStore struct {
 	path string
 	mu   sync.Mutex
 }
 
-// NewStore returns a Store backed by the file at path. The file does not
+// NewTargetStore returns a TargetStore backed by the file at path. The file does not
 // need to exist yet — a missing file behaves as zero configured targets.
-func NewStore(path string) *Store {
-	return &Store{path: path}
+func NewTargetStore(path string) *TargetStore {
+	return &TargetStore{path: path}
 }
 
-func (s *Store) load() ([]Target, error) {
+func (s *TargetStore) load() ([]Target, error) {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -393,7 +395,7 @@ func (s *Store) load() ([]Target, error) {
 	return list, nil
 }
 
-func (s *Store) save(list []Target) error {
+func (s *TargetStore) save(list []Target) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o750); err != nil {
 		return err
 	}
@@ -421,7 +423,7 @@ func (s *Store) save(list []Target) error {
 }
 
 // Find returns the configured Target for (repo, environment), if any.
-func (s *Store) Find(repo, environment string) (Target, error) {
+func (s *TargetStore) Find(repo, environment string) (Target, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -440,7 +442,7 @@ func (s *Store) Find(repo, environment string) (Target, error) {
 // Environments returns every environment name configured for repo, so a
 // request form can offer only environments that are actually deployable
 // rather than free text.
-func (s *Store) Environments(repo string) []string {
+func (s *TargetStore) Environments(repo string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -459,7 +461,7 @@ func (s *Store) Environments(repo string) []string {
 
 // List returns every configured deploy target, for the admin panel's
 // management table.
-func (s *Store) List() ([]Target, error) {
+func (s *TargetStore) List() ([]Target, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.load()
@@ -472,7 +474,7 @@ func (s *Store) List() ([]Target, error) {
 // internal/gittoken.Store.Generate already use. A KeepVersions below 1
 // (including the zero value from an omitted field) defaults to 5,
 // matching this package's previous NewTargets behavior.
-func (s *Store) Set(target Target, allowedSites map[string]bool) error {
+func (s *TargetStore) Set(target Target, allowedSites map[string]bool) error {
 	if err := validateTarget(target, allowedSites); err != nil {
 		return err
 	}
@@ -504,7 +506,7 @@ func (s *Store) Set(target Target, allowedSites map[string]bool) error {
 // Delete removes the (repo, environment) target, if any. A target that
 // doesn't exist is not an error — matches internal/access.Store.Clear's
 // idempotent-remove behavior.
-func (s *Store) Delete(repo, environment string) error {
+func (s *TargetStore) Delete(repo, environment string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -541,7 +543,7 @@ Task 1.
 ```bash
 git add backend/internal/deployment/store.go backend/internal/deployment/store_test.go
 git rm backend/internal/deployment/targets.go backend/internal/deployment/targets_test.go
-git commit -m "feat(deployment): replace immutable Targets with a panel-writable Store"
+git commit -m "feat(deployment): replace immutable Targets with a panel-writable TargetStore"
 ```
 
 ---
@@ -836,12 +838,12 @@ git commit -m "feat(iishelper): read allowed sites from their own dedicated file
 - Create: `backend/internal/deployment/target_handlers_test.go`
 
 **Interfaces:**
-- Consumes: `deployment.NewStore`/`Find`/`Environments`/`List`/`Set`/`Delete`,
+- Consumes: `deployment.NewTargetStore`/`Find`/`Environments`/`List`/`Set`/`Delete`,
   `deployment.Target`, `deployment.ErrNoTarget` (Task 1);
   `auth.RequireRole(auth.RoleAdmin, next http.Handler) http.Handler`,
   `auth.UserFromContext` (pre-existing, `backend/internal/auth/auth.go`).
 - Produces: `Handlers.Targets` field type changes from `*Targets` to
-  `*Store`; new `Handlers.AllowedSites map[string]bool` field; new
+  `*TargetStore`; new `Handlers.AllowedSites map[string]bool` field; new
   methods `(*Handlers).ListTargets`, `(*Handlers).SetTarget`,
   `(*Handlers).DeleteTarget`, `(*Handlers).ListAllowedSites` — all
   `http.HandlerFunc`-shaped (`func(w http.ResponseWriter, r *http.Request)`).
@@ -869,7 +871,7 @@ type Handlers struct {
 	// internal/deployment/store.go). Find/Environments below are the same
 	// methods it always had; Set/Delete/List (new) back the admin
 	// management API in target_handlers.go.
-	Targets *Store
+	Targets *TargetStore
 ```
 
 Immediately below, in the same struct, add a new field after `Access`:
@@ -895,10 +897,10 @@ Immediately below, in the same struct, add a new field after `Access`:
 
 `Create` and `Environments` (existing methods, further down in this same
 file) already call `h.Targets.Find(...)` and `h.Targets.Environments(...)`
-— those calls need no changes, since `*Store` keeps the exact same method
-signatures `*Targets` had.
+— those calls need no changes, since `*TargetStore` keeps the exact same
+method signatures `*Targets` had.
 
-- [ ] **Step 2: Update `newTestHandlers` (git-heavy fixture) to build a `*Store`**
+- [ ] **Step 2: Update `newTestHandlers` (git-heavy fixture) to build a `*TargetStore`**
 
 In `backend/internal/deployment/handlers_test.go`, change:
 
@@ -911,7 +913,7 @@ In `backend/internal/deployment/handlers_test.go`, change:
 to:
 
 ```go
-	targets := NewStore(filepath.Join(dataDir, "deploy-targets.json"))
+	targets := NewTargetStore(filepath.Join(dataDir, "deploy-targets.json"))
 	if err := targets.Set(
 		Target{Repo: "sample", Environment: "test", Recipe: deploy.RecipeNpm, SiteName: "Fake Site"},
 		map[string]bool{"Fake Site": true},
@@ -1001,7 +1003,7 @@ func newDeployTargetsHandlers(t *testing.T) *Handlers {
 	t.Helper()
 	dataDir := t.TempDir()
 	return &Handlers{
-		Targets:      NewStore(filepath.Join(dataDir, "deploy-targets.json")),
+		Targets:      NewTargetStore(filepath.Join(dataDir, "deploy-targets.json")),
 		AllowedSites: map[string]bool{"Approved Site": true},
 	}
 }
@@ -1264,7 +1266,7 @@ func (h *Handlers) ListAllowedSites(w http.ResponseWriter, r *http.Request) {
 Run: `cd backend && go test ./internal/deployment/... -v 2>&1 | tail -80`
 Expected: PASS — every test in the package, including all of Task 1's,
 the pre-existing `TestCreate_*`/`TestApprove_*`/`TestReject_*`/`TestListAll_*`
-tests (now compiling against `*Store` instead of `*Targets`), and this
+tests (now compiling against `*TargetStore` instead of `*Targets`), and this
 task's new `TestListTargets_*`/`TestSetTarget_*`/`TestDeleteTarget_*`/`TestListAllowedSites_*`.
 (`TestApprove_*` tests that exercise real git/build will skip if `git`
 isn't on `PATH` — that's expected, matching `requireGit`'s existing
@@ -1291,7 +1293,7 @@ git commit -m "feat(deployment): add admin HTTP handlers for deploy-target manag
 - Modify: `docs/DURUM.md`
 
 **Interfaces:**
-- Consumes: everything produced by Tasks 1-3 (`deployment.NewStore`,
+- Consumes: everything produced by Tasks 1-3 (`deployment.NewTargetStore`,
   `deployment.Handlers.AllowedSites`/`ListTargets`/`SetTarget`/`DeleteTarget`/`ListAllowedSites`,
   `iishelper.LoadAllowedSites`).
 - Produces: `config.Config.AllowedSitesFile` field; four new routes live
@@ -1322,7 +1324,7 @@ to:
 	// no site is approved until an operator deliberately creates this
 	// file. Deploy target *content* (which repo/environment maps to
 	// which of these sites) is panel-managed (see
-	// internal/deployment.Store) — this file is deliberately the one
+	// internal/deployment.TargetStore) — this file is deliberately the one
 	// piece that stays outside the panel's reach, see
 	// docs/superpowers/specs/2026-08-18-deploy-target-management-design.md's
 	// "Güvenlik" section.
@@ -1382,7 +1384,7 @@ In `backend/cmd/devplatform/main.go`, replace:
 with:
 
 ```go
-	targets := deployment.NewStore(filepath.Join(cfg.DataDir, "deploy-targets.json"))
+	targets := deployment.NewTargetStore(filepath.Join(cfg.DataDir, "deploy-targets.json"))
 	allowedSites, err := iishelper.LoadAllowedSites(cfg.AllowedSitesFile)
 	if err != nil {
 		log.Fatalf("failed to load allowed IIS sites from %q: %v", cfg.AllowedSitesFile, err)
@@ -1499,7 +1501,7 @@ to:
 	deploymentHandlers := &deployment.Handlers{
 		Store:        deployment.NewStore(filepath.Join(dataDir, "deployments")),
 		Repos:        store,
-		Targets:      deployment.NewStore(filepath.Join(dataDir, "deploy-targets.json")),
+		Targets:      deployment.NewTargetStore(filepath.Join(dataDir, "deploy-targets.json")),
 		CheckoutRoot: t.TempDir(),
 		Audit:        auditLogger,
 		Access:       accessStore,
@@ -1569,7 +1571,7 @@ Replace it with:
 - **Çözüldü — deploy hedefleri artık panelden yönetiliyor (2026-08-18):**
   Eski tek dosyanın iki işi ayrıldı. Hedefin içeriği (repo, environment,
   recipe, siteName, secretsTarget, keepVersions) artık
-  `internal/deployment.Store` diye panelden CRUD edilen bir depoda
+  `internal/deployment.TargetStore` diye panelden CRUD edilen bir depoda
   (`DataDir/deploy-targets.json`) — yeni "Deploy Hedefleri" admin
   sayfası, `GET/PUT/DELETE /api/deploy-targets(/{repo}/{environment})`.
   Hangi IIS site adlarına dokunulabileceği ise hâlâ sadece sunucuya elle
