@@ -22,6 +22,8 @@ func TestSetup_LoadsSitesAndOpensListener(t *testing.T) {
 	}
 	t.Setenv("DEVPLATFORM_ALLOWED_SITES_FILE", sitesFile)
 	t.Setenv("DEVPLATFORM_IISHELPER_SDDL", "")
+	releasesRoot := filepath.Join(dir, "releases")
+	t.Setenv("DEVPLATFORM_RELEASES_ROOT", releasesRoot)
 
 	ln, srv, err := setup()
 	if err != nil {
@@ -34,5 +36,8 @@ func TestSetup_LoadsSitesAndOpensListener(t *testing.T) {
 	}
 	if srv.AppcmdPath == "" {
 		t.Error("expected a non-empty AppcmdPath")
+	}
+	if srv.ReleasesRoot != releasesRoot {
+		t.Errorf("expected ReleasesRoot %q, got %q", releasesRoot, srv.ReleasesRoot)
 	}
 }

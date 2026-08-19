@@ -49,6 +49,7 @@ func TestServer_ExecutesAValidatedRequestAndReturnsItsOutput(t *testing.T) {
 	srv := &Server{
 		AppcmdPath:   testAppcmdPath,
 		AllowedSites: testAllowedSites(),
+		ReleasesRoot: testReleasesRoot,
 		Execute: func(name string, args ...string) ([]byte, error) {
 			gotName, gotArgs = name, args
 			return []byte("ok"), nil
@@ -79,6 +80,7 @@ func TestServer_RejectsAnInvalidRequestWithoutCallingExecute(t *testing.T) {
 	srv := &Server{
 		AppcmdPath:   testAppcmdPath,
 		AllowedSites: testAllowedSites(),
+		ReleasesRoot: testReleasesRoot,
 		Execute: func(name string, args ...string) ([]byte, error) {
 			executed = true
 			return nil, nil
@@ -105,6 +107,7 @@ func TestServer_ReturnsOutputAlongsideAnExecutionError(t *testing.T) {
 	srv := &Server{
 		AppcmdPath:   testAppcmdPath,
 		AllowedSites: testAllowedSites(),
+		ReleasesRoot: testReleasesRoot,
 		Execute: func(name string, args ...string) ([]byte, error) {
 			return []byte("appcmd exited 5: access denied"), errExecFailed
 		},
@@ -131,6 +134,7 @@ func TestServer_HandlesMultipleSequentialConnections(t *testing.T) {
 	srv := &Server{
 		AppcmdPath:   testAppcmdPath,
 		AllowedSites: testAllowedSites(),
+		ReleasesRoot: testReleasesRoot,
 		Execute: func(name string, args ...string) ([]byte, error) {
 			calls++
 			return []byte("ok"), nil

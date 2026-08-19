@@ -67,6 +67,13 @@ func main() {
 // something production should rely on for restricting access. Production
 // should set this explicitly to the one account devplatform.exe runs
 // as (see the install script for how to generate this value).
+//
+// DEVPLATFORM_RELEASES_ROOT must be set to the exact same absolute path
+// devplatform.exe passes to deploy.NewVersionStore (i.e. its DataDir's
+// "releases" subdirectory) — it is the one directory tree a physical
+// path is ever allowed to point into (see iishelper.ValidateRequest's
+// doc comment). Left empty, every request is rejected: this check fails
+// closed, not open.
 func setup() (net.Listener, *iishelper.Server, error) {
 	sitesFile := os.Getenv("DEVPLATFORM_ALLOWED_SITES_FILE")
 	allowedSites, err := iishelper.LoadAllowedSites(sitesFile)
@@ -74,6 +81,11 @@ func setup() (net.Listener, *iishelper.Server, error) {
 		return nil, nil, err
 	}
 	log.Printf("iishelper: %d allowed site(s) loaded from %q", len(allowedSites), sitesFile)
+
+	releasesRoot := os.Getenv("DEVPLATFORM_RELEASES_ROOT")
+	if releasesRoot == "" {
+		log.Printf("iishelper: WARNING - DEVPLATFORM_RELEASES_ROOT is not set; every deploy request will be rejected until it is")
+	}
 
 	var pipeConfig *winio.PipeConfig
 	if sddl := os.Getenv("DEVPLATFORM_IISHELPER_SDDL"); sddl != "" {
@@ -89,6 +101,7 @@ func setup() (net.Listener, *iishelper.Server, error) {
 	srv := &iishelper.Server{
 		AppcmdPath:   deploy.AppcmdPath(),
 		AllowedSites: allowedSites,
+		ReleasesRoot: releasesRoot,
 		Execute:      deploy.RealCommandRunner{}.Run,
 	}
 	return ln, srv, nil

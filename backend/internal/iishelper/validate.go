@@ -18,11 +18,25 @@ var ErrInvalidRequest = errors.New("iishelper: request does not match the only a
 // independently re-derives what a legitimate request must look like —
 // appcmdPath is the caller's own computation of deploy.AppcmdPath()
 // (passed in rather than imported directly so tests can use a fixed
-// value), and allowedSites is the set of IIS site names this deploy
-// server is actually configured to manage (see LoadAllowedSites) — and
-// rejects anything that deviates in any way from
-// appcmd.exe set vdir "<one of allowedSites>/" /physicalPath:<absolute path>
-func ValidateRequest(req Request, appcmdPath string, allowedSites map[string]bool) error {
+// value), allowedSites is the set of IIS site names this deploy server
+// is actually configured to manage (see LoadAllowedSites), and
+// releasesRoot is the one directory tree a physical path is ever allowed
+// to point into (see cmd/iishelper's DEVPLATFORM_RELEASES_ROOT) — and
+// rejects anything that
+// deviates in any way from
+// appcmd.exe set vdir "<one of allowedSites>/" /physicalPath:<path under releasesRoot>
+//
+// The releasesRoot check exists because devplatform.exe is the only
+// caller that ever constructs a physical path, and it always builds one
+// from its own VersionStore — but a request reaching this pipe is not
+// proof devplatform.exe sent it in good faith. If devplatform.exe were
+// ever compromised, the site allowlist above stops an attacker from
+// touching a site this deploy server doesn't manage, but without this
+// check they could still repoint an allowed site's virtual directory at
+// any absolute path on disk (e.g. a folder holding unrelated data),
+// exposing it over that site's URL without ever running a command.
+// Confining the physical path to releasesRoot closes that.
+func ValidateRequest(req Request, appcmdPath string, allowedSites map[string]bool, releasesRoot string) error {
 	if req.Name != appcmdPath {
 		return fmt.Errorf("%w: unexpected program %q", ErrInvalidRequest, req.Name)
 	}
@@ -47,6 +61,13 @@ func ValidateRequest(req Request, appcmdPath string, allowedSites map[string]boo
 	}
 	if !filepath.IsAbs(path) {
 		return fmt.Errorf("%w: physical path %q must be absolute", ErrInvalidRequest, path)
+	}
+	if releasesRoot == "" {
+		return fmt.Errorf("%w: no releases root is configured, refusing every physical path", ErrInvalidRequest)
+	}
+	rel, err := filepath.Rel(releasesRoot, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("%w: physical path %q is outside the configured releases root %q", ErrInvalidRequest, path, releasesRoot)
 	}
 
 	return nil

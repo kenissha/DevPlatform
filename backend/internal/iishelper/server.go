@@ -24,6 +24,11 @@ type Executor func(name string, args ...string) ([]byte, error)
 type Server struct {
 	AppcmdPath   string
 	AllowedSites map[string]bool
+	// ReleasesRoot is the one directory tree a request's physical path is
+	// ever allowed to point into (see ValidateRequest's doc comment for
+	// why this matters even though devplatform.exe is the only intended
+	// caller).
+	ReleasesRoot string
 	Execute      Executor
 }
 
@@ -58,7 +63,7 @@ func (s *Server) handle(conn net.Conn) {
 }
 
 func (s *Server) process(req Request) Response {
-	if err := ValidateRequest(req, s.AppcmdPath, s.AllowedSites); err != nil {
+	if err := ValidateRequest(req, s.AppcmdPath, s.AllowedSites, s.ReleasesRoot); err != nil {
 		log.Printf("iishelper: rejected request: %v", err)
 		return Response{Error: err.Error()}
 	}
