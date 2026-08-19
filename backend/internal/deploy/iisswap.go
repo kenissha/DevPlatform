@@ -141,6 +141,9 @@ func (s *IISSwapper) revertOrSiteDown(siteName, previousReleaseDir string, cause
 	if previousReleaseDir == "" {
 		return fmt.Errorf("%w: %v", ErrSiteDown, cause)
 	}
+	if _, err := os.Stat(previousReleaseDir); err != nil {
+		return fmt.Errorf("%w: original failure (%v) and the previous release %q is no longer on disk (%v)", ErrSiteDown, cause, previousReleaseDir, err)
+	}
 	if err := s.SetPhysicalPath(siteName, previousReleaseDir); err != nil {
 		return fmt.Errorf("%w: original failure (%v) and reverting the physical path also failed (%v)", ErrSiteDown, cause, err)
 	}

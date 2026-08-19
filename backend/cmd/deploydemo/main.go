@@ -39,7 +39,7 @@ func main() {
 	vs := deploy.NewVersionStore(absDataDir)
 	pipeline := deploy.NewPipeline(&deploy.Builder{}, vs, deploy.NewIISSwapper(deploy.RealCommandRunner{}), nil)
 
-	releaseDir, err := pipeline.Deploy(sourceDir, deploy.RecipeNpm, "demo", "test", *siteName, 5, "")
+	releaseDir, err := pipeline.Deploy(sourceDir, deploy.RecipeNpm, "demo", "test", *siteName, "", 5, "")
 	if err != nil {
 		log.Fatalf("deploy failed: %v", err)
 	}

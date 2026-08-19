@@ -24,7 +24,6 @@ var ErrPruneFailed = errors.New("deploy: release activated but pruning old relea
 type releaseStore interface {
 	NewRelease(repo, environment string) (string, error)
 	Prune(repo, environment string, keep int) error
-	List(repo, environment string) ([]string, error)
 }
 
 // Pipeline wires the build, versioning, and IIS-swap steps into one
@@ -56,7 +55,18 @@ func NewPipeline(builder *Builder, versions releaseStore, iis *IISSwapper, secre
 // do) directory behind. Cleaning up an empty failed-release directory is
 // not implemented in this proof-of-concept task; note it as a follow-up
 // if this pipeline is extended to handle build failures more gracefully.
-func (p *Pipeline) Deploy(sourceDir string, recipe Recipe, repo, environment, siteName string, keepVersions int, secretsTarget string) (string, error) {
+//
+// previousReleaseDir is the release currently live for (repo, environment)
+// before this deploy, or "" if none — the caller must supply this (see
+// deployment.Handlers.Approve, which derives it from the same
+// activeRelease helper Rollback uses), rather than Deploy inferring it
+// from disk listing order: the newest directory on disk is not
+// necessarily the one that was ever successfully activated (a failed
+// build leaves its empty release directory behind, since Prune only ever
+// runs after a success), so using it as RecipeDotnet's fallback target
+// could revert onto a release that was never live and report the site as
+// healthy when it isn't.
+func (p *Pipeline) Deploy(sourceDir string, recipe Recipe, repo, environment, siteName, previousReleaseDir string, keepVersions int, secretsTarget string) (string, error) {
 	// keepVersions < 1 would prune the release this call just activated:
 	// Prune keeps only the newest `keep` releases, and the release created
 	// below is always the newest at the point Prune runs. Reject before
@@ -64,21 +74,6 @@ func (p *Pipeline) Deploy(sourceDir string, recipe Recipe, repo, environment, si
 	// building anything for a call that's going to be rejected anyway.
 	if keepVersions < 1 {
 		return "", fmt.Errorf("deploy: keepVersions must be at least 1, got %d", keepVersions)
-	}
-
-	// Capture whatever's currently the newest release (if any) BEFORE
-	// allocating a new one — RecipeDotnet's failure-recovery path in
-	// IISSwapper.ActivateRelease needs a last-known-good release to fall
-	// back to if the new version fails to start. Empty for a target's
-	// first-ever deploy, which ActivateRelease treats as "no fallback
-	// possible".
-	existing, err := p.versions.List(repo, environment)
-	if err != nil {
-		return "", fmt.Errorf("deploy: failed to list existing releases: %w", err)
-	}
-	previousReleaseDir := ""
-	if len(existing) > 0 {
-		previousReleaseDir = existing[0]
 	}
 
 	releaseDir, err := p.versions.NewRelease(repo, environment)

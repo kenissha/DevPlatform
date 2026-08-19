@@ -347,7 +347,14 @@ func (h *Handlers) Approve(w http.ResponseWriter, r *http.Request) {
 	}
 	defer os.RemoveAll(checkoutDir)
 
-	res := h.runPipeline(gitRepo, req, target, checkoutDir)
+	reqs, err := h.Store.List(repo)
+	if err != nil {
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	previousReleaseDir := activeRelease(reqs, req.Environment)
+
+	res := h.runPipeline(gitRepo, req, target, checkoutDir, previousReleaseDir)
 	// ErrPruneFailed means the release is already live and only cleanup of
 	// old releases failed afterward — that's a successful deploy from the
 	// requester's point of view (see Pipeline.Deploy's own doc comment),
@@ -386,7 +393,7 @@ type pipelineResult struct {
 // request stops being stuck in StatusInProgress and the handler returns,
 // not that the build is killed. The result channel is buffered so the
 // abandoned goroutine never blocks forever on a send nobody reads.
-func (h *Handlers) runPipeline(gitRepo *git.Repository, req Request, target Target, checkoutDir string) pipelineResult {
+func (h *Handlers) runPipeline(gitRepo *git.Repository, req Request, target Target, checkoutDir, previousReleaseDir string) pipelineResult {
 	done := make(chan pipelineResult, 1)
 	go func() {
 		if _, err := deploy.Checkout(gitRepo, req.SourceBranch, checkoutDir); err != nil {
@@ -394,7 +401,7 @@ func (h *Handlers) runPipeline(gitRepo *git.Repository, req Request, target Targ
 			return
 		}
 		releaseDir, err := h.Pipeline.Deploy(
-			checkoutDir, target.Recipe, req.Repo, req.Environment, target.SiteName, target.KeepVersions, target.SecretsTarget,
+			checkoutDir, target.Recipe, req.Repo, req.Environment, target.SiteName, previousReleaseDir, target.KeepVersions, target.SecretsTarget,
 		)
 		done <- pipelineResult{releaseDir: releaseDir, stage: stageDeploy, err: err}
 	}()

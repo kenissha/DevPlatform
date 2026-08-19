@@ -164,14 +164,22 @@ func (h *Handlers) Rollback(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.IIS.ActivateRelease(target.Recipe, target.SiteName, releaseDir, currentlyActive); err != nil {
 		log.Printf("deployment: rollback failed for %s/%s to %q: %v", repo, environment, releaseDir, err)
+
+		var auditReason, httpMessage string
 		switch {
 		case errors.Is(err, deploy.ErrSiteDown):
-			http.Error(w, "500 rollback failed and the site is now DOWN — manual intervention required", http.StatusInternalServerError)
+			auditReason = "site erişilemez durumda, elle müdahale gerekiyor"
+			httpMessage = "500 rollback failed and the site is now DOWN — manual intervention required"
 		case errors.Is(err, deploy.ErrReverted):
-			http.Error(w, "500 rollback failed — that release could not be started, the site continues running its previous version", http.StatusInternalServerError)
+			auditReason = "hedef versiyon başlatılamadı, site önceki versiyonda çalışmaya devam ediyor"
+			httpMessage = "500 rollback failed — that release could not be started, the site continues running its previous version"
 		default:
-			http.Error(w, "500 rollback failed", http.StatusInternalServerError)
+			auditReason = "rollback başarısız"
+			httpMessage = "500 rollback failed"
 		}
+		_ = h.Audit.Log(user.Subject, audit.ActionDeploymentFailed, repo, "",
+			"Rollback başarısız: "+repo+" → "+environment+" ("+auditReason+")")
+		http.Error(w, httpMessage, http.StatusInternalServerError)
 		return
 	}
 

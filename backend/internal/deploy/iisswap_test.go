@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 )
 
@@ -210,7 +211,8 @@ func TestActivateRelease_DotnetRecipeRevertsOnStartFailure(t *testing.T) {
 	runner := &fakeCommandRunner{failStart: []error{errors.New("simulated: new release crashes on start")}}
 	swapper := NewIISSwapper(runner)
 
-	err := swapper.ActivateRelease(RecipeDotnet, "DevPlatform Test Site", `C:\releases\v2`, `C:\releases\v1`)
+	previous := t.TempDir()
+	err := swapper.ActivateRelease(RecipeDotnet, "DevPlatform Test Site", `C:\releases\v2`, previous)
 	if !errors.Is(err, ErrReverted) {
 		t.Fatalf("err = %v, want ErrReverted", err)
 	}
@@ -219,7 +221,7 @@ func TestActivateRelease_DotnetRecipeRevertsOnStartFailure(t *testing.T) {
 	if len(runner.calls) != 5 {
 		t.Fatalf("got %d calls, want 5: %v", len(runner.calls), runner.calls)
 	}
-	if runner.calls[3][len(runner.calls[3])-1] != `/physicalPath:C:\releases\v1` {
+	if runner.calls[3][len(runner.calls[3])-1] != "/physicalPath:"+previous {
 		t.Errorf("call[3] = %v, want the revert swap to target the previous release", runner.calls[3])
 	}
 	if runner.calls[4][1] != "start" {
@@ -234,7 +236,8 @@ func TestActivateRelease_DotnetRecipeReturnsSiteDownWhenRevertAlsoFails(t *testi
 	}}
 	swapper := NewIISSwapper(runner)
 
-	err := swapper.ActivateRelease(RecipeDotnet, "DevPlatform Test Site", `C:\releases\v2`, `C:\releases\v1`)
+	previous := t.TempDir()
+	err := swapper.ActivateRelease(RecipeDotnet, "DevPlatform Test Site", `C:\releases\v2`, previous)
 	if !errors.Is(err, ErrSiteDown) {
 		t.Fatalf("err = %v, want ErrSiteDown", err)
 	}
@@ -244,7 +247,8 @@ func TestActivateRelease_DotnetRecipeRevertsWhenSwapToNewReleaseFails(t *testing
 	runner := &fakeCommandRunner{failSet: []error{errors.New("simulated: appcmd fails to swap to the new release")}}
 	swapper := NewIISSwapper(runner)
 
-	err := swapper.ActivateRelease(RecipeDotnet, "DevPlatform Test Site", `C:\releases\v2`, `C:\releases\v1`)
+	previous := t.TempDir()
+	err := swapper.ActivateRelease(RecipeDotnet, "DevPlatform Test Site", `C:\releases\v2`, previous)
 	if !errors.Is(err, ErrReverted) {
 		t.Fatalf("err = %v, want ErrReverted", err)
 	}
@@ -253,7 +257,7 @@ func TestActivateRelease_DotnetRecipeRevertsWhenSwapToNewReleaseFails(t *testing
 	if len(runner.calls) != 4 {
 		t.Fatalf("got %d calls, want 4: %v", len(runner.calls), runner.calls)
 	}
-	if runner.calls[2][len(runner.calls[2])-1] != `/physicalPath:C:\releases\v1` {
+	if runner.calls[2][len(runner.calls[2])-1] != "/physicalPath:"+previous {
 		t.Errorf("call[2] = %v, want the revert swap to target the previous release", runner.calls[2])
 	}
 	if runner.calls[3][1] != "start" {
@@ -288,5 +292,21 @@ func TestActivateRelease_DotnetRecipeReturnsSiteDownImmediatelyWithNoPreviousRel
 	// stop, set(new), start(new, fails) — no revert attempt possible.
 	if len(runner.calls) != 3 {
 		t.Fatalf("got %d calls, want 3 (no revert attempt without a previous release): %v", len(runner.calls), runner.calls)
+	}
+}
+
+func TestActivateRelease_DotnetRecipeReturnsSiteDownWhenPreviousReleaseIsMissingFromDisk(t *testing.T) {
+	runner := &fakeCommandRunner{failStart: []error{errors.New("simulated: new release crashes on start")}}
+	swapper := NewIISSwapper(runner)
+
+	missing := filepath.Join(t.TempDir(), "never-created")
+	err := swapper.ActivateRelease(RecipeDotnet, "DevPlatform Test Site", `C:\releases\v2`, missing)
+	if !errors.Is(err, ErrSiteDown) {
+		t.Fatalf("err = %v, want ErrSiteDown", err)
+	}
+	// stop, set(new), start(new, fails) — the os.Stat check on the
+	// missing previous release must reject before any revert appcmd call.
+	if len(runner.calls) != 3 {
+		t.Fatalf("got %d calls, want 3 (no revert attempt against a missing release): %v", len(runner.calls), runner.calls)
 	}
 }

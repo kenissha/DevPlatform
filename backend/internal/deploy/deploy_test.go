@@ -25,10 +25,6 @@ func (f *fakePruneFailingStore) Prune(repo, environment string, keep int) error 
 	return errors.New("simulated prune failure: release directory locked by another process")
 }
 
-func (f *fakePruneFailingStore) List(repo, environment string) ([]string, error) {
-	return f.real.List(repo, environment)
-}
-
 func TestPipeline_Deploy_BuildsVersionsAndSwaps(t *testing.T) {
 	requireTool(t, "npm")
 
@@ -41,7 +37,7 @@ func TestPipeline_Deploy_BuildsVersionsAndSwaps(t *testing.T) {
 	runner := &fakeCommandRunner{}
 	pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner), nil)
 
-	releaseDir, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 5, "")
+	releaseDir, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", "", 5, "")
 	if err != nil {
 		t.Fatalf("Deploy returned error: %v", err)
 	}
@@ -70,7 +66,7 @@ func TestPipeline_Deploy_RejectsNonPositiveKeepVersions(t *testing.T) {
 		runner := &fakeCommandRunner{}
 		pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner), nil)
 
-		_, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", keep, "")
+		_, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", "", keep, "")
 		if err == nil {
 			t.Fatalf("Deploy with keepVersions=%d: expected an error, got nil", keep)
 		}
@@ -94,7 +90,7 @@ func TestPipeline_Deploy_PrunesOldReleases(t *testing.T) {
 	pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner), nil)
 
 	for i := 0; i < 3; i++ {
-		if _, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 2, ""); err != nil {
+		if _, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", "", 2, ""); err != nil {
 			t.Fatalf("Deploy #%d returned error: %v", i, err)
 		}
 	}
@@ -120,7 +116,7 @@ func TestPipeline_Deploy_PruneFailureReturnsReleaseDirAndErrPruneFailed(t *testi
 	runner := &fakeCommandRunner{}
 	pipeline := NewPipeline(&Builder{}, store, NewIISSwapper(runner), nil)
 
-	releaseDir, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 5, "")
+	releaseDir, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", "", 5, "")
 
 	// The release was already built and activated (SetPhysicalPath ran
 	// successfully — Prune is the only thing that failed), so the caller
@@ -163,7 +159,7 @@ func TestPipeline_Deploy_InjectsSecretsWhenConfigured(t *testing.T) {
 
 	pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner), secrets)
 
-	releaseDir, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 5, "appsettings.Production.json")
+	releaseDir, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", "", 5, "appsettings.Production.json")
 	if err != nil {
 		t.Fatalf("Deploy returned error: %v", err)
 	}
@@ -189,7 +185,7 @@ func TestPipeline_Deploy_SkipsSecretsWhenTargetEmpty(t *testing.T) {
 	// Deploy never even tries to read them when secretsTarget is empty.
 	pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner), secrets)
 
-	releaseDir, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 5, "")
+	releaseDir, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", "", 5, "")
 	if err != nil {
 		t.Fatalf("Deploy returned error: %v", err)
 	}
@@ -206,7 +202,7 @@ func TestPipeline_Deploy_ErrorsWhenSecretsTargetGivenButNoStoreConfigured(t *tes
 	runner := &fakeCommandRunner{}
 	pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner), nil) // no secrets store
 
-	_, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 5, "appsettings.Production.json")
+	_, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", "", 5, "appsettings.Production.json")
 	if err == nil {
 		t.Fatal("expected an error when secretsTarget is set but no secrets store is configured")
 	}
@@ -238,7 +234,7 @@ func TestPipeline_Deploy_RejectsPathTraversalInSecretsTarget(t *testing.T) {
 		}
 		pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner), secrets)
 
-		_, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", 5, target)
+		_, err := pipeline.Deploy(source, RecipeNpm, "sample", "test", "DevPlatform Test Site", "", 5, target)
 		if err == nil {
 			t.Fatalf("Deploy with secretsTarget %q: expected an error, got nil", target)
 		}
@@ -272,7 +268,7 @@ func TestPipeline_Deploy_DotnetRecipeStopsAndStartsTheSite(t *testing.T) {
 	runner := &fakeCommandRunner{}
 	pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner), nil)
 
-	_, err = pipeline.Deploy(source, RecipeDotnet, "sample", "test", "DevPlatform Test Site", 5, "")
+	_, err = pipeline.Deploy(source, RecipeDotnet, "sample", "test", "DevPlatform Test Site", "", 5, "")
 	if err != nil {
 		t.Fatalf("Deploy returned error: %v", err)
 	}
@@ -298,7 +294,7 @@ func TestPipeline_Deploy_DotnetRecipeReturnsPreviousReleaseOnRevert(t *testing.T
 	// First deploy succeeds normally, establishing a "previous release".
 	firstRunner := &fakeCommandRunner{}
 	firstPipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(firstRunner), nil)
-	firstReleaseDir, err := firstPipeline.Deploy(source, RecipeDotnet, "sample", "test", "DevPlatform Test Site", 5, "")
+	firstReleaseDir, err := firstPipeline.Deploy(source, RecipeDotnet, "sample", "test", "DevPlatform Test Site", "", 5, "")
 	if err != nil {
 		t.Fatalf("first Deploy returned error: %v", err)
 	}
@@ -306,7 +302,7 @@ func TestPipeline_Deploy_DotnetRecipeReturnsPreviousReleaseOnRevert(t *testing.T
 	// Second deploy's new release fails to start.
 	secondRunner := &fakeCommandRunner{failStart: []error{errors.New("simulated: crashes on start")}}
 	secondPipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(secondRunner), nil)
-	releaseDir, err := secondPipeline.Deploy(source, RecipeDotnet, "sample", "test", "DevPlatform Test Site", 5, "")
+	releaseDir, err := secondPipeline.Deploy(source, RecipeDotnet, "sample", "test", "DevPlatform Test Site", firstReleaseDir, 5, "")
 
 	if !errors.Is(err, ErrReverted) {
 		t.Fatalf("err = %v, want ErrReverted", err)

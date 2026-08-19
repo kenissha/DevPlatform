@@ -369,4 +369,12 @@ func TestRollback_DotnetRecipeDoesNotRecordAnythingWhenStartFails(t *testing.T) 
 	if len(after) != len(before) {
 		t.Errorf("got %d requests after a failed rollback, want unchanged %d — a failed rollback must never be recorded as one", len(after), len(before))
 	}
+
+	events, err := h.Audit.List(10)
+	if err != nil {
+		t.Fatalf("Audit.List returned error: %v", err)
+	}
+	if len(events) == 0 || events[0].Action != audit.ActionDeploymentFailed {
+		t.Errorf("expected an ActionDeploymentFailed audit entry for the failed rollback, got %+v", events)
+	}
 }
