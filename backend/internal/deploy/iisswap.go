@@ -83,3 +83,25 @@ func (s *IISSwapper) SetPhysicalPath(siteName, path string) error {
 	}
 	return nil
 }
+
+// StopSite stops siteName via appcmd.exe — the first half of the
+// stop→swap→start sequence a process-based (dotnet-recipe) release needs,
+// since a running process locks its own files and a bare physical-path
+// swap alone never makes it pick up a new release. siteName must already
+// be validated/trusted by the caller, same as SetPhysicalPath.
+func (s *IISSwapper) StopSite(siteName string) error {
+	_, err := s.runner.Run(AppcmdPath(), "stop", "site", "/site.name:"+siteName)
+	if err != nil {
+		return fmt.Errorf("deploy: failed to stop site %q: %w", siteName, err)
+	}
+	return nil
+}
+
+// StartSite starts siteName via appcmd.exe — see StopSite.
+func (s *IISSwapper) StartSite(siteName string) error {
+	_, err := s.runner.Run(AppcmdPath(), "start", "site", "/site.name:"+siteName)
+	if err != nil {
+		return fmt.Errorf("deploy: failed to start site %q: %w", siteName, err)
+	}
+	return nil
+}

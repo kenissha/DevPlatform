@@ -72,3 +72,67 @@ func TestSetPhysicalPath_PropagatesCommandRunnerError(t *testing.T) {
 		t.Fatal("expected an error, got nil")
 	}
 }
+
+func TestStopSite_InvokesAppcmdWithExpectedArguments(t *testing.T) {
+	runner := &fakeCommandRunner{}
+	swapper := NewIISSwapper(runner)
+
+	if err := swapper.StopSite("DevPlatform Test Site"); err != nil {
+		t.Fatalf("StopSite returned error: %v", err)
+	}
+
+	if len(runner.calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(runner.calls))
+	}
+	want := []string{AppcmdPath(), "stop", "site", "/site.name:DevPlatform Test Site"}
+	got := runner.calls[0]
+	if len(got) != len(want) {
+		t.Fatalf("call = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("call[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestStartSite_InvokesAppcmdWithExpectedArguments(t *testing.T) {
+	runner := &fakeCommandRunner{}
+	swapper := NewIISSwapper(runner)
+
+	if err := swapper.StartSite("DevPlatform Test Site"); err != nil {
+		t.Fatalf("StartSite returned error: %v", err)
+	}
+
+	if len(runner.calls) != 1 {
+		t.Fatalf("got %d calls, want 1", len(runner.calls))
+	}
+	want := []string{AppcmdPath(), "start", "site", "/site.name:DevPlatform Test Site"}
+	got := runner.calls[0]
+	if len(got) != len(want) {
+		t.Fatalf("call = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("call[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestStopSite_PropagatesCommandRunnerError(t *testing.T) {
+	runner := &fakeCommandRunner{failWith: errors.New("appcmd exited 5: access denied")}
+	swapper := NewIISSwapper(runner)
+
+	if err := swapper.StopSite("DevPlatform Test Site"); err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+}
+
+func TestStartSite_PropagatesCommandRunnerError(t *testing.T) {
+	runner := &fakeCommandRunner{failWith: errors.New("appcmd exited 5: access denied")}
+	swapper := NewIISSwapper(runner)
+
+	if err := swapper.StartSite("DevPlatform Test Site"); err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+}
