@@ -46,6 +46,17 @@ type Handlers struct {
 	// checkout before building it (see deploy.Checkout). Removed again
 	// once that deploy attempt finishes, success or failure.
 	CheckoutRoot string
+	// Versions and IIS back Releases/Rollback (rollback_handlers.go) only.
+	// Pipeline already holds its own equivalent VersionStore/IISSwapper
+	// for the ordinary deploy path, but keeps them unexported — rollback
+	// never goes through Pipeline.Deploy (no checkout, no build, no
+	// secrets, just repointing IIS at a release that's already built and
+	// on disk), so it needs its own references to the same underlying
+	// collaborators cmd/devplatform/main.go already constructs. Optional
+	// like Pipeline: nil means Releases/Rollback fail clearly (500)
+	// instead of panicking.
+	Versions *deploy.VersionStore
+	IIS      *deploy.IISSwapper
 
 	Audit  *audit.Logger
 	Notify *notify.Store

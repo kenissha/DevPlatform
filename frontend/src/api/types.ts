@@ -120,17 +120,32 @@ export type DeploymentStatus = 'pending' | 'deployed' | 'failed' | 'rejected'
 // backend/internal/deployment.Request. Approving one actually runs the
 // build+version+IIS-swap pipeline, so releaseDir/failureReason are only
 // populated once Status has left "pending".
+//
+// kind is unset for an ordinary deploy request; a rollback (see
+// ReleaseInfo/rollback below) sets it to 'rollback' — that record has no
+// sourceBranch (a rollback repoints IIS at a release an earlier deploy
+// already built, it doesn't build anything new) and is already terminal
+// (status 'deployed') the moment it's created, with no 'pending' stage.
 export interface DeploymentRequest {
   id: string
   repo: string
   environment: string
-  sourceBranch: string
+  kind?: 'rollback'
+  sourceBranch?: string
   author: string
   status: DeploymentStatus
   releaseDir?: string
   failureReason?: string
   createdAt: string
   decidedAt?: string
+}
+
+// One release still on disk for a (repo, environment) deploy target —
+// mirrors backend/internal/deployment.releaseInfo. What the rollback
+// picker on the Deploy Hedefleri page lists.
+export interface ReleaseInfo {
+  name: string
+  active: boolean
 }
 
 export type DeployRecipe = 'dotnet' | 'npm'

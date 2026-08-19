@@ -129,12 +129,14 @@ func main() {
 		secretsStore = secretsvault.NewStore(filepath.Join(cfg.DataDir, "secrets"), key)
 	}
 
-	pipeline := deploy.NewPipeline(
-		&deploy.Builder{},
-		deploy.NewVersionStore(filepath.Join(cfg.DataDir, "releases")),
-		deploy.NewIISSwapper(iishelper.NewHelperCommandRunner()),
-		secretsStore,
-	)
+	// versions and iisSwapper are also handed to deploymentHandlers below
+	// (Versions/IIS fields), not just wrapped inside pipeline: Rollback
+	// needs the same two collaborators Approve's pipeline uses, but calls
+	// them directly instead of through Pipeline.Deploy — see
+	// deployment.Handlers.Rollback's doc comment for why.
+	versions := deploy.NewVersionStore(filepath.Join(cfg.DataDir, "releases"))
+	iisSwapper := deploy.NewIISSwapper(iishelper.NewHelperCommandRunner())
+	pipeline := deploy.NewPipeline(&deploy.Builder{}, versions, iisSwapper, secretsStore)
 	checkoutRoot := filepath.Join(cfg.DataDir, "deploy-checkouts")
 	// Approve materializes each checkout with os.MkdirTemp(checkoutRoot,
 	// ...), which does not create checkoutRoot itself — without this, every
@@ -148,6 +150,8 @@ func main() {
 		Targets:      targets,
 		Pipeline:     pipeline,
 		CheckoutRoot: checkoutRoot,
+		Versions:     versions,
+		IIS:          iisSwapper,
 		Audit:        auditLogger,
 		Notify:       notifyStore,
 		Users:        usersStore,

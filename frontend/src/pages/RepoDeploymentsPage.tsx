@@ -98,20 +98,24 @@ export function RepoDeploymentsPage() {
               <li key={d.id}>
                 <div className="row-main">
                   <span className="row-title">{d.environment}</span>
-                  <span className="branch-chip">
-                    <BranchIcon />
-                    {d.sourceBranch}
-                  </span>
+                  {d.kind === 'rollback' ? (
+                    <span className="badge badge-accent">Rollback</span>
+                  ) : (
+                    <span className="branch-chip">
+                      <BranchIcon />
+                      {d.sourceBranch}
+                    </span>
+                  )}
                   <div className="spacer" />
                   <span className={`badge ${DEPLOYMENT_STATUS_BADGE[d.status]}`}>
                     {DEPLOYMENT_STATUS_LABELS[d.status]}
                   </span>
                 </div>
                 <p className="row-meta">
-                  {d.author} açtı
+                  {d.author} {d.kind === 'rollback' ? 'geri döndü' : 'açtı'}
                   <span>·</span>
                   {formatDate(d.createdAt)}
-                  {d.decidedAt && (
+                  {d.decidedAt && d.kind !== 'rollback' && (
                     <>
                       <span>·</span>
                       karar: {formatDate(d.decidedAt)}

@@ -164,6 +164,12 @@ func NewRouter(deps Deps) *http.ServeMux {
 	mux.Handle("POST /api/repos/{repo}/deployments/{id}/reject", repoScopedAdmin(http.HandlerFunc(deployments.Reject)))
 	mux.Handle("GET /api/deployments", authMiddleware(http.HandlerFunc(deployments.ListAll)))
 
+	// Rollback: Admin-only like Approve/Reject, but with no pending/review
+	// stage of its own — see deployment.Handlers.Rollback's doc comment
+	// for why an already-live release doesn't need a second approval step.
+	mux.Handle("GET /api/repos/{repo}/deployments/{environment}/releases", repoScopedAdmin(http.HandlerFunc(deployments.Releases)))
+	mux.Handle("POST /api/repos/{repo}/deployments/{environment}/rollback", repoScopedAdmin(http.HandlerFunc(deployments.Rollback)))
+
 	// Deploy-target management: entirely Admin-only, not repo-scoped —
 	// unlike a deploy request, a target isn't attached to one already-visible
 	// repo the caller is proven to see first, so this follows /api/access's

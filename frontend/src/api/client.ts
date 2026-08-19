@@ -14,6 +14,7 @@ import type {
   MergeRequestStatus,
   Notification,
   Person,
+  ReleaseInfo,
   Task,
   TaskStatus,
   User,
@@ -153,6 +154,21 @@ export const api = {
   listAllDeployments: (status?: DeploymentStatus) =>
     request<DeploymentRequest[]>(`/api/deployments${status ? `?status=${status}` : ''}`),
 
+  // Rollback (Admin-only on the backend, see backend/internal/deployment's
+  // Releases/Rollback). Releases lists what's still on disk for one
+  // (repo, environment) deploy target; rollback repoints IIS at one of
+  // them immediately, no approval stage — see the design conversation
+  // this shipped from for why.
+  listReleases: (repo: string, environment: string) =>
+    request<ReleaseInfo[]>(
+      `/api/repos/${encodeURIComponent(repo)}/deployments/${encodeURIComponent(environment)}/releases`,
+    ),
+  rollback: (repo: string, environment: string, release: string) =>
+    request<DeploymentRequest>(
+      `/api/repos/${encodeURIComponent(repo)}/deployments/${encodeURIComponent(environment)}/rollback`,
+      { method: 'POST', body: JSON.stringify({ release }) },
+    ),
+
   // Deploy-target management (Admin-only on the backend). siteName is
   // validated server-side against the ops-managed allow-list — see
   // listAllowedSites — never accepted as free text.
@@ -203,6 +219,7 @@ export type {
   MergeRequestDetail,
   Notification,
   Person,
+  ReleaseInfo,
   Task,
   User,
 }

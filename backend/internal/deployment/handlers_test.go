@@ -117,6 +117,10 @@ func newMux(h *Handlers) *http.ServeMux {
 	mux.Handle("POST /api/repos/{repo}/deployments/{id}/reject",
 		authMW(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(h.Reject))))
 	mux.Handle("GET /api/deployments", authMW(http.HandlerFunc(h.ListAll)))
+	mux.Handle("GET /api/repos/{repo}/deployments/{environment}/releases",
+		authMW(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(h.Releases))))
+	mux.Handle("POST /api/repos/{repo}/deployments/{environment}/rollback",
+		authMW(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(h.Rollback))))
 	mux.Handle("GET /api/deploy-targets", authMW(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(h.ListTargets))))
 	mux.Handle("PUT /api/deploy-targets/{repo}/{environment}", authMW(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(h.SetTarget))))
 	mux.Handle("DELETE /api/deploy-targets/{repo}/{environment}", authMW(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(h.DeleteTarget))))
@@ -139,7 +143,16 @@ func newTestHandlers(t *testing.T, runner deploy.CommandRunner) (*Handlers, *rep
 		t.Fatalf("failed to create bare repo: %v", err)
 	}
 
-	fixtureSrc, err := filepath.Abs("../deploy/testdata/npm-fixture")
+	// Deliberately its own minimal, dependency-free fixture rather than
+	// internal/deploy/testdata/npm-fixture: these tests exercise the HTTP
+	// handler/orchestration layer (concurrent approvals, timeouts, audit
+	// logging), not the build recipe itself — that's what
+	// internal/deploy/build_test.go's dependency-installing fixture is
+	// for. A fixture with a real dependency here would tie its "npm ci"
+	// resolution to how deep Approve happens to nest its checkout
+	// directory, which is an implementation detail this package shouldn't
+	// need to know.
+	fixtureSrc, err := filepath.Abs("testdata/npm-fixture-minimal")
 	if err != nil {
 		t.Fatalf("failed to resolve fixture path: %v", err)
 	}
@@ -150,6 +163,7 @@ func newTestHandlers(t *testing.T, runner deploy.CommandRunner) (*Handlers, *rep
 	runGit(t, work, "config", "user.name", "Test")
 	runGit(t, work, "remote", "add", "origin", repoPath)
 	copyFile(t, filepath.Join(fixtureSrc, "package.json"), filepath.Join(work, "package.json"))
+	copyFile(t, filepath.Join(fixtureSrc, "package-lock.json"), filepath.Join(work, "package-lock.json"))
 	copyFile(t, filepath.Join(fixtureSrc, "build.js"), filepath.Join(work, "build.js"))
 	runGit(t, work, "add", ".")
 	runGit(t, work, "commit", "-m", "initial commit")
@@ -163,10 +177,12 @@ func newTestHandlers(t *testing.T, runner deploy.CommandRunner) (*Handlers, *rep
 		t.Fatalf("failed to seed deploy target: %v", err)
 	}
 
+	versions := deploy.NewVersionStore(filepath.Join(dataDir, "releases"))
+	iisSwapper := deploy.NewIISSwapper(runner)
 	pipeline := deploy.NewPipeline(
 		&deploy.Builder{},
-		deploy.NewVersionStore(filepath.Join(dataDir, "releases")),
-		deploy.NewIISSwapper(runner),
+		versions,
+		iisSwapper,
 		nil, // no secretsTarget configured, so a nil secretsvault.Store is never touched
 	)
 
@@ -176,6 +192,8 @@ func newTestHandlers(t *testing.T, runner deploy.CommandRunner) (*Handlers, *rep
 		Targets:      targets,
 		Pipeline:     pipeline,
 		CheckoutRoot: t.TempDir(),
+		Versions:     versions,
+		IIS:          iisSwapper,
 		Audit:        audit.New(filepath.Join(dataDir, "audit.jsonl")),
 		Notify:       notify.NewStore(filepath.Join(dataDir, "notifications")),
 		Users:        users.NewStore(filepath.Join(dataDir, "users.json")),

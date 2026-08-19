@@ -63,6 +63,42 @@ func TestGet_ReturnsCreatedRequest(t *testing.T) {
 	}
 }
 
+func TestCreateRollback_PersistsAsTerminalDeployedWithKind(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	req, err := store.CreateRollback("intranet-backend", "production", `C:\releases\5`, "admin-1")
+	if err != nil {
+		t.Fatalf("CreateRollback returned error: %v", err)
+	}
+	if req.ID == "" {
+		t.Fatal("expected a generated ID")
+	}
+	if req.Kind != KindRollback {
+		t.Errorf("Kind = %q, want %q", req.Kind, KindRollback)
+	}
+	if req.Status != StatusDeployed {
+		t.Errorf("Status = %q, want %q", req.Status, StatusDeployed)
+	}
+	if req.ReleaseDir != `C:\releases\5` {
+		t.Errorf("ReleaseDir = %q, want %q", req.ReleaseDir, `C:\releases\5`)
+	}
+	if req.SourceBranch != "" {
+		t.Errorf("SourceBranch = %q, want empty for a rollback record", req.SourceBranch)
+	}
+	if req.DecidedAt == nil {
+		t.Error("expected DecidedAt to be set immediately — a rollback has no pending stage")
+	}
+
+	// Persisted, not just returned in memory: Get must see the same record.
+	got, err := store.Get("intranet-backend", req.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if got.Kind != KindRollback || got.Status != StatusDeployed {
+		t.Errorf("Get returned %+v, want Kind=%q Status=%q", got, KindRollback, StatusDeployed)
+	}
+}
+
 func TestGet_ReturnsErrNotFoundForMissingID(t *testing.T) {
 	store := NewStore(t.TempDir())
 

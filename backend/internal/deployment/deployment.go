@@ -47,16 +47,32 @@ const (
 	StatusRejected   Status = "rejected"
 )
 
+// Kind distinguishes a rollback record from an ordinary deploy request.
+// The zero value (empty string) means an ordinary deploy — every request
+// Create makes, and every request ever persisted before rollback existed,
+// so old on-disk JSON with no "kind" field at all still decodes as an
+// ordinary deploy.
+type Kind string
+
+const KindRollback Kind = "rollback"
+
 // Request is a request to release repo's sourceBranch into environment.
 // Approval runs the deploy synchronously and records the outcome in the
 // same object — there is no separate "deploy log" to cross-reference,
 // mirroring how MergeRequest records its own MergedCommit rather than
 // pointing elsewhere for it.
 type Request struct {
-	ID            string    `json:"id"`
-	Repo          string    `json:"repo"`
-	Environment   string    `json:"environment"`
-	SourceBranch  string    `json:"sourceBranch"`
+	ID          string `json:"id"`
+	Repo        string `json:"repo"`
+	Environment string `json:"environment"`
+	// Kind is empty for every ordinary deploy request; CreateRollback is
+	// the only thing that sets it to KindRollback. SourceBranch is
+	// meaningless for a rollback record (a rollback deploys no branch, it
+	// repoints IIS at a release an earlier deploy already built), so it is
+	// left empty there — the frontend tells the two apart via Kind, not by
+	// SourceBranch being blank.
+	Kind          Kind      `json:"kind,omitempty"`
+	SourceBranch  string    `json:"sourceBranch,omitempty"`
 	Author        string    `json:"author"`
 	Status        Status    `json:"status"`
 	ReleaseDir    string    `json:"releaseDir,omitempty"`
@@ -97,19 +113,49 @@ func (s *Store) Create(repo, environment, sourceBranch, author string) (Request,
 	if !validRepoName.MatchString(repo) {
 		return Request{}, ErrInvalidRepo
 	}
-
-	dir := filepath.Join(s.rootDir, repo)
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return Request{}, err
-	}
-
-	req := Request{
+	return s.create(Request{
 		Repo:         repo,
 		Environment:  environment,
 		SourceBranch: sourceBranch,
 		Author:       author,
 		Status:       StatusPending,
 		CreatedAt:    time.Now().UTC(),
+	})
+}
+
+// CreateRollback persists a new, already-terminal StatusDeployed request
+// recording a rollback to releaseDir. Unlike Create, there is no
+// pending/review stage: by the time this is called the IIS swap has
+// already happened (see Handlers.Rollback) — a rollback is one immediate
+// admin action against a release that was already built and live before,
+// not a request to build and deploy new code.
+func (s *Store) CreateRollback(repo, environment, releaseDir, author string) (Request, error) {
+	if !validRepoName.MatchString(repo) {
+		return Request{}, ErrInvalidRepo
+	}
+	now := time.Now().UTC()
+	return s.create(Request{
+		Repo:        repo,
+		Environment: environment,
+		Kind:        KindRollback,
+		Author:      author,
+		Status:      StatusDeployed,
+		ReleaseDir:  releaseDir,
+		CreatedAt:   now,
+		DecidedAt:   &now,
+	})
+}
+
+// create allocates a unique ID for req and persists it, retrying on the
+// rare ID collision — shared by Create and CreateRollback, which differ
+// only in what fields req arrives with already set. Like Create before
+// this was extracted, it does not take s.mu: it only ever creates a new
+// file (O_EXCL), never reads-then-writes an existing one, so it has
+// nothing to race against Get/Claim/Decide over.
+func (s *Store) create(req Request) (Request, error) {
+	dir := filepath.Join(s.rootDir, req.Repo)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return Request{}, err
 	}
 
 	for attempt := 0; attempt < 5; attempt++ {

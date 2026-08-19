@@ -1,8 +1,22 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { api, ApiError, type DeployRecipe, type DeployTarget } from '../api/client'
+import { api, ApiError, type DeployRecipe, type DeployTarget, type ReleaseInfo } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { DeployIcon } from '../components/icons'
+import { formatDate } from '../labels'
 import { useRepos } from '../repos/ReposContext'
+
+// Release directory names are Go's `t.UTC().Format("20060102T150405.000000000")`
+// (see backend/internal/deploy/versionstore.go's releaseName) — parsed
+// back into a real date here since the raw name alone doesn't tell an
+// admin when a release actually happened without doing the arithmetic by
+// hand. A name that's had a collision-retry suffix appended (e.g. "-1")
+// falls back to showing it unchanged rather than guessing.
+function formatReleaseName(name: string): string {
+  const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})\.(\d{3})/.exec(name)
+  if (!m) return name
+  const [, y, mo, d, h, mi, s, ms] = m
+  return formatDate(`${y}-${mo}-${d}T${h}:${mi}:${s}.${ms}Z`)
+}
 
 // DeployTargetsPage is the admin-only screen for managing which
 // (repo, environment) pair deploys to which IIS site — see
@@ -87,6 +101,7 @@ export function DeployTargetsPage() {
                     Sil
                   </button>
                 </div>
+                <ReleasesPanel target={t} />
               </li>
             ))}
           </ul>
@@ -110,6 +125,93 @@ export function DeployTargetsPage() {
           />
         </div>
       </div>
+    </div>
+  )
+}
+
+// ReleasesPanel is a per-target, collapsed-by-default section listing the
+// releases still on disk for (target.repo, target.environment), with a
+// "Bu versiyona dön" (rollback) action on every one except whichever is
+// already active. keepVersions is the practical depth this list ever
+// reaches — older releases are pruned on every new deploy, so rollback
+// can only ever reach as far back as target.keepVersions allows.
+function ReleasesPanel({ target }: { target: DeployTarget }) {
+  const [open, setOpen] = useState(false)
+  const [releases, setReleases] = useState<ReleaseInfo[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [rollingBackTo, setRollingBackTo] = useState<string | null>(null)
+
+  function load() {
+    setError(null)
+    api
+      .listReleases(target.repo, target.environment)
+      .then(setReleases)
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Versiyonlar yüklenemedi'))
+  }
+
+  useEffect(() => {
+    if (open) load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  async function handleRollback(name: string) {
+    if (
+      !confirm(
+        `"${formatReleaseName(name)}" versiyonuna dönülsün mü? Bu, ${target.siteName} sitesini canlıda hemen değiştirir.`,
+      )
+    ) {
+      return
+    }
+    setRollingBackTo(name)
+    setError(null)
+    try {
+      await api.rollback(target.repo, target.environment, name)
+      load()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Rollback başarısız')
+    } finally {
+      setRollingBackTo(null)
+    }
+  }
+
+  return (
+    <div className="row-sub">
+      <button type="button" className="btn-ghost btn-sm" onClick={() => setOpen((v) => !v)}>
+        {open ? 'Versiyonları gizle' : 'Versiyonlar'}
+      </button>
+      {open && (
+        <div className="release-list">
+          {error && <p className="error">{error}</p>}
+          {releases === null && !error && <p className="empty-state">Yükleniyor...</p>}
+          {releases?.length === 0 && <p className="empty-state">Henüz hiç deploy edilmemiş.</p>}
+          {releases && releases.length > 0 && (
+            <ul className="row-list">
+              {releases.map((r) => (
+                <li key={r.name}>
+                  <div className="row-main">
+                    <span className="row-title">{formatReleaseName(r.name)}</span>
+                    {r.active && <span className="badge badge-success">Aktif</span>}
+                    <span className="spacer" />
+                    {!r.active && (
+                      <button
+                        type="button"
+                        className="btn-ghost btn-sm"
+                        disabled={rollingBackTo !== null}
+                        onClick={() => handleRollback(r.name)}
+                      >
+                        {rollingBackTo === r.name ? 'Dönülüyor...' : 'Bu versiyona dön'}
+                      </button>
+                    )}
+                  </div>
+                  <p className="row-meta">
+                    <code>{r.name}</code>
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   )
 }
