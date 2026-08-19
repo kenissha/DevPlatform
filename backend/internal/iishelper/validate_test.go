@@ -138,3 +138,78 @@ func TestValidateRequest_RejectsEverythingWhenReleasesRootIsUnset(t *testing.T) 
 		t.Fatalf("expected ErrInvalidRequest when no releases root is configured, got: %v", err)
 	}
 }
+
+func TestValidateRequest_AcceptsStopSiteForAnAllowedSite(t *testing.T) {
+	req := Request{
+		Name: testAppcmdPath,
+		Args: []string{"stop", "site", `/site.name:DevPlatform Test Site`},
+	}
+	if err := ValidateRequest(req, testAppcmdPath, testAllowedSites(), testReleasesRoot); err != nil {
+		t.Fatalf("expected stop site to be accepted for an allowed site, got: %v", err)
+	}
+}
+
+func TestValidateRequest_AcceptsStartSiteForAnAllowedSite(t *testing.T) {
+	req := Request{
+		Name: testAppcmdPath,
+		Args: []string{"start", "site", `/site.name:DevPlatform Test Site`},
+	}
+	if err := ValidateRequest(req, testAppcmdPath, testAllowedSites(), testReleasesRoot); err != nil {
+		t.Fatalf("expected start site to be accepted for an allowed site, got: %v", err)
+	}
+}
+
+func TestValidateRequest_RejectsStopSiteForAnUnlistedSite(t *testing.T) {
+	req := Request{
+		Name: testAppcmdPath,
+		Args: []string{"stop", "site", `/site.name:Some Other Site`},
+	}
+	err := ValidateRequest(req, testAppcmdPath, testAllowedSites(), testReleasesRoot)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("expected ErrInvalidRequest for an unlisted site, got: %v", err)
+	}
+}
+
+func TestValidateRequest_RejectsStartSiteForAnUnlistedSite(t *testing.T) {
+	req := Request{
+		Name: testAppcmdPath,
+		Args: []string{"start", "site", `/site.name:Some Other Site`},
+	}
+	err := ValidateRequest(req, testAppcmdPath, testAllowedSites(), testReleasesRoot)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("expected ErrInvalidRequest for an unlisted site, got: %v", err)
+	}
+}
+
+func TestValidateRequest_RejectsSiteLifecycleMissingSiteNamePrefix(t *testing.T) {
+	req := Request{
+		Name: testAppcmdPath,
+		Args: []string{"stop", "site", `DevPlatform Test Site`},
+	}
+	err := ValidateRequest(req, testAppcmdPath, testAllowedSites(), testReleasesRoot)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("expected ErrInvalidRequest for a third argument missing /site.name:, got: %v", err)
+	}
+}
+
+func TestValidateRequest_RejectsUnrecognizedVerb(t *testing.T) {
+	req := Request{
+		Name: testAppcmdPath,
+		Args: []string{"delete", "site", `/site.name:DevPlatform Test Site`},
+	}
+	err := ValidateRequest(req, testAppcmdPath, testAllowedSites(), testReleasesRoot)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("expected ErrInvalidRequest for an unrecognized verb, got: %v", err)
+	}
+}
+
+func TestValidateRequest_RejectsStopSiteWithWrongArgumentCount(t *testing.T) {
+	req := Request{
+		Name: testAppcmdPath,
+		Args: []string{"stop", "site"},
+	}
+	err := ValidateRequest(req, testAppcmdPath, testAllowedSites(), testReleasesRoot)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("expected ErrInvalidRequest for a short argument list, got: %v", err)
+	}
+}

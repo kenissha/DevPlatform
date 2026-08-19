@@ -15,47 +15,49 @@ var ErrInvalidRequest = errors.New("iishelper: request does not match the only a
 
 // ValidateRequest is the actual security boundary of this package: it
 // never trusts req as coming from a well-behaved devplatform.exe. It
-// independently re-derives what a legitimate request must look like —
-// appcmdPath is the caller's own computation of deploy.AppcmdPath()
-// (passed in rather than imported directly so tests can use a fixed
-// value), allowedSites is the set of IIS site names this deploy server
-// is actually configured to manage (see LoadAllowedSites), and
-// releasesRoot is the one directory tree a physical path is ever allowed
-// to point into (see cmd/iishelper's DEVPLATFORM_RELEASES_ROOT) — and
-// rejects anything that
-// deviates in any way from
-// appcmd.exe set vdir "<one of allowedSites>/" /physicalPath:<path under releasesRoot>
+// independently re-derives what a legitimate request must look like and
+// rejects anything that deviates from one of the small, fixed set of
+// operations this helper is willing to perform:
 //
-// The releasesRoot check exists because devplatform.exe is the only
-// caller that ever constructs a physical path, and it always builds one
-// from its own VersionStore — but a request reaching this pipe is not
-// proof devplatform.exe sent it in good faith. If devplatform.exe were
-// ever compromised, the site allowlist above stops an attacker from
-// touching a site this deploy server doesn't manage, but without this
-// check they could still repoint an allowed site's virtual directory at
-// any absolute path on disk (e.g. a folder holding unrelated data),
-// exposing it over that site's URL without ever running a command.
-// Confining the physical path to releasesRoot closes that.
+//	appcmd.exe set vdir "<one of allowedSites>/" /physicalPath:<path under releasesRoot>
+//	appcmd.exe stop site /site.name:"<one of allowedSites>"
+//	appcmd.exe start site /site.name:"<one of allowedSites>"
+//
+// The latter two exist for process-based (dotnet-recipe) deploy targets:
+// a running process locks its own files, so a bare physical-path swap
+// doesn't make it pick up a new release the way it does for a static
+// site — see docs/superpowers/specs/2026-08-19-process-based-backend-deploy-design.md.
+// Both are gated by the exact same allowedSites set as the physical-path
+// swap: iishelper never learns or cares which sites are process-based,
+// that decision lives entirely in the deployment package.
 func ValidateRequest(req Request, appcmdPath string, allowedSites map[string]bool, releasesRoot string) error {
 	if req.Name != appcmdPath {
 		return fmt.Errorf("%w: unexpected program %q", ErrInvalidRequest, req.Name)
 	}
-	if len(req.Args) != 4 {
-		return fmt.Errorf("%w: expected exactly 4 arguments, got %d", ErrInvalidRequest, len(req.Args))
-	}
-	if req.Args[0] != "set" || req.Args[1] != "vdir" {
-		return fmt.Errorf("%w: unexpected verb %q %q", ErrInvalidRequest, req.Args[0], req.Args[1])
-	}
 
-	site, ok := strings.CutSuffix(req.Args[2], "/")
+	switch {
+	case len(req.Args) == 4 && req.Args[0] == "set" && req.Args[1] == "vdir":
+		return validatePhysicalPathSwap(req.Args, allowedSites, releasesRoot)
+	case len(req.Args) == 3 && (req.Args[0] == "stop" || req.Args[0] == "start") && req.Args[1] == "site":
+		return validateSiteLifecycle(req.Args, allowedSites)
+	default:
+		return fmt.Errorf("%w: unrecognized command shape", ErrInvalidRequest)
+	}
+}
+
+// validatePhysicalPathSwap validates the "set vdir .../physicalPath:..."
+// shape — unchanged from before this function was split out of
+// ValidateRequest.
+func validatePhysicalPathSwap(args []string, allowedSites map[string]bool, releasesRoot string) error {
+	site, ok := strings.CutSuffix(args[2], "/")
 	if !ok {
-		return fmt.Errorf("%w: site argument %q must end with /", ErrInvalidRequest, req.Args[2])
+		return fmt.Errorf("%w: site argument %q must end with /", ErrInvalidRequest, args[2])
 	}
 	if !allowedSites[site] {
 		return fmt.Errorf("%w: %q is not a configured deploy target site", ErrInvalidRequest, site)
 	}
 
-	path, ok := strings.CutPrefix(req.Args[3], "/physicalPath:")
+	path, ok := strings.CutPrefix(args[3], "/physicalPath:")
 	if !ok {
 		return fmt.Errorf("%w: fourth argument must start with /physicalPath:", ErrInvalidRequest)
 	}
@@ -69,6 +71,20 @@ func ValidateRequest(req Request, appcmdPath string, allowedSites map[string]boo
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("%w: physical path %q is outside the configured releases root %q", ErrInvalidRequest, path, releasesRoot)
 	}
+	return nil
+}
 
+// validateSiteLifecycle validates "stop site /site.name:<site>" and
+// "start site /site.name:<site>" — args[0] is already known to be "stop"
+// or "start" and args[1] already known to be "site" by the caller's
+// switch, so only the site-name argument needs checking here.
+func validateSiteLifecycle(args []string, allowedSites map[string]bool) error {
+	site, ok := strings.CutPrefix(args[2], "/site.name:")
+	if !ok {
+		return fmt.Errorf("%w: third argument must start with /site.name:", ErrInvalidRequest)
+	}
+	if !allowedSites[site] {
+		return fmt.Errorf("%w: %q is not a configured deploy target site", ErrInvalidRequest, site)
+	}
 	return nil
 }
