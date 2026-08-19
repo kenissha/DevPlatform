@@ -1,11 +1,23 @@
 package deploy
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 )
+
+// ErrReverted indicates a release failed to start but the previous,
+// already-known-working release was successfully reactivated — the site
+// is up and serving traffic, just not the version that was requested.
+var ErrReverted = errors.New("deploy: release failed to start; reverted to the previous release")
+
+// ErrSiteDown indicates a release failed to start AND the attempt to
+// fall back to the previous release also failed (or there was no
+// previous release to fall back to) — the site is genuinely down and
+// needs manual intervention.
+var ErrSiteDown = errors.New("deploy: site is down and could not be automatically recovered")
 
 // CommandRunner executes a named program with fixed arguments and returns
 // its combined output. Abstracted behind an interface so IISSwapper's
@@ -82,6 +94,45 @@ func (s *IISSwapper) SetPhysicalPath(siteName, path string) error {
 		return fmt.Errorf("deploy: failed to set physical path for site %q: %w", siteName, err)
 	}
 	return nil
+}
+
+// ActivateRelease points siteName at newReleaseDir. For RecipeNpm this is
+// exactly SetPhysicalPath — a static site has no running process to
+// worry about. For RecipeDotnet, siteName is stopped before the swap and
+// started after: a running process locks its own files, so a bare
+// physical-path swap doesn't make it pick up newReleaseDir the way it
+// does for a static site (confirmed against a real IIS-hosted process
+// during this feature's design — see the spec). If starting the new
+// release fails, this attempts to fall back to previousReleaseDir (the
+// last known-good release) rather than leaving the site down; pass ""
+// for previousReleaseDir when there is none (e.g. the first-ever deploy
+// for a target), which skips straight to ErrSiteDown on start failure.
+func (s *IISSwapper) ActivateRelease(recipe Recipe, siteName, newReleaseDir, previousReleaseDir string) error {
+	if recipe != RecipeDotnet {
+		return s.SetPhysicalPath(siteName, newReleaseDir)
+	}
+
+	if err := s.StopSite(siteName); err != nil {
+		return err
+	}
+	if err := s.SetPhysicalPath(siteName, newReleaseDir); err != nil {
+		return err
+	}
+	startErr := s.StartSite(siteName)
+	if startErr == nil {
+		return nil
+	}
+
+	if previousReleaseDir == "" {
+		return fmt.Errorf("%w: %v", ErrSiteDown, startErr)
+	}
+	if err := s.SetPhysicalPath(siteName, previousReleaseDir); err != nil {
+		return fmt.Errorf("%w: start failed (%v) and reverting the physical path also failed (%v)", ErrSiteDown, startErr, err)
+	}
+	if err := s.StartSite(siteName); err != nil {
+		return fmt.Errorf("%w: start failed (%v) and restarting the previous release also failed (%v)", ErrSiteDown, startErr, err)
+	}
+	return fmt.Errorf("%w: %v", ErrReverted, startErr)
 }
 
 // StopSite stops siteName via appcmd.exe — the first half of the
