@@ -24,6 +24,7 @@ var ErrPruneFailed = errors.New("deploy: release activated but pruning old relea
 type releaseStore interface {
 	NewRelease(repo, environment string) (string, error)
 	Prune(repo, environment string, keep int) error
+	List(repo, environment string) ([]string, error)
 }
 
 // Pipeline wires the build, versioning, and IIS-swap steps into one
@@ -65,6 +66,21 @@ func (p *Pipeline) Deploy(sourceDir string, recipe Recipe, repo, environment, si
 		return "", fmt.Errorf("deploy: keepVersions must be at least 1, got %d", keepVersions)
 	}
 
+	// Capture whatever's currently the newest release (if any) BEFORE
+	// allocating a new one — RecipeDotnet's failure-recovery path in
+	// IISSwapper.ActivateRelease needs a last-known-good release to fall
+	// back to if the new version fails to start. Empty for a target's
+	// first-ever deploy, which ActivateRelease treats as "no fallback
+	// possible".
+	existing, err := p.versions.List(repo, environment)
+	if err != nil {
+		return "", fmt.Errorf("deploy: failed to list existing releases: %w", err)
+	}
+	previousReleaseDir := ""
+	if len(existing) > 0 {
+		previousReleaseDir = existing[0]
+	}
+
 	releaseDir, err := p.versions.NewRelease(repo, environment)
 	if err != nil {
 		return "", fmt.Errorf("deploy: failed to allocate release dir: %w", err)
@@ -91,12 +107,17 @@ func (p *Pipeline) Deploy(sourceDir string, recipe Recipe, repo, environment, si
 		}
 	}
 
-	if err := p.iis.SetPhysicalPath(siteName, releaseDir); err != nil {
+	if err := p.iis.ActivateRelease(recipe, siteName, releaseDir, previousReleaseDir); err != nil {
+		if errors.Is(err, ErrReverted) {
+			// The site is back up, just on the previous release, not the
+			// one that just failed — that's what's actually live now.
+			return previousReleaseDir, fmt.Errorf("deploy: failed to activate release: %w", err)
+		}
 		return "", fmt.Errorf("deploy: failed to activate release: %w", err)
 	}
 
 	if err := p.versions.Prune(repo, environment, keepVersions); err != nil {
-		// The release is already live (SetPhysicalPath succeeded above) —
+		// The release is already live (ActivateRelease succeeded above) —
 		// return the valid releaseDir alongside the wrapped sentinel so
 		// callers can tell this apart from an actual deploy failure via
 		// errors.Is(err, ErrPruneFailed) instead of losing the release

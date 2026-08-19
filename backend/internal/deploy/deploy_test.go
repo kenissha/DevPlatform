@@ -25,6 +25,10 @@ func (f *fakePruneFailingStore) Prune(repo, environment string, keep int) error 
 	return errors.New("simulated prune failure: release directory locked by another process")
 }
 
+func (f *fakePruneFailingStore) List(repo, environment string) ([]string, error) {
+	return f.real.List(repo, environment)
+}
+
 func TestPipeline_Deploy_BuildsVersionsAndSwaps(t *testing.T) {
 	requireTool(t, "npm")
 
@@ -253,5 +257,61 @@ func TestPipeline_Deploy_RejectsPathTraversalInSecretsTarget(t *testing.T) {
 		if _, statErr := os.Stat(filepath.Join(escapeDir, "escape.json")); !os.IsNotExist(statErr) {
 			t.Errorf("Deploy with secretsTarget %q: escape.json was written outside the release dir", target)
 		}
+	}
+}
+
+func TestPipeline_Deploy_DotnetRecipeStopsAndStartsTheSite(t *testing.T) {
+	requireTool(t, "dotnet")
+
+	source, err := filepath.Abs("testdata/dotnet-fixture")
+	if err != nil {
+		t.Fatalf("failed to resolve fixture path: %v", err)
+	}
+
+	vs := NewVersionStore(t.TempDir())
+	runner := &fakeCommandRunner{}
+	pipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(runner), nil)
+
+	_, err = pipeline.Deploy(source, RecipeDotnet, "sample", "test", "DevPlatform Test Site", 5, "")
+	if err != nil {
+		t.Fatalf("Deploy returned error: %v", err)
+	}
+
+	if len(runner.calls) != 3 {
+		t.Fatalf("got %d IIS calls, want 3 (stop, set, start): %v", len(runner.calls), runner.calls)
+	}
+	if runner.calls[0][1] != "stop" || runner.calls[2][1] != "start" {
+		t.Errorf("calls = %v, want stop first and start last", runner.calls)
+	}
+}
+
+func TestPipeline_Deploy_DotnetRecipeReturnsPreviousReleaseOnRevert(t *testing.T) {
+	requireTool(t, "dotnet")
+
+	source, err := filepath.Abs("testdata/dotnet-fixture")
+	if err != nil {
+		t.Fatalf("failed to resolve fixture path: %v", err)
+	}
+
+	vs := NewVersionStore(t.TempDir())
+
+	// First deploy succeeds normally, establishing a "previous release".
+	firstRunner := &fakeCommandRunner{}
+	firstPipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(firstRunner), nil)
+	firstReleaseDir, err := firstPipeline.Deploy(source, RecipeDotnet, "sample", "test", "DevPlatform Test Site", 5, "")
+	if err != nil {
+		t.Fatalf("first Deploy returned error: %v", err)
+	}
+
+	// Second deploy's new release fails to start.
+	secondRunner := &fakeCommandRunner{failStart: []error{errors.New("simulated: crashes on start")}}
+	secondPipeline := NewPipeline(&Builder{}, vs, NewIISSwapper(secondRunner), nil)
+	releaseDir, err := secondPipeline.Deploy(source, RecipeDotnet, "sample", "test", "DevPlatform Test Site", 5, "")
+
+	if !errors.Is(err, ErrReverted) {
+		t.Fatalf("err = %v, want ErrReverted", err)
+	}
+	if releaseDir != firstReleaseDir {
+		t.Errorf("releaseDir = %q, want the previous (still-live) release %q", releaseDir, firstReleaseDir)
 	}
 }
