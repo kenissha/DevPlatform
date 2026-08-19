@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -83,6 +84,8 @@ func (h hangingVersionStore) NewRelease(repo, environment string) (string, error
 }
 
 func (h hangingVersionStore) Prune(repo, environment string, keep int) error { return nil }
+
+func (h hangingVersionStore) List(repo, environment string) ([]string, error) { return nil, nil }
 
 func signTestToken(t *testing.T, subject, role string) string {
 	t.Helper()
@@ -696,5 +699,21 @@ func TestListAll_NarrowsToAllowedReposForARestrictedDeveloper(t *testing.T) {
 	// appear even though it exists.
 	if len(all) != 0 {
 		t.Errorf("got %d requests, want 0 (sample is not in dev-1's allow-list)", len(all))
+	}
+}
+
+func TestFailureReason_RecognizesRevertedAndSiteDown(t *testing.T) {
+	reverted := fmt.Errorf("deploy: failed to activate release: %w", deploy.ErrReverted)
+	got := failureReason(stageDeploy, reverted)
+	want := "Yeni versiyon başlatılamadı, otomatik olarak önceki çalışan versiyona dönüldü"
+	if got != want {
+		t.Errorf("failureReason(ErrReverted) = %q, want %q", got, want)
+	}
+
+	siteDown := fmt.Errorf("deploy: failed to activate release: %w", deploy.ErrSiteDown)
+	got = failureReason(stageDeploy, siteDown)
+	want = "Site durduruldu ve yeniden başlatılamadı — site şu an ERİŞİLEMEZ, elle müdahale gerekiyor"
+	if got != want {
+		t.Errorf("failureReason(ErrSiteDown) = %q, want %q", got, want)
 	}
 }

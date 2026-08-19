@@ -254,6 +254,12 @@ func failureReason(stage deployStage, err error) string {
 	case stageTimeout:
 		return "Deploy zaman aşımına uğradı"
 	}
+	if errors.Is(err, deploy.ErrReverted) {
+		return "Yeni versiyon başlatılamadı, otomatik olarak önceki çalışan versiyona dönüldü"
+	}
+	if errors.Is(err, deploy.ErrSiteDown) {
+		return "Site durduruldu ve yeniden başlatılamadı — site şu an ERİŞİLEMEZ, elle müdahale gerekiyor"
+	}
 	// Everything past checkout comes back as one error from
 	// deploy.Pipeline.Deploy, whose own wrapping (see its fmt.Errorf calls)
 	// is the only thing consulted here — matching on the stage prefix it
@@ -336,7 +342,7 @@ func (h *Handlers) Approve(w http.ResponseWriter, r *http.Request) {
 	checkoutDir, err := os.MkdirTemp(h.CheckoutRoot, "checkout-*")
 	if err != nil {
 		log.Printf("deployment: failed to create checkout dir under %q for %s/%s: %v", h.CheckoutRoot, repo, id, err)
-		h.finishFailed(w, repo, id, req, stageCheckout, err)
+		h.finishFailed(w, repo, id, req, stageCheckout, err, "")
 		return
 	}
 	defer os.RemoveAll(checkoutDir)
@@ -347,7 +353,7 @@ func (h *Handlers) Approve(w http.ResponseWriter, r *http.Request) {
 	// requester's point of view (see Pipeline.Deploy's own doc comment),
 	// so it's treated as success here too rather than StatusFailed.
 	if res.err != nil && !errors.Is(res.err, deploy.ErrPruneFailed) {
-		h.finishFailed(w, repo, id, req, res.stage, res.err)
+		h.finishFailed(w, repo, id, req, res.stage, res.err, res.releaseDir)
 		return
 	}
 	releaseDir := res.releaseDir
@@ -402,20 +408,22 @@ func (h *Handlers) runPipeline(gitRepo *git.Repository, req Request, target Targ
 }
 
 // finishFailed records a deploy attempt that started but failed, and
-// responds 200 with the now-StatusFailed request: the HTTP call itself
-// succeeded (the approval was processed and its outcome recorded), the
-// deploy did not.
+// responds 200 with the now-StatusFailed request. liveReleaseDir is
+// normally "" (nothing is live from this attempt), but is the previous
+// release's path when deployErr wraps deploy.ErrReverted — the site is
+// still up, just not on what was requested, and the record should say so
+// honestly instead of implying nothing is running.
 //
 // The raw error is logged server-side only. What reaches the panel and
 // the author's notification is the short, stage-derived reason instead:
 // deployErr can carry a build's entire stdout/stderr (secrets a build
 // script printed included) or an appcmd argv full of absolute server
 // paths, and FailureReason is visible to anyone with access to the repo.
-func (h *Handlers) finishFailed(w http.ResponseWriter, repo, id string, req Request, stage deployStage, deployErr error) {
+func (h *Handlers) finishFailed(w http.ResponseWriter, repo, id string, req Request, stage deployStage, deployErr error, liveReleaseDir string) {
 	log.Printf("deployment: deploy failed for %s/%s at stage %s: %v", repo, id, stage, deployErr)
 	reason := failureReason(stage, deployErr)
 
-	updated, storeErr := h.Store.Decide(repo, id, StatusFailed, "", reason)
+	updated, storeErr := h.Store.Decide(repo, id, StatusFailed, liveReleaseDir, reason)
 	if storeErr != nil {
 		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
 		return
