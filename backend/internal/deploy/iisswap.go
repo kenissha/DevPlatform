@@ -102,11 +102,14 @@ func (s *IISSwapper) SetPhysicalPath(siteName, path string) error {
 // started after: a running process locks its own files, so a bare
 // physical-path swap doesn't make it pick up newReleaseDir the way it
 // does for a static site (confirmed against a real IIS-hosted process
-// during this feature's design — see the spec). If starting the new
-// release fails, this attempts to fall back to previousReleaseDir (the
-// last known-good release) rather than leaving the site down; pass ""
-// for previousReleaseDir when there is none (e.g. the first-ever deploy
-// for a target), which skips straight to ErrSiteDown on start failure.
+// during this feature's design — see the spec). If swapping onto the new
+// release fails, or the swap succeeds but starting it fails, this
+// attempts to fall back to previousReleaseDir (the last known-good
+// release) rather than leaving the site down — both are the same
+// recovery, since either way the site is stopped and not confirmed
+// pointed at anything working. Pass "" for previousReleaseDir when there
+// is none (e.g. the first-ever deploy for a target), which skips
+// straight to ErrSiteDown.
 func (s *IISSwapper) ActivateRelease(recipe Recipe, siteName, newReleaseDir, previousReleaseDir string) error {
 	if recipe != RecipeDotnet {
 		return s.SetPhysicalPath(siteName, newReleaseDir)
@@ -115,24 +118,36 @@ func (s *IISSwapper) ActivateRelease(recipe Recipe, siteName, newReleaseDir, pre
 	if err := s.StopSite(siteName); err != nil {
 		return err
 	}
+
 	if err := s.SetPhysicalPath(siteName, newReleaseDir); err != nil {
-		return err
-	}
-	startErr := s.StartSite(siteName)
-	if startErr == nil {
-		return nil
+		return s.revertOrSiteDown(siteName, previousReleaseDir, err)
 	}
 
+	if err := s.StartSite(siteName); err != nil {
+		return s.revertOrSiteDown(siteName, previousReleaseDir, err)
+	}
+
+	return nil
+}
+
+// revertOrSiteDown attempts to fall back to previousReleaseDir after cause
+// broke the dotnet activation sequence — whether the break was in swapping
+// to the new release or in starting it, either way the site needs
+// recovery, and the recovery attempt is identical either way. Returns an
+// error wrapping ErrReverted if the fallback succeeds (site is up, just
+// not on what was requested) or ErrSiteDown if there was nothing to fall
+// back to, or the fallback itself failed.
+func (s *IISSwapper) revertOrSiteDown(siteName, previousReleaseDir string, cause error) error {
 	if previousReleaseDir == "" {
-		return fmt.Errorf("%w: %v", ErrSiteDown, startErr)
+		return fmt.Errorf("%w: %v", ErrSiteDown, cause)
 	}
 	if err := s.SetPhysicalPath(siteName, previousReleaseDir); err != nil {
-		return fmt.Errorf("%w: start failed (%v) and reverting the physical path also failed (%v)", ErrSiteDown, startErr, err)
+		return fmt.Errorf("%w: original failure (%v) and reverting the physical path also failed (%v)", ErrSiteDown, cause, err)
 	}
 	if err := s.StartSite(siteName); err != nil {
-		return fmt.Errorf("%w: start failed (%v) and restarting the previous release also failed (%v)", ErrSiteDown, startErr, err)
+		return fmt.Errorf("%w: original failure (%v) and restarting the previous release also failed (%v)", ErrSiteDown, cause, err)
 	}
-	return fmt.Errorf("%w: %v", ErrReverted, startErr)
+	return fmt.Errorf("%w: %v", ErrReverted, cause)
 }
 
 // StopSite stops siteName via appcmd.exe — the first half of the

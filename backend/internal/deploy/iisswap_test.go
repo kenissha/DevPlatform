@@ -19,6 +19,11 @@ type fakeCommandRunner struct {
 	// single blanket failWith can't express since neither call carries
 	// any argument that tells them apart (StartSite takes no path).
 	failStart []error
+	// failSet is consumed in order, one entry per "set" verb call — lets a
+	// test make the swap to the new release fail while a later swap (the
+	// revert to the previous release) succeeds, the same reasoning
+	// failStart already documents for "start" calls.
+	failSet []error
 }
 
 func (f *fakeCommandRunner) Run(name string, args ...string) ([]byte, error) {
@@ -30,6 +35,13 @@ func (f *fakeCommandRunner) Run(name string, args ...string) ([]byte, error) {
 	if len(args) > 0 && args[0] == "start" && len(f.failStart) > 0 {
 		err := f.failStart[0]
 		f.failStart = f.failStart[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(args) > 0 && args[0] == "set" && len(f.failSet) > 0 {
+		err := f.failSet[0]
+		f.failSet = f.failSet[1:]
 		if err != nil {
 			return nil, err
 		}
@@ -225,6 +237,41 @@ func TestActivateRelease_DotnetRecipeReturnsSiteDownWhenRevertAlsoFails(t *testi
 	err := swapper.ActivateRelease(RecipeDotnet, "DevPlatform Test Site", `C:\releases\v2`, `C:\releases\v1`)
 	if !errors.Is(err, ErrSiteDown) {
 		t.Fatalf("err = %v, want ErrSiteDown", err)
+	}
+}
+
+func TestActivateRelease_DotnetRecipeRevertsWhenSwapToNewReleaseFails(t *testing.T) {
+	runner := &fakeCommandRunner{failSet: []error{errors.New("simulated: appcmd fails to swap to the new release")}}
+	swapper := NewIISSwapper(runner)
+
+	err := swapper.ActivateRelease(RecipeDotnet, "DevPlatform Test Site", `C:\releases\v2`, `C:\releases\v1`)
+	if !errors.Is(err, ErrReverted) {
+		t.Fatalf("err = %v, want ErrReverted", err)
+	}
+
+	// stop, set(new, fails), set(previous), start(previous)
+	if len(runner.calls) != 4 {
+		t.Fatalf("got %d calls, want 4: %v", len(runner.calls), runner.calls)
+	}
+	if runner.calls[2][len(runner.calls[2])-1] != `/physicalPath:C:\releases\v1` {
+		t.Errorf("call[2] = %v, want the revert swap to target the previous release", runner.calls[2])
+	}
+	if runner.calls[3][1] != "start" {
+		t.Errorf("call[3] = %v, want a final start site to bring the previous release back up", runner.calls[3])
+	}
+}
+
+func TestActivateRelease_DotnetRecipeReturnsSiteDownWhenSwapFailsWithNoPreviousRelease(t *testing.T) {
+	runner := &fakeCommandRunner{failSet: []error{errors.New("simulated: appcmd fails to swap on the very first deploy")}}
+	swapper := NewIISSwapper(runner)
+
+	err := swapper.ActivateRelease(RecipeDotnet, "DevPlatform Test Site", `C:\releases\v1`, "")
+	if !errors.Is(err, ErrSiteDown) {
+		t.Fatalf("err = %v, want ErrSiteDown", err)
+	}
+	// stop, set(new, fails) — no revert attempt possible.
+	if len(runner.calls) != 2 {
+		t.Fatalf("got %d calls, want 2 (no revert attempt without a previous release): %v", len(runner.calls), runner.calls)
 	}
 }
 
