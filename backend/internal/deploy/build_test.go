@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -51,8 +52,13 @@ func TestBuild_Npm_ProducesOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected index.html in output dir: %v", err)
 	}
-	if string(content) == "" {
-		t.Error("index.html is empty")
+	// build.js requires "fixture-dep", a dependency declared in
+	// package.json but never committed as node_modules (same as any real
+	// project's node_modules). If Build ever stops installing dependencies
+	// before running the build script, this fails with exactly the "Cannot
+	// find module" error a real Vite/React deploy hit in production.
+	if !strings.Contains(string(content), "fixture-dep-installed") {
+		t.Errorf("index.html = %q, want it to contain the fixture-dep marker (was the dependency actually installed?)", content)
 	}
 
 	// The fixture also writes a nested assets/style.css, mirroring the

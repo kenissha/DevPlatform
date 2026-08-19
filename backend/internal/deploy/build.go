@@ -59,6 +59,20 @@ func (b *Builder) buildDotnet(sourceDir, outputDir string) error {
 }
 
 func (b *Builder) buildNpm(sourceDir, outputDir string) error {
+	// A fresh git checkout never has node_modules — it's the one directory
+	// every real npm project's .gitignore excludes — so "npm run build"
+	// alone fails on any project with real dependencies (e.g. Vite) with
+	// "not recognized as an internal or external command" or "Cannot find
+	// module". npm ci requires package-lock.json (committed, unlike
+	// node_modules) and installs exactly what it pins, which is both the
+	// fix and the reproducible-build behavior a deploy pipeline wants over
+	// plain "npm install".
+	installCmd := exec.Command("npm", "ci")
+	installCmd.Dir = sourceDir
+	if out, err := installCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("deploy: npm ci failed: %w\n%s", err, out)
+	}
+
 	cmd := exec.Command("npm", "run", "build")
 	cmd.Dir = sourceDir
 	out, err := cmd.CombinedOutput()

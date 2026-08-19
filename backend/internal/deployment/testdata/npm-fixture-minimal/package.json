@@ -1,0 +1,7 @@
+{
+  "name": "deployment-handler-fixture",
+  "private": true,
+  "scripts": {
+    "build": "node build.js"
+  }
+}
