@@ -298,15 +298,17 @@ func TestApprove_RunsTheFullPipelineAgainstAFakeIIS(t *testing.T) {
 	}
 
 	// The build genuinely ran: its known output must exist in the release.
+	// This handlers-layer fixture (testdata/npm-fixture-minimal) is
+	// deliberately dependency-free and single-file — it exists to
+	// exercise the HTTP/orchestration layer, not to prove copyDir's
+	// subdirectory recursion (internal/deploy/build_test.go's
+	// dependency-installing npm-fixture already covers that).
 	indexHTML, err := os.ReadFile(filepath.Join(deployed.ReleaseDir, "index.html"))
 	if err != nil {
 		t.Fatalf("failed to read built index.html from release dir: %v", err)
 	}
-	if !bytes.Contains(indexHTML, []byte("deploy fixture build ok")) {
+	if !bytes.Contains(indexHTML, []byte("deployment handler fixture build ok")) {
 		t.Errorf("index.html content = %q, missing expected marker", indexHTML)
-	}
-	if _, err := os.Stat(filepath.Join(deployed.ReleaseDir, "assets", "style.css")); err != nil {
-		t.Errorf("expected nested assets/style.css to be copied into the release: %v", err)
 	}
 
 	// The IIS swap happened exactly once, against the fake.
