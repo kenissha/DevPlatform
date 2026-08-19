@@ -2,6 +2,7 @@ package deployment
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
+	"github.com/kenissha/DevPlatform/backend/internal/deploy"
 )
 
 // releaseInfo is one release still on disk for a (repo, environment) —
@@ -153,9 +155,23 @@ func (h *Handlers) Rollback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.IIS.SetPhysicalPath(target.SiteName, releaseDir); err != nil {
+	reqs, err := h.Store.List(repo)
+	if err != nil {
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	currentlyActive := activeRelease(reqs, environment)
+
+	if err := h.IIS.ActivateRelease(target.Recipe, target.SiteName, releaseDir, currentlyActive); err != nil {
 		log.Printf("deployment: rollback failed for %s/%s to %q: %v", repo, environment, releaseDir, err)
-		http.Error(w, "500 rollback failed", http.StatusInternalServerError)
+		switch {
+		case errors.Is(err, deploy.ErrSiteDown):
+			http.Error(w, "500 rollback failed and the site is now DOWN — manual intervention required", http.StatusInternalServerError)
+		case errors.Is(err, deploy.ErrReverted):
+			http.Error(w, "500 rollback failed — that release could not be started, the site continues running its previous version", http.StatusInternalServerError)
+		default:
+			http.Error(w, "500 rollback failed", http.StatusInternalServerError)
+		}
 		return
 	}
 
