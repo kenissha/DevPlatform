@@ -74,6 +74,64 @@ func TestBuild_Npm_ProducesOutput(t *testing.T) {
 	}
 }
 
+func TestBuild_Go_ProducesOutput(t *testing.T) {
+	requireTool(t, "go")
+
+	source, err := filepath.Abs("testdata/go-fixture")
+	if err != nil {
+		t.Fatalf("failed to resolve fixture path: %v", err)
+	}
+	outputDir := t.TempDir()
+
+	b := &Builder{}
+	if err := b.Build(source, RecipeGo, outputDir); err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+
+	exeInfo, err := os.Stat(filepath.Join(outputDir, "app.exe"))
+	if err != nil {
+		t.Fatalf("expected app.exe in output dir: %v", err)
+	}
+	if exeInfo.Size() == 0 {
+		t.Error("app.exe is empty")
+	}
+
+	// web.config isn't produced by `go build` — it has to be copied from
+	// the project source explicitly (see buildGo's doc comment). Prove it
+	// actually happened rather than app.exe alone existing by accident.
+	webConfig, err := os.ReadFile(filepath.Join(outputDir, "web.config"))
+	if err != nil {
+		t.Fatalf("expected web.config to be copied into output dir: %v", err)
+	}
+	if !strings.Contains(string(webConfig), "httpPlatformHandler") {
+		t.Errorf("web.config content = %q, missing expected marker", webConfig)
+	}
+}
+
+func TestBuild_Go_RequiresWebConfig(t *testing.T) {
+	requireTool(t, "go")
+
+	// A fixture with no web.config at all — go build itself succeeds, but
+	// the recipe must still fail clearly rather than silently producing a
+	// release IIS could never actually serve (no httpPlatformHandler
+	// config to tell it how to launch app.exe).
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "go.mod"), []byte("module no-web-config\n\ngo 1.21\n"), 0o644); err != nil {
+		t.Fatalf("failed to write go.mod: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(source, "cmd", "server"), 0o750); err != nil {
+		t.Fatalf("failed to create cmd/server: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "cmd", "server", "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o644); err != nil {
+		t.Fatalf("failed to write main.go: %v", err)
+	}
+
+	b := &Builder{}
+	if err := b.Build(source, RecipeGo, t.TempDir()); err == nil {
+		t.Fatal("expected an error when web.config is missing, got nil")
+	}
+}
+
 func TestBuild_RejectsUnknownRecipe(t *testing.T) {
 	b := &Builder{}
 	err := b.Build(t.TempDir(), Recipe("not-a-real-recipe"), t.TempDir())

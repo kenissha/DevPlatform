@@ -318,6 +318,7 @@ function TargetForm({
         <select id="target-recipe" value={recipe} onChange={(e) => setRecipe(e.target.value as DeployRecipe)}>
           <option value="dotnet">dotnet</option>
           <option value="npm">npm</option>
+          <option value="go">go</option>
         </select>
       </div>
 

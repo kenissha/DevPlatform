@@ -96,22 +96,22 @@ func (s *IISSwapper) SetPhysicalPath(siteName, path string) error {
 	return nil
 }
 
-// ActivateRelease points siteName at newReleaseDir. For RecipeNpm this is
-// exactly SetPhysicalPath — a static site has no running process to
-// worry about. For RecipeDotnet, siteName is stopped before the swap and
-// started after: a running process locks its own files, so a bare
-// physical-path swap doesn't make it pick up newReleaseDir the way it
-// does for a static site (confirmed against a real IIS-hosted process
-// during this feature's design — see the spec). If swapping onto the new
-// release fails, or the swap succeeds but starting it fails, this
-// attempts to fall back to previousReleaseDir (the last known-good
-// release) rather than leaving the site down — both are the same
-// recovery, since either way the site is stopped and not confirmed
-// pointed at anything working. Pass "" for previousReleaseDir when there
-// is none (e.g. the first-ever deploy for a target), which skips
-// straight to ErrSiteDown.
+// ActivateRelease points siteName at newReleaseDir. For a static recipe
+// (see Recipe.NeedsProcessRestart) this is exactly SetPhysicalPath — a
+// static site has no running process to worry about. For a process-based
+// recipe (dotnet, go), siteName is stopped before the swap and started
+// after: a running process locks its own files, so a bare physical-path
+// swap doesn't make it pick up newReleaseDir the way it does for a
+// static site (confirmed against a real IIS-hosted process during this
+// feature's design — see the spec). If swapping onto the new release
+// fails, or the swap succeeds but starting it fails, this attempts to
+// fall back to previousReleaseDir (the last known-good release) rather
+// than leaving the site down — both are the same recovery, since either
+// way the site is stopped and not confirmed pointed at anything working.
+// Pass "" for previousReleaseDir when there is none (e.g. the first-ever
+// deploy for a target), which skips straight to ErrSiteDown.
 func (s *IISSwapper) ActivateRelease(recipe Recipe, siteName, newReleaseDir, previousReleaseDir string) error {
-	if recipe != RecipeDotnet {
+	if !recipe.NeedsProcessRestart() {
 		return s.SetPhysicalPath(siteName, newReleaseDir)
 	}
 

@@ -207,6 +207,29 @@ func TestActivateRelease_DotnetRecipeStopsSwapsThenStarts(t *testing.T) {
 	}
 }
 
+// TestActivateRelease_GoRecipeAlsoStopsSwapsThenStarts guards against the
+// exact mistake NeedsProcessRestart's own doc comment describes: a Go
+// backend is a process-based recipe exactly like dotnet, and a check that
+// only ever compared against RecipeDotnet would silently treat it as
+// static (a plain swap, no stop/start) — which is wrong for the same
+// file-locking reason dotnet needed this in the first place.
+func TestActivateRelease_GoRecipeAlsoStopsSwapsThenStarts(t *testing.T) {
+	runner := &fakeCommandRunner{}
+	swapper := NewIISSwapper(runner)
+
+	err := swapper.ActivateRelease(RecipeGo, "DevPlatform Test Site", `C:\releases\v2`, `C:\releases\v1`)
+	if err != nil {
+		t.Fatalf("ActivateRelease returned error: %v", err)
+	}
+
+	if len(runner.calls) != 3 {
+		t.Fatalf("got %d calls, want 3 (stop, set, start): %v", len(runner.calls), runner.calls)
+	}
+	if runner.calls[0][1] != "stop" || runner.calls[2][1] != "start" {
+		t.Errorf("calls = %v, want stop first and start last", runner.calls)
+	}
+}
+
 func TestActivateRelease_DotnetRecipeRevertsOnStartFailure(t *testing.T) {
 	runner := &fakeCommandRunner{failStart: []error{errors.New("simulated: new release crashes on start")}}
 	swapper := NewIISSwapper(runner)

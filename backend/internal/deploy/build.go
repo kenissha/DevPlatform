@@ -20,7 +20,23 @@ type Recipe string
 const (
 	RecipeDotnet Recipe = "dotnet"
 	RecipeNpm    Recipe = "npm"
+	RecipeGo     Recipe = "go"
 )
+
+// NeedsProcessRestart reports whether recipe builds a long-running
+// process (a backend that locks its own files while running) rather than
+// static content an IIS worker can serve directly out of whatever folder
+// its physical path currently points at. IISSwapper.ActivateRelease uses
+// this to decide whether a release needs the stop→swap→start sequence
+// (see its own doc comment) or a plain physical-path swap — a single
+// method here, rather than a recipe-by-recipe check at each call site,
+// so adding a future process-based recipe can't repeat the mistake this
+// one fixed: dotnet originally got the process treatment by comparing
+// directly against RecipeDotnet, which would have silently treated any
+// later process-based recipe (this one, Go) as static.
+func (r Recipe) NeedsProcessRestart() bool {
+	return r == RecipeDotnet || r == RecipeGo
+}
 
 // Builder runs a fixed build recipe against sourceDir, writing the result
 // to outputDir. outputDir is created if it doesn't exist; it is the
@@ -44,6 +60,8 @@ func (b *Builder) Build(sourceDir string, recipe Recipe, outputDir string) error
 		return b.buildDotnet(sourceDir, outputDir)
 	case RecipeNpm:
 		return b.buildNpm(sourceDir, outputDir)
+	case RecipeGo:
+		return b.buildGo(sourceDir, outputDir)
 	default:
 		return fmt.Errorf("deploy: unknown recipe %q", recipe)
 	}
@@ -84,6 +102,38 @@ func (b *Builder) buildNpm(sourceDir, outputDir string) error {
 	// sourceDir; copy its contents into outputDir so every recipe has the
 	// same "outputDir now holds the deployable artifact" contract.
 	return copyDir(filepath.Join(sourceDir, "dist"), outputDir)
+}
+
+// buildGo compiles the project's fixed entry point (./cmd/server, the one
+// path every go-recipe project is required to use — no per-target custom
+// build path, matching this package's "fixed recipe, never free text"
+// rule) into a fixed binary name, app.exe, inside outputDir. The output
+// name is fixed rather than derived from the module/project so every
+// go-recipe project's web.config can reference it identically
+// (processPath=".\app.exe") regardless of which project it is.
+//
+// go build alone only produces the binary — unlike `dotnet publish`,
+// which bundles a project's web.config automatically, Go has no such
+// convention, so the project's own web.config (the httpPlatformHandler
+// config telling IIS how to launch app.exe, checked into the repo
+// alongside main.go) has to be copied into the release explicitly.
+func (b *Builder) buildGo(sourceDir, outputDir string) error {
+	exePath := filepath.Join(outputDir, "app.exe")
+	cmd := exec.Command("go", "build", "-o", exePath, "./cmd/server")
+	cmd.Dir = sourceDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("deploy: go build failed: %w\n%s", err, out)
+	}
+
+	webConfig, err := os.ReadFile(filepath.Join(sourceDir, "web.config"))
+	if err != nil {
+		return fmt.Errorf("deploy: go recipe requires a web.config at the project root: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(outputDir, "web.config"), webConfig, 0o640); err != nil {
+		return fmt.Errorf("deploy: failed to write web.config into release: %w", err)
+	}
+	return nil
 }
 
 // copyDir recursively copies the contents of src into dst, preserving the

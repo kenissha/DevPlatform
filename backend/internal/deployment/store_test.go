@@ -55,6 +55,22 @@ func TestSet_DefaultsKeepVersionsTo5WhenOmitted(t *testing.T) {
 	}
 }
 
+func TestSet_AcceptsRecipeGo(t *testing.T) {
+	store := NewTargetStore(t.TempDir() + "/deploy-targets.json")
+	allowed := map[string]bool{"A": true}
+
+	if err := store.Set(Target{Repo: "r", Environment: "e", Recipe: deploy.RecipeGo, SiteName: "A"}, allowed); err != nil {
+		t.Fatalf("Set returned error: %v", err)
+	}
+	got, err := store.Find("r", "e")
+	if err != nil {
+		t.Fatalf("Find returned error: %v", err)
+	}
+	if got.Recipe != deploy.RecipeGo {
+		t.Errorf("Recipe = %q, want %q", got.Recipe, deploy.RecipeGo)
+	}
+}
+
 func TestSet_ReplacesAnExistingTargetRatherThanDuplicating(t *testing.T) {
 	store := NewTargetStore(t.TempDir() + "/deploy-targets.json")
 	allowed := map[string]bool{"A": true, "B": true}

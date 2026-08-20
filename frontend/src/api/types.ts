@@ -148,7 +148,7 @@ export interface ReleaseInfo {
   active: boolean
 }
 
-export type DeployRecipe = 'dotnet' | 'npm'
+export type DeployRecipe = 'dotnet' | 'npm' | 'go'
 
 // One (repo, environment) pair's deploy configuration — mirrors
 // backend/internal/deployment.Target. Managed from the panel's "Deploy

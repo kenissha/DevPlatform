@@ -73,7 +73,7 @@ func validateTarget(t Target, allowedSites map[string]bool) error {
 		return fmt.Errorf("%w: invalid repo %q", ErrInvalidTarget, t.Repo)
 	case !validEnvironmentName.MatchString(t.Environment):
 		return fmt.Errorf("%w: invalid environment %q", ErrInvalidTarget, t.Environment)
-	case t.Recipe != deploy.RecipeDotnet && t.Recipe != deploy.RecipeNpm:
+	case t.Recipe != deploy.RecipeDotnet && t.Recipe != deploy.RecipeNpm && t.Recipe != deploy.RecipeGo:
 		return fmt.Errorf("%w: unknown recipe %q", ErrInvalidTarget, t.Recipe)
 	case strings.TrimSpace(t.SiteName) == "":
 		return fmt.Errorf("%w: siteName is required", ErrInvalidTarget)
