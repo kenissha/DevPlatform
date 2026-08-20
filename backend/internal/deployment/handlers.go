@@ -347,9 +347,17 @@ func (h *Handlers) Approve(w http.ResponseWriter, r *http.Request) {
 	}
 	defer os.RemoveAll(checkoutDir)
 
+	// This runs after Claim has already moved the request to
+	// StatusInProgress, so a failure here must go through finishFailed
+	// (terminal StatusFailed) rather than a bare http.Error — Approve and
+	// Reject both refuse to act on anything but StatusPending, and
+	// runPipeline's deployTimeout safety net never engages because
+	// runPipeline is never reached on this path. Without finishFailed, a
+	// Store.List error here would strand the request in StatusInProgress
+	// forever with no way to retry or reject it.
 	reqs, err := h.Store.List(repo)
 	if err != nil {
-		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		h.finishFailed(w, repo, id, req, stageDeploy, fmt.Errorf("deployment: failed to list prior requests for %q: %w", repo, err), "")
 		return
 	}
 	previousReleaseDir := activeRelease(reqs, req.Environment)
