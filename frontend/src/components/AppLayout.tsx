@@ -2,26 +2,13 @@ import { Link, NavLink, Outlet, useMatch } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useNotifications } from '../notifications/useNotifications'
 import { useRepos } from '../repos/ReposContext'
-import {
-  AuditIcon,
-  BellIcon,
-  BranchIcon,
-  ChartIcon,
-  DeployIcon,
-  KeyIcon,
-  LockIcon,
-  LogoMark,
-  MergeIcon,
-  OverviewIcon,
-  RepoIcon,
-  TaskIcon,
-} from './icons'
+import { AuditIcon, BellIcon, DeployIcon, KeyIcon, LockIcon, LogoMark, OverviewIcon, RepoIcon } from './icons'
+import { RepoTabBar } from './RepoTabBar'
 
 // AppLayout is the persistent chrome every authenticated page renders
-// inside: a top bar for identity and a left sidebar for navigation. The
-// sidebar doubles as a repo switcher, and expands into per-repo
-// navigation once you're inside one, so the current repo's sections stay
-// one click away without a second nav bar.
+// inside: a top bar for identity, a left sidebar for global nav and the
+// repo switcher, and — once a repo route is active — a RepoTabBar above
+// the page content for that repo's own sub-pages.
 export function AppLayout() {
   const { user, logout } = useAuth()
   const { repos } = useRepos()
@@ -116,50 +103,6 @@ export function AppLayout() {
             </ul>
           </div>
 
-          {repo && (
-            <div className="sidebar-group">
-              <div className="sidebar-heading">{repo}</div>
-              <ul className="nav-list">
-                <li>
-                  <NavLink end to={`/repos/${encodeURIComponent(repo)}`} className={navClass}>
-                    <OverviewIcon />
-                    <span className="nav-label">Genel bakış</span>
-                  </NavLink>
-                </li>
-                <li>
-                  <NavLink to={`/repos/${encodeURIComponent(repo)}/tasks`} className={navClass}>
-                    <TaskIcon />
-                    <span className="nav-label">Görevler</span>
-                  </NavLink>
-                </li>
-                <li>
-                  <NavLink to={`/repos/${encodeURIComponent(repo)}/merge-requests`} className={navClass}>
-                    <MergeIcon />
-                    <span className="nav-label">Merge istekleri</span>
-                  </NavLink>
-                </li>
-                <li>
-                  <NavLink to={`/repos/${encodeURIComponent(repo)}/branches`} className={navClass}>
-                    <BranchIcon />
-                    <span className="nav-label">Branch'ler</span>
-                  </NavLink>
-                </li>
-                <li>
-                  <NavLink to={`/repos/${encodeURIComponent(repo)}/insights`} className={navClass}>
-                    <ChartIcon />
-                    <span className="nav-label">İstatistikler</span>
-                  </NavLink>
-                </li>
-                <li>
-                  <NavLink to={`/repos/${encodeURIComponent(repo)}/deployments`} className={navClass}>
-                    <DeployIcon />
-                    <span className="nav-label">Deploy</span>
-                  </NavLink>
-                </li>
-              </ul>
-            </div>
-          )}
-
           <div className="sidebar-group">
             <div className="sidebar-heading">
               Repolar
@@ -183,6 +126,7 @@ export function AppLayout() {
         </nav>
 
         <main className="main">
+          {repo && <RepoTabBar repo={repo} />}
           <Outlet />
         </main>
       </div>

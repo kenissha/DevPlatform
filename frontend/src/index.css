@@ -308,6 +308,52 @@ code,
   color: var(--text-muted);
 }
 
+.repo-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+  padding-bottom: 0;
+  overflow-x: auto;
+}
+
+.repo-tabbar-title {
+  font-weight: 600;
+  color: var(--text-strong);
+  margin-right: 16px;
+  white-space: nowrap;
+}
+
+.repo-tab-list {
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 4px;
+}
+
+.repo-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  text-decoration: none;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+
+.repo-tab:hover {
+  color: var(--text);
+}
+
+.repo-tab.active {
+  color: var(--text-strong);
+  border-bottom-color: var(--accent);
+}
+
 .main {
   flex: 1;
   min-width: 0;
