@@ -42,7 +42,7 @@ export function AppLayout() {
       <header className="topbar">
         <Link to="/" className="brand">
           <LogoMark className="brand-mark" />
-          DevPlatform
+          STK Atölye
         </Link>
         <div className="topbar-spacer" />
         {user && (

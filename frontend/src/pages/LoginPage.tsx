@@ -23,7 +23,7 @@ export function LoginPage() {
       <div className="login-card">
         <div className="login-brand">
           <LogoMark className="brand-mark" />
-          <span>DevPlatform</span>
+          <span>STK Atölye</span>
         </div>
         <p className="login-note">
           Kurumsal girişinizi zaten yaptığınız sistemden bu panele yönlendirilirsiniz; oturumunuz
