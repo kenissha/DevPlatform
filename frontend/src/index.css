@@ -1041,3 +1041,60 @@ li.unread {
   font-family: var(--mono);
   font-size: 12px;
 }
+
+.kanban-board {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.kanban-column {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  min-height: 120px;
+}
+
+.kanban-column.drag-over {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.kanban-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.kanban-column-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kanban-card {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  cursor: grab;
+}
+
+.kanban-card:active {
+  cursor: grabbing;
+}
+
+.kanban-card-title {
+  margin: 6px 0 4px;
+  font-weight: 500;
+  color: var(--text-strong);
+}
+
+.kanban-card-meta {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}

@@ -1,15 +1,15 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type DragEvent, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import type { Person, Task, TaskStatus } from '../api/types'
-import { TASK_STATUSES, TASK_STATUS_LABELS } from '../labels'
-import { formatDate } from '../labels'
+import { TASK_STATUS_BADGE, TASK_STATUS_LABELS, TASK_STATUSES } from '../labels'
 
 export function RepoTasksPage() {
   const { repo = '' } = useParams<{ repo: string }>()
   const [tasks, setTasks] = useState<Task[] | null>(null)
   const [people, setPeople] = useState<Person[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null)
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -51,16 +51,31 @@ export function RepoTasksPage() {
     }
   }
 
-  async function patch(
-    task: Task,
-    changes: Partial<{ status: TaskStatus; urgent: boolean; assignedTo: string }>,
-  ) {
+  // Optimistic: the board should react the instant a card is dropped
+  // rather than waiting a round-trip. If the API call fails, reload()
+  // pulls the task's real (unchanged) column back from the server.
+  async function setStatus(task: Task, status: TaskStatus) {
+    if (task.status === status) return
+    setTasks((prev) => (prev ? prev.map((t) => (t.id === task.id ? { ...t, status } : t)) : prev))
     try {
-      await api.updateTask(repo, task.id, changes)
-      reload()
+      await api.updateTask(repo, task.id, { status })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Görev güncellenemedi')
+      reload()
     }
+  }
+
+  function handleDrop(e: DragEvent<HTMLDivElement>, status: TaskStatus) {
+    e.preventDefault()
+    setDragOverStatus(null)
+    const taskId = e.dataTransfer.getData('text/plain')
+    const task = tasks?.find((t) => t.id === taskId)
+    if (task) setStatus(task, status)
+  }
+
+  function personLabel(subject: string): string {
+    const person = people.find((p) => p.subject === subject)
+    return person?.email || subject
   }
 
   return (
@@ -74,67 +89,48 @@ export function RepoTasksPage() {
 
       {error && <p className="error">{error}</p>}
 
-      <div className="card">
-        {tasks === null && <p className="empty-state">Yükleniyor...</p>}
-        {tasks?.length === 0 && <p className="empty-state">Henüz görev yok.</p>}
-        {tasks && tasks.length > 0 && (
-          <ul className="row-list">
-            {tasks.map((task) => (
-              <li key={task.id} className={task.urgent ? 'urgent' : undefined}>
-                <div className="task-row">
-                  {task.urgent && <span className="badge badge-danger">Acil</span>}
-                  <span className="row-title">{task.title}</span>
-                  <div className="spacer" />
-                  <select
-                    value={task.status}
-                    aria-label="Durum"
-                    onChange={(e) => patch(task, { status: e.target.value as TaskStatus })}
-                  >
-                    {TASK_STATUSES.map((s) => (
-                      <option key={s} value={s}>
-                        {TASK_STATUS_LABELS[s]}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    className="btn-secondary btn-sm"
-                    onClick={() => patch(task, { urgent: !task.urgent })}
-                  >
-                    {task.urgent ? 'Acili kaldır' : 'Acil işaretle'}
-                  </button>
+      {tasks === null && <p className="empty-state">Yükleniyor...</p>}
+      {tasks && (
+        <div className="kanban-board">
+          {TASK_STATUSES.map((status) => {
+            const columnTasks = tasks.filter((t) => t.status === status)
+            return (
+              <div
+                key={status}
+                className={dragOverStatus === status ? 'kanban-column drag-over' : 'kanban-column'}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  setDragOverStatus(status)
+                }}
+                onDragLeave={() => setDragOverStatus((s) => (s === status ? null : s))}
+                onDrop={(e) => handleDrop(e, status)}
+              >
+                <div className="kanban-column-header">
+                  <span className={`badge ${TASK_STATUS_BADGE[status]}`}>{TASK_STATUS_LABELS[status]}</span>
+                  <span className="muted">{columnTasks.length}</span>
                 </div>
-                {task.description && <p className="task-desc">{task.description}</p>}
-                <p className="row-meta">
-                  <select
-                    className="inline-select"
-                    aria-label="Atanan"
-                    value={task.assignedTo}
-                    onChange={(e) => patch(task, { assignedTo: e.target.value })}
-                  >
-                    <option value="">Atanmamış</option>
-                    {people.map((p) => (
-                      <option key={p.subject} value={p.subject}>
-                        {p.subject}
-                      </option>
-                    ))}
-                    {/* A task assigned before that person was known still
-                        shows its current value rather than snapping to
-                        "Atanmamış". */}
-                    {task.assignedTo && !people.some((p) => p.subject === task.assignedTo) && (
-                      <option value={task.assignedTo}>{task.assignedTo}</option>
-                    )}
-                  </select>
-                  <span>·</span>
-                  {task.author} açtı
-                  <span>·</span>
-                  {formatDate(task.createdAt)}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+                <div className="kanban-column-body">
+                  {columnTasks.map((task) => (
+                    <div
+                      key={task.id}
+                      className="kanban-card"
+                      draggable
+                      onDragStart={(e) => e.dataTransfer.setData('text/plain', task.id)}
+                    >
+                      {task.urgent && <span className="badge badge-danger">Acil</span>}
+                      <p className="kanban-card-title">{task.title}</p>
+                      <p className="kanban-card-meta">
+                        {task.assignedTo ? personLabel(task.assignedTo) : 'Atanmamış'}
+                      </p>
+                    </div>
+                  ))}
+                  {columnTasks.length === 0 && <p className="empty-state">Görev yok.</p>}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       <div className="section-title">
         <h2>Yeni görev</h2>
