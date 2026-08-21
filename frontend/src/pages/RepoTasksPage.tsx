@@ -125,6 +125,8 @@ export function RepoTasksPage() {
                       key={task.id}
                       className="kanban-card"
                       draggable
+                      role="button"
+                      tabIndex={0}
                       onDragStart={(e) => {
                         draggingRef.current = true
                         e.dataTransfer.setData('text/plain', task.id)
@@ -134,6 +136,12 @@ export function RepoTasksPage() {
                       }}
                       onClick={() => {
                         if (!draggingRef.current) setOpenTask(task)
+                      }}
+                      onKeyDown={(e) => {
+                        if ((e.key === 'Enter' || e.key === ' ') && !draggingRef.current) {
+                          e.preventDefault()
+                          setOpenTask(task)
+                        }
                       }}
                     >
                       {task.urgent && <span className="badge badge-danger">Acil</span>}
@@ -219,6 +227,7 @@ function TaskDetailPanel({
   onChanged: () => void
 }) {
   const [error, setError] = useState<string | null>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
 
   async function patch(changes: Partial<{ status: TaskStatus; urgent: boolean; assignedTo: string }>) {
     setError(null)
@@ -230,12 +239,24 @@ function TaskDetailPanel({
     }
   }
 
+  useEffect(() => {
+    closeButtonRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>{task.title}</h3>
-          <button type="button" className="btn-ghost" onClick={onClose}>
+          <button type="button" className="btn-ghost" ref={closeButtonRef} onClick={onClose}>
             Kapat
           </button>
         </div>

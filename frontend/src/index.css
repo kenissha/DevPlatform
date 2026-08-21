@@ -1087,6 +1087,11 @@ li.unread {
   cursor: grabbing;
 }
 
+.kanban-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .kanban-card-title {
   margin: 6px 0 4px;
   font-weight: 500;
