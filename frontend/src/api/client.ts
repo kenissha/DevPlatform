@@ -9,6 +9,7 @@ import type {
   DeploymentRequest,
   DeploymentStatus,
   DiffResult,
+  DisplayNameRegistry,
   MergeRequest,
   MergeRequestDetail,
   MergeRequestStatus,
@@ -196,6 +197,18 @@ export const api = {
   clearAccess: (subject: string) =>
     request<void>(`/api/access/${encodeURIComponent(subject)}`, { method: 'DELETE' }),
 
+  // Per-person display-name override (Admin-only on the backend). A
+  // subject absent from listDisplayNames's result falls back to their
+  // email — see DisplayNameRegistry and User.displayName.
+  listDisplayNames: () => request<DisplayNameRegistry>('/api/display-names'),
+  setDisplayName: (subject: string, name: string) =>
+    request<{ name: string }>(`/api/display-names/${encodeURIComponent(subject)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    }),
+  clearDisplayName: (subject: string) =>
+    request<void>(`/api/display-names/${encodeURIComponent(subject)}`, { method: 'DELETE' }),
+
   // Per-person git credential (Admin-only revoke; anyone can mint their
   // own — see backend/internal/gittoken). The raw token in
   // generateGitToken's response is shown to the caller exactly once;
@@ -215,6 +228,7 @@ export type {
   DeployTarget,
   DeploymentRequest,
   DiffResult,
+  DisplayNameRegistry,
   MergeRequest,
   MergeRequestDetail,
   Notification,

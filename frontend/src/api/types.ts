@@ -10,6 +10,10 @@ export interface User {
   subject: string
   email: string
   role: Role
+  // Set via backend/internal/displaynames — falls back to email when no
+  // admin has configured an override for this subject (SSO's JWT carries
+  // no name claim to use instead).
+  displayName: string
 }
 
 export type MergeRequestStatus = 'open' | 'approved' | 'rejected'
@@ -178,3 +182,9 @@ export interface Notification {
 // unrestricted — they can see every repo. This is the design doc's Faz 3
 // "proje bazlı yetkilendirme".
 export type AccessRegistry = Record<string, string[]>
+
+// Maps subject -> the display name an admin has set for them (see
+// backend/internal/displaynames). A subject absent from this map has no
+// override — the panel falls back to their email, same as User.displayName
+// already does for /api/me's own caller.
+export type DisplayNameRegistry = Record<string, string>
