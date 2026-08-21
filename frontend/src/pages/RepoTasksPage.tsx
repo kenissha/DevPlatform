@@ -1,8 +1,8 @@
-import { useEffect, useState, type DragEvent, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import type { Person, Task, TaskStatus } from '../api/types'
-import { TASK_STATUS_BADGE, TASK_STATUS_LABELS, TASK_STATUSES } from '../labels'
+import { TASK_STATUS_BADGE, TASK_STATUS_LABELS, TASK_STATUSES, formatDate } from '../labels'
 
 export function RepoTasksPage() {
   const { repo = '' } = useParams<{ repo: string }>()
@@ -10,6 +10,8 @@ export function RepoTasksPage() {
   const [people, setPeople] = useState<Person[]>([])
   const [error, setError] = useState<string | null>(null)
   const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null)
+  const [openTask, setOpenTask] = useState<Task | null>(null)
+  const draggingRef = useRef(false)
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
@@ -25,6 +27,14 @@ export function RepoTasksPage() {
   }
 
   useEffect(reload, [repo])
+
+  // After a background reload() (e.g. once the detail panel makes a
+  // change), openTask would otherwise hold a stale copy.
+  useEffect(() => {
+    if (!openTask || !tasks) return
+    const fresh = tasks.find((t) => t.id === openTask.id)
+    setOpenTask(fresh ?? null)
+  }, [tasks, openTask?.id])
 
   // The assignee picker lists people the platform has actually seen, so a
   // task can't be assigned to a misspelled name that then never shows up
@@ -115,7 +125,16 @@ export function RepoTasksPage() {
                       key={task.id}
                       className="kanban-card"
                       draggable
-                      onDragStart={(e) => e.dataTransfer.setData('text/plain', task.id)}
+                      onDragStart={(e) => {
+                        draggingRef.current = true
+                        e.dataTransfer.setData('text/plain', task.id)
+                      }}
+                      onDragEnd={() => {
+                        draggingRef.current = false
+                      }}
+                      onClick={() => {
+                        if (!draggingRef.current) setOpenTask(task)
+                      }}
                     >
                       {task.urgent && <span className="badge badge-danger">Acil</span>}
                       <p className="kanban-card-title">{task.title}</p>
@@ -171,6 +190,101 @@ export function RepoTasksPage() {
             </div>
           </form>
         </div>
+      </div>
+
+      {openTask && (
+        <TaskDetailPanel
+          task={openTask}
+          people={people}
+          repo={repo}
+          onClose={() => setOpenTask(null)}
+          onChanged={reload}
+        />
+      )}
+    </div>
+  )
+}
+
+function TaskDetailPanel({
+  task,
+  people,
+  repo,
+  onClose,
+  onChanged,
+}: {
+  task: Task
+  people: Person[]
+  repo: string
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const [error, setError] = useState<string | null>(null)
+
+  async function patch(changes: Partial<{ status: TaskStatus; urgent: boolean; assignedTo: string }>) {
+    setError(null)
+    try {
+      await api.updateTask(repo, task.id, changes)
+      onChanged()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Görev güncellenemedi')
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>{task.title}</h3>
+          <button type="button" className="btn-ghost" onClick={onClose}>
+            Kapat
+          </button>
+        </div>
+
+        {error && <p className="error">{error}</p>}
+
+        {task.description && <p className="task-desc">{task.description}</p>}
+
+        <div className="field">
+          <label htmlFor="detail-status">Durum</label>
+          <select
+            id="detail-status"
+            value={task.status}
+            onChange={(e) => patch({ status: e.target.value as TaskStatus })}
+          >
+            {TASK_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {TASK_STATUS_LABELS[s]}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="field">
+          <label htmlFor="detail-assignee">Atanan</label>
+          <select
+            id="detail-assignee"
+            value={task.assignedTo}
+            onChange={(e) => patch({ assignedTo: e.target.value })}
+          >
+            <option value="">Atanmamış</option>
+            {people.map((p) => (
+              <option key={p.subject} value={p.subject}>
+                {p.subject}
+              </option>
+            ))}
+            {task.assignedTo && !people.some((p) => p.subject === task.assignedTo) && (
+              <option value={task.assignedTo}>{task.assignedTo}</option>
+            )}
+          </select>
+        </div>
+
+        <button type="button" className="btn-secondary btn-sm" onClick={() => patch({ urgent: !task.urgent })}>
+          {task.urgent ? 'Acili kaldır' : 'Acil işaretle'}
+        </button>
+
+        <p className="row-meta">
+          {task.author} açtı · {formatDate(task.createdAt)}
+        </p>
       </div>
     </div>
   )
