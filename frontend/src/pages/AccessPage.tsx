@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, ApiError, type AccessRegistry, type Person } from '../api/client'
+import { api, ApiError, type AccessRegistry, type DisplayNameRegistry, type Person } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { LockIcon } from '../components/icons'
 import { useRepos } from '../repos/ReposContext'
@@ -14,14 +14,16 @@ export function AccessPage() {
   const { repos } = useRepos()
   const [people, setPeople] = useState<Person[] | null>(null)
   const [registry, setRegistry] = useState<AccessRegistry | null>(null)
+  const [displayNames, setDisplayNames] = useState<DisplayNameRegistry | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [openSubject, setOpenSubject] = useState<string | null>(null)
 
   function reload() {
-    Promise.all([api.listPeople(), api.listAccess()])
-      .then(([p, r]) => {
+    Promise.all([api.listPeople(), api.listAccess(), api.listDisplayNames()])
+      .then(([p, r, d]) => {
         setPeople(p)
         setRegistry(r)
+        setDisplayNames(d)
         setError(null)
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Erişim bilgisi yüklenemedi'))
@@ -83,6 +85,27 @@ export function AccessPage() {
                 </li>
               )
             })}
+          </ul>
+        )}
+      </div>
+
+      <div className="section-title">
+        <h2>Görünen adlar</h2>
+        <p className="page-subtitle">Girişte kullanılan e-posta yerine panelde gösterilecek ad-soyad</p>
+      </div>
+      <div className="card">
+        {people === null && <p className="empty-state">Yükleniyor...</p>}
+        {people && people.length > 0 && displayNames && (
+          <ul className="row-list">
+            {people.map((person) => (
+              <DisplayNameRow
+                key={person.subject}
+                subject={person.subject}
+                fallback={person.email || person.subject}
+                current={displayNames[person.subject]}
+                onChange={reload}
+              />
+            ))}
           </ul>
         )}
       </div>
@@ -183,5 +206,59 @@ function AccessEditor({
       )}
       {saveError && <p className="error">{saveError}</p>}
     </div>
+  )
+}
+
+function DisplayNameRow({
+  subject,
+  fallback,
+  current,
+  onChange,
+}: {
+  subject: string
+  fallback: string
+  current: string | undefined
+  onChange: () => void
+}) {
+  const [name, setName] = useState(current ?? '')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  async function save() {
+    setSaving(true)
+    setSaveError(null)
+    try {
+      if (name.trim()) {
+        await api.setDisplayName(subject, name.trim())
+      } else {
+        await api.clearDisplayName(subject)
+      }
+      onChange()
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : 'Kaydedilemedi')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <li>
+      <div className="row-main">
+        <span className="row-title">{fallback}</span>
+        <span className="spacer" />
+        <input
+          type="text"
+          value={name}
+          placeholder={fallback}
+          disabled={saving}
+          onChange={(e) => setName(e.target.value)}
+          className="inline-input"
+        />
+        <button type="button" className="btn-ghost" disabled={saving} onClick={save}>
+          Kaydet
+        </button>
+        {saveError && <span className="error">{saveError}</span>}
+      </div>
+    </li>
   )
 }
