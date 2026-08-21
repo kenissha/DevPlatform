@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/deployment"
+	"github.com/kenissha/DevPlatform/backend/internal/displaynames"
 	"github.com/kenissha/DevPlatform/backend/internal/gittoken"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
@@ -177,6 +179,29 @@ func TestMe_ReturnsAuthenticatedUser(t *testing.T) {
 	}
 	if got.Subject != "user-1" || got.Email != "user-1@example.com" || got.Role != auth.RoleDeveloper {
 		t.Errorf("user = %+v, unexpected fields", got)
+	}
+}
+
+func TestMe_IncludesDisplayNameOverride(t *testing.T) {
+	dataDir := t.TempDir()
+	displayNames := displaynames.NewStore(filepath.Join(dataDir, "display-names.json"))
+	if err := displayNames.Set("dev-1", "Rifat Öztürk"); err != nil {
+		t.Fatalf("Set returned error: %v", err)
+	}
+
+	router := NewRouter(Deps{
+		GitHandler:     http.NotFoundHandler(),
+		AuthMiddleware: testAuthMiddleware(),
+		Users:          users.NewStore(filepath.Join(dataDir, "users.json")),
+		DisplayNames:   displayNames,
+	})
+
+	rec := do(t, router, http.MethodGet, "/api/me", "dev-1", "developer", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if !strings.Contains(rec.Body.String(), "Rifat") {
+		t.Errorf("body = %q, want it to contain the display name override", rec.Body.String())
 	}
 }
 

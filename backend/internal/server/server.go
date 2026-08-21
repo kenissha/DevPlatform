@@ -9,6 +9,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/deployment"
+	"github.com/kenissha/DevPlatform/backend/internal/displaynames"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
 	"github.com/kenissha/DevPlatform/backend/internal/gittoken"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
@@ -48,6 +49,11 @@ type Deps struct {
 	// requires access.RequireRepoAccess to pass, and /api/access exposes
 	// the admin-only management API.
 	Access *access.Store
+	// DisplayNames overrides how a subject's name appears in the panel
+	// (see internal/displaynames — the SSO JWT carries no name claim, only
+	// subject/email). Optional: a nil Store means everyone falls back to
+	// their email, matching today's behavior.
+	DisplayNames *displaynames.Store
 	// GitTokens issues and revokes the per-person git credentials that
 	// gate the /git/ route (see internal/gittoken). Not optional in
 	// practice — cmd/devplatform/main.go always constructs one — but a
@@ -70,6 +76,7 @@ func NewRouter(deps Deps) *http.ServeMux {
 	notifications := deps.Notifications
 	deployments := deps.Deployments
 	accessHandlers := &access.Handlers{Store: deps.Access}
+	displayNameHandlers := &displaynames.Handlers{Store: deps.DisplayNames}
 	gitTokens := deps.GitTokens
 
 	// repoScoped wraps a handler for any route with a {repo} path value:
@@ -98,7 +105,7 @@ func NewRouter(deps Deps) *http.ServeMux {
 	// them in the people registry (see internal/users) — that just-in-time
 	// provisioning is what keeps the assignee picker's list of colleagues
 	// accurate without anyone maintaining it by hand.
-	mux.Handle("GET /api/me", authMiddleware(handleMe(deps.Users)))
+	mux.Handle("GET /api/me", authMiddleware(handleMe(deps.Users, deps.DisplayNames)))
 	mux.Handle("GET /api/users", authMiddleware(handleUsers(deps.Users)))
 
 	// Any authenticated user can list repos (List narrows the result to
@@ -191,6 +198,10 @@ func NewRouter(deps Deps) *http.ServeMux {
 	mux.Handle("PUT /api/access/{subject}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(accessHandlers.Set))))
 	mux.Handle("DELETE /api/access/{subject}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(accessHandlers.Clear))))
 
+	mux.Handle("GET /api/display-names", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(displayNameHandlers.List))))
+	mux.Handle("PUT /api/display-names/{subject}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(displayNameHandlers.Set))))
+	mux.Handle("DELETE /api/display-names/{subject}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(displayNameHandlers.Clear))))
+
 	// Per-person git credentials (see internal/gittoken). Anyone can mint
 	// their own (no {subject} in the path — it always targets the
 	// caller's own JWT subject); only an Admin can revoke someone else's,
@@ -202,7 +213,19 @@ func NewRouter(deps Deps) *http.ServeMux {
 	return mux
 }
 
-func handleMe(registry *users.Store) http.Handler {
+// meResponse is /api/me's response shape: the authenticated identity plus
+// a display name resolved via internal/displaynames — kept as a local
+// wrapper rather than a field on auth.User itself, since auth.User is used
+// internally for authorization decisions that have nothing to do with how
+// a name is displayed.
+type meResponse struct {
+	Subject     string    `json:"subject"`
+	Email       string    `json:"email"`
+	Role        auth.Role `json:"role"`
+	DisplayName string    `json:"displayName"`
+}
+
+func handleMe(registry *users.Store, displayNames *displaynames.Store) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, ok := auth.UserFromContext(r.Context())
 		if !ok {
@@ -219,9 +242,16 @@ func handleMe(registry *users.Store) http.Handler {
 			}
 		}
 
+		resp := meResponse{
+			Subject:     user.Subject,
+			Email:       user.Email,
+			Role:        user.Role,
+			DisplayName: displayNames.Get(user.Subject, user.Email),
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		if err := json.NewEncoder(w).Encode(user); err != nil {
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			log.Printf("handleMe: failed to encode response: %v", err)
 		}
 	})

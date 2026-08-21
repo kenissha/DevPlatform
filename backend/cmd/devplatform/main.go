@@ -14,6 +14,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/config"
 	"github.com/kenissha/DevPlatform/backend/internal/deploy"
 	"github.com/kenissha/DevPlatform/backend/internal/deployment"
+	"github.com/kenissha/DevPlatform/backend/internal/displaynames"
 	"github.com/kenissha/DevPlatform/backend/internal/gitserver"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
 	"github.com/kenissha/DevPlatform/backend/internal/gittoken"
@@ -57,6 +58,7 @@ func main() {
 	// PUT /api/access/{subject} for a specific person (see
 	// internal/access's doc comment for why unrestricted is the default).
 	accessStore := access.NewStore(filepath.Join(cfg.DataDir, "access.json"))
+	displayNamesStore := displaynames.NewStore(filepath.Join(cfg.DataDir, "display-names.json"))
 	// gitTokenStore holds the per-person git credentials that replace the
 	// single shared DEVPLATFORM_GIT_USERNAME/_PASSWORD pair — see
 	// docs/superpowers/specs/2026-08-17-per-user-git-access-design.md.
@@ -191,6 +193,7 @@ func main() {
 		Deployments:    deploymentHandlers,
 		Users:          usersStore,
 		Access:         accessStore,
+		DisplayNames:   displayNamesStore,
 		GitTokens:      gitTokenHandlers,
 	})
 
