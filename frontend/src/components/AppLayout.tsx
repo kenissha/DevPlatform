@@ -35,7 +35,8 @@ export function AppLayout() {
   const nestedMatch = useMatch('/repos/:repo/*')
   const repo = exactMatch?.params.repo ?? nestedMatch?.params.repo
 
-  const initials = (user?.email || user?.subject || '?').slice(0, 2)
+  const shownName = user?.displayName || user?.email || user?.subject || '?'
+  const initials = shownName.slice(0, 2)
 
   return (
     <div className="app-shell">
@@ -49,7 +50,7 @@ export function AppLayout() {
           <div className="topbar-user">
             <div className="user-identity">
               <span className="avatar">{initials}</span>
-              <span className="muted">{user.email || user.subject}</span>
+              <span className="muted">{shownName}</span>
             </div>
             <span className={`badge ${user.role === 'admin' ? 'badge-warn' : 'badge-neutral'}`}>
               {user.role === 'admin' ? 'Yönetici' : 'Geliştirici'}
