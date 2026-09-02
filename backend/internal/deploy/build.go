@@ -119,7 +119,7 @@ func (b *Builder) buildNpm(sourceDir, outputDir string) error {
 // alongside main.go) has to be copied into the release explicitly.
 func (b *Builder) buildGo(sourceDir, outputDir string) error {
 	exePath := filepath.Join(outputDir, "app.exe")
-	cmd := exec.Command("go", "build", "-o", exePath, "./cmd/server")
+	cmd := exec.Command(goBin(), "build", "-o", exePath, "./cmd/server")
 	cmd.Dir = sourceDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -134,6 +134,24 @@ func (b *Builder) buildGo(sourceDir, outputDir string) error {
 		return fmt.Errorf("deploy: failed to write web.config into release: %w", err)
 	}
 	return nil
+}
+
+// goBin returns the go toolchain executable to run, preferring
+// DEVPLATFORM_GO_BIN (a full path to go.exe) when set. exec.Command
+// resolves a bare "go" via the launching process's own PATH — under
+// IIS's httpPlatformHandler, that process's PATH does not reliably pick
+// up a PATH environment variable set in the site's web.config even after
+// the app pool is restarted (observed in production: PATH edits added to
+// web.config's <environmentVariables> and a full restart still left "go"
+// unresolvable), so a full-path override is the dependable fix. Falls
+// back to the bare "go" (ordinary PATH lookup) when unset, matching this
+// package's behavior everywhere PATH resolution does work (local dev,
+// most non-IIS hosts).
+func goBin() string {
+	if v := os.Getenv("DEVPLATFORM_GO_BIN"); v != "" {
+		return v
+	}
+	return "go"
 }
 
 // copyDir recursively copies the contents of src into dst, preserving the
