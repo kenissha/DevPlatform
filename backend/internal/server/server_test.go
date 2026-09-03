@@ -175,8 +175,8 @@ func TestSecrets_Set_RequiresAdmin(t *testing.T) {
 	}
 
 	rec = do(t, router, http.MethodPut, "/api/secrets/sample/test", "admin-1", "admin", map[string]string{"content": "OAS_PASSWORD=hunter2"})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("admin PUT /api/secrets: status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("admin PUT /api/secrets: status = %d, want %d, body=%s", rec.Code, http.StatusNoContent, rec.Body.String())
 	}
 	if strings.Contains(rec.Body.String(), "hunter2") {
 		t.Errorf("response echoed the secret content back: %s", rec.Body.String())

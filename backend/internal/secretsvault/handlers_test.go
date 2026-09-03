@@ -17,8 +17,8 @@ func TestHandlers_Set_StoresTheSecret(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.Set(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusNoContent, rec.Body.String())
 	}
 	got, err := store.Get("sample", "test")
 	if err != nil {

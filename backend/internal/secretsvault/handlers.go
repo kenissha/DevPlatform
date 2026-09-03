@@ -28,7 +28,11 @@ type setSecretsRequest struct {
 
 // Set handles PUT /api/secrets/{repo}/{environment}, encrypting the
 // request body's content and storing it for (repo, environment) —
-// overwriting whatever was there before. The response never includes the
+// overwriting whatever was there before. Responds 204 (not 200) on
+// success: the frontend's request() helper treats 204 as "no body to
+// parse" and only that status, matching clearAccess/clearDisplayName's
+// DELETE handlers — a 200 with an empty body makes it try to
+// JSON-decode nothing and throw. The response never includes the
 // content back, even on success.
 func (h *Handlers) Set(w http.ResponseWriter, r *http.Request) {
 	if h.Store == nil {
@@ -58,5 +62,5 @@ func (h *Handlers) Set(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(http.StatusNoContent)
 }
