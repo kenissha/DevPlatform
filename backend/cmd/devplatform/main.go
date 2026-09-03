@@ -182,21 +182,22 @@ func main() {
 	}
 
 	router := server.NewRouter(server.Deps{
-		GitHandler:     authedGitHandler,
-		AuthMiddleware: authMiddleware,
-		MergeRequests:  mrHandlers,
-		Repos:          repoHandlers,
-		Tasks:          taskHandlers,
-		Stats:          statsHandlers,
-		Audit:          auditHandlers,
-		Notifications:  notifyHandlers,
-		Deployments:    deploymentHandlers,
-		Users:          usersStore,
-		Access:         accessStore,
-		DisplayNames:   displayNamesStore,
-		SecretsVault:   secretsStore,
-		GitTokens:      gitTokenHandlers,
-		LoginCLIPath:   cfg.LoginCLIPath,
+		GitHandler:      authedGitHandler,
+		AuthMiddleware:  authMiddleware,
+		MergeRequests:   mrHandlers,
+		Repos:           repoHandlers,
+		Tasks:           taskHandlers,
+		Stats:           statsHandlers,
+		Audit:           auditHandlers,
+		Notifications:   notifyHandlers,
+		Deployments:     deploymentHandlers,
+		Users:           usersStore,
+		Access:          accessStore,
+		DisplayNames:    displayNamesStore,
+		SecretsVault:    secretsStore,
+		GitTokens:       gitTokenHandlers,
+		LoginCLIPath:    cfg.LoginCLIPath,
+		LoginCLIBaseURL: cfg.BaseURL,
 	})
 
 	if cfg.FrontendDir != "" {

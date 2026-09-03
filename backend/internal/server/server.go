@@ -78,6 +78,12 @@ type Deps struct {
 	// until an operator deliberately configures this, the same pattern
 	// as AllowedSitesFile/BackupDir.
 	LoginCLIPath string
+	// LoginCLIBaseURL is this deployment's real externally-visible
+	// origin, passed through to logincli.Handlers.BaseURL — see that
+	// field's doc comment for why the install script can't rely on the
+	// incoming request's Host header in production. Typically the same
+	// value as BaseURL already used for notification email links.
+	LoginCLIBaseURL string
 }
 
 // NewRouter builds the top-level HTTP router.
@@ -95,7 +101,7 @@ func NewRouter(deps Deps) *http.ServeMux {
 	displayNameHandlers := &displaynames.Handlers{Store: deps.DisplayNames}
 	secretsHandlers := &secretsvault.Handlers{Store: deps.SecretsVault}
 	gitTokens := deps.GitTokens
-	loginCLI := &logincli.Handlers{Path: deps.LoginCLIPath}
+	loginCLI := &logincli.Handlers{Path: deps.LoginCLIPath, BaseURL: deps.LoginCLIBaseURL}
 
 	// repoScoped wraps a handler for any route with a {repo} path value:
 	// authentication first, then access.RequireRepoAccess (a nil

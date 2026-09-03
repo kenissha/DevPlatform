@@ -24,6 +24,18 @@ type Handlers struct {
 	// the same "nothing until deliberately configured" pattern as
 	// internal/config's AllowedSitesFile/BackupDir.
 	Path string
+	// BaseURL is this deployment's real externally-visible origin
+	// (e.g. "https://git.sigortatahkim.org"), the same value
+	// internal/config.Config.BaseURL already provides for notification
+	// links. InstallScript needs this rather than the incoming
+	// request's Host header — in production this process sits behind
+	// IIS's reverse proxy and only ever sees the internal loopback
+	// address (e.g. 127.0.0.1:8082) as its Host, discovered live
+	// (2026-09-03) when the generated script tried to download from
+	// that internal address and failed with "cannot connect to the
+	// remote server". Falls back to the request's own Host when empty,
+	// which is fine for local, non-proxied development.
+	BaseURL string
 }
 
 // Download serves the raw exe.
@@ -42,15 +54,17 @@ func (h *Handlers) Download(w http.ResponseWriter, r *http.Request) {
 
 // InstallScript serves a small PowerShell script that downloads the exe
 // to a fixed local path and runs `install` — the "irm ... | iex" entry
-// point. The download URL is built from the incoming request's own Host
-// header rather than hardcoded, so this works unchanged if the git host
-// is ever renamed.
+// point.
 func (h *Handlers) InstallScript(w http.ResponseWriter, r *http.Request) {
 	if h.Path == "" {
 		http.Error(w, "404 not found", http.StatusNotFound)
 		return
 	}
-	downloadURL := "https://" + r.Host + "/api/devplatform-login.exe"
+	base := h.BaseURL
+	if base == "" {
+		base = "https://" + r.Host
+	}
+	downloadURL := base + "/api/devplatform-login.exe"
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	fmt.Fprintf(w, installScriptTemplate, downloadURL)
 }
