@@ -2,9 +2,11 @@
 // smart-HTTP endpoints, replacing the single shared
 // DEVPLATFORM_GIT_USERNAME/_PASSWORD pair — see
 // docs/superpowers/specs/2026-08-17-per-user-git-access-design.md. Each
-// person gets at most one active, high-entropy token; only its SHA-256
-// hash is ever persisted, and the raw value is returned exactly once, at
-// generation time.
+// person can have any number of active, independently-revocable
+// tokens (one per machine/CLI login is the expected pattern — see
+// docs/superpowers/specs/2026-09-03-cli-git-login-design.md) — only
+// each token's SHA-256 hash is ever persisted, and a raw value is
+// returned exactly once, at generation time.
 package gittoken
 
 import (
@@ -18,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 var ErrInvalidSubject = errors.New("gittoken: subject must not be empty")
@@ -27,18 +30,30 @@ var ErrInvalidSubject = errors.New("gittoken: subject must not be empty")
 // secret and internal/secretsvault's key use elsewhere in this codebase.
 const tokenBytes = 32
 
-// unknownSubjectHash is compared against when subject has no stored
-// hash, so Verify always runs ConstantTimeCompare against a same-length
-// buffer regardless of whether subject exists — an unknown-subject
-// rejection and a wrong-token rejection take the same amount of time,
-// the same discipline internal/gitauth (which this package replaces)
-// already applied to username/password comparison.
-var unknownSubjectHash = hex.EncodeToString(make([]byte, sha256.Size))
+// idBytes is the raw entropy of a token's ID — this only needs to be
+// unique per subject, not globally, so it's shorter than tokenBytes.
+const idBytes = 8
 
-// Store persists, per subject, the SHA-256 hash of their single active
-// git token. Unlike internal/access, every caller here already has a
-// concrete Store (see cmd/devplatform/main.go) — there is no
-// "optionally inert nil Store" case to support.
+// Token is one of a subject's active credentials.
+type Token struct {
+	ID        string    `json:"id"`
+	Hash      string    `json:"hash"`
+	Label     string    `json:"label"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// TokenInfo is Token without its Hash — what List returns for the
+// panel's "Hesabım" page. The hash never needs to leave this package.
+type TokenInfo struct {
+	ID        string    `json:"id"`
+	Label     string    `json:"label"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// Store persists, per subject, the list of their active tokens. Unlike
+// internal/access, every caller here already has a concrete Store (see
+// cmd/devplatform/main.go) — there is no "optionally inert nil Store"
+// case to support.
 type Store struct {
 	mu   sync.Mutex
 	path string
@@ -50,42 +65,106 @@ func NewStore(path string) *Store {
 	return &Store{path: path}
 }
 
-// Generate creates a new random token for subject, persists its hash
-// (overwriting any previous token — a subject has at most one active
-// token, the same "generating a new one invalidates the old" model as a
-// password reset), and returns the raw token. This is the only moment
-// the raw value exists outside the caller's memory; it is never stored
-// and cannot be recovered afterward.
-func (s *Store) Generate(subject string) (string, error) {
+// now is a seam so tests could freeze CreatedAt if ever needed —
+// matches the pattern internal/deploy/versionstore.go already
+// established for the same reason.
+var now = time.Now
+
+// Generate creates a new random token for subject, labeled label, and
+// ADDS it to subject's active tokens — it never invalidates any
+// existing token (unlike the single-token model this replaced). This is
+// the only moment the raw value exists outside the caller's memory; it
+// is never stored and cannot be recovered afterward.
+func (s *Store) Generate(subject, label string) (id, rawToken string, err error) {
 	if subject == "" {
-		return "", ErrInvalidSubject
+		return "", "", ErrInvalidSubject
 	}
+
+	rawID := make([]byte, idBytes)
+	if _, err := rand.Read(rawID); err != nil {
+		return "", "", err
+	}
+	id = hex.EncodeToString(rawID)
 
 	raw := make([]byte, tokenBytes)
 	if _, err := rand.Read(raw); err != nil {
-		return "", err
+		return "", "", err
 	}
-	token := base64.RawURLEncoding.EncodeToString(raw)
+	rawToken = base64.RawURLEncoding.EncodeToString(raw)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	registry, err := s.load()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	registry[subject] = hash(token)
+	registry[subject] = append(registry[subject], Token{
+		ID:        id,
+		Hash:      hash(rawToken),
+		Label:     label,
+		CreatedAt: now().UTC(),
+	})
 	if err := s.save(registry); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return token, nil
+	return id, rawToken, nil
 }
 
-// Revoke removes subject's stored token hash, if any. A subject with no
-// stored token is not an error — revoking is idempotent, the same
-// "removing something already absent succeeds" convention
+// List returns subject's active tokens, newest first, without their
+// hashes.
+func (s *Store) List(subject string) ([]TokenInfo, error) {
+	if subject == "" {
+		return nil, ErrInvalidSubject
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	registry, err := s.load()
+	if err != nil {
+		return nil, err
+	}
+	tokens := registry[subject]
+	out := make([]TokenInfo, len(tokens))
+	for i, t := range tokens {
+		// Generate appends, so the stored order is oldest-first — reverse
+		// it so List reads newest-first, the order the panel wants.
+		out[len(tokens)-1-i] = TokenInfo{ID: t.ID, Label: t.Label, CreatedAt: t.CreatedAt}
+	}
+	return out, nil
+}
+
+// Revoke removes subject's token with the given id, if any. A missing
+// id is not an error — idempotent, the same convention
 // internal/access.Store.Clear uses.
-func (s *Store) Revoke(subject string) error {
+func (s *Store) Revoke(subject, id string) error {
+	if subject == "" {
+		return ErrInvalidSubject
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	registry, err := s.load()
+	if err != nil {
+		return err
+	}
+	tokens := registry[subject]
+	out := tokens[:0]
+	for _, t := range tokens {
+		if t.ID != id {
+			out = append(out, t)
+		}
+	}
+	registry[subject] = out
+	return s.save(registry)
+}
+
+// RevokeAll removes every one of subject's active tokens — "cut off
+// this person's git access entirely," what the admin-only
+// DELETE /api/git-token/{subject} route performs.
+func (s *Store) RevokeAll(subject string) error {
 	if subject == "" {
 		return ErrInvalidSubject
 	}
@@ -101,7 +180,7 @@ func (s *Store) Revoke(subject string) error {
 	return s.save(registry)
 }
 
-// Verify reports whether token is subject's current active token. Load
+// Verify reports whether token is one of subject's active tokens. Load
 // errors are treated as "not verified" rather than surfaced — this runs
 // on the hot path of every git request as an HTTP Basic Auth gate, where
 // the only two outcomes that matter are "allowed" or "401"; a corrupt
@@ -114,12 +193,17 @@ func (s *Store) Verify(subject, token string) bool {
 		return false
 	}
 
-	want, ok := registry[subject]
-	if !ok {
-		want = unknownSubjectHash
-	}
 	got := hash(token)
-	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+	matched := false
+	for _, t := range registry[subject] {
+		// Compare against every stored hash, not just until the first
+		// match — stopping early would make timing depend on which
+		// token (if any) matched.
+		if subtle.ConstantTimeCompare([]byte(got), []byte(t.Hash)) == 1 {
+			matched = true
+		}
+	}
+	return matched
 }
 
 func hash(token string) string {
@@ -129,15 +213,15 @@ func hash(token string) string {
 
 // load reads the registry. A missing file is an empty registry, not an
 // error — nobody has generated a token yet.
-func (s *Store) load() (map[string]string, error) {
+func (s *Store) load() (map[string][]Token, error) {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return map[string]string{}, nil
+			return map[string][]Token{}, nil
 		}
 		return nil, err
 	}
-	registry := map[string]string{}
+	registry := map[string][]Token{}
 	if len(data) == 0 {
 		return registry, nil
 	}
@@ -149,8 +233,8 @@ func (s *Store) load() (map[string]string, error) {
 
 // save writes the registry via a temp file and rename, so an interrupted
 // write can't leave a half-written registry behind — the same pattern
-// internal/access.Store.save and internal/users.Store.save use.
-func (s *Store) save(registry map[string]string) error {
+// internal/access.Store.save uses.
+func (s *Store) save(registry map[string][]Token) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o750); err != nil {
 		return err
 	}
