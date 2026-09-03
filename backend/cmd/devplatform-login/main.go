@@ -63,7 +63,7 @@ func runGet() {
 	if err := saveCache(cachedCredential{Subject: subject, Token: token, CachedAt: time.Now()}); err != nil {
 		// A cache write failure shouldn't block this login from working
 		// right now — it just means the next git operation prompts again.
-		fmt.Fprintf(os.Stderr, "devplatform-login: uyarı: token önbelleğe yazılamadı: %v\n", err)
+		fmt.Fprintf(os.Stderr, "devplatform-login: uyarı: anahtar önbelleğe yazılamadı: %v\n", err)
 	}
 	fmt.Printf("username=%s\npassword=%s\n", subject, token)
 }
@@ -82,9 +82,35 @@ func runErase() {
 	}
 }
 
-func installCommand(selfPath string) *exec.Cmd {
-	return exec.Command("git", "config", "--global",
-		"credential.https://git.sigortatahkim.org.helper", selfPath)
+// installCommands returns the two git-config invocations `install`
+// needs to run, in order:
+//
+//  1. Reset any inherited credential.helper chain for this host to
+//     empty first. Git for Windows' own system config sets a generic
+//     credential.helper=manager for every host; without this reset,
+//     that helper answers first (it's read before --global) and
+//     devplatform-login is never invoked at all — this is the exact
+//     failure mode ("stale token, silent 401") the whole plan exists
+//     to remove. An empty helper value at a more specific URL scope
+//     tells git "ignore anything less specific, start the list over
+//     here" — the same idiom GitHub CLI's own `gh auth setup-git`
+//     writes for github.com (see this machine's own ~/.gitconfig).
+//  2. Add the real helper, wrapped as an explicit shell command (the
+//     leading "!") with the path single-quoted. Git invokes helpers
+//     via `sh -c`, which treats a bare backslash as an escape
+//     character — an unquoted Windows path like
+//     C:\Users\x\devplatform-login.exe is silently mangled into
+//     something that "command not found"s. Single-quoting inside a
+//     sh command string makes backslashes (and spaces, e.g. under
+//     "C:\Program Files") literal.
+func installCommands(selfPath string) []*exec.Cmd {
+	helperValue := "!'" + selfPath + "'"
+	return []*exec.Cmd{
+		exec.Command("git", "config", "--global", "--replace-all",
+			"credential.https://git.sigortatahkim.org.helper", ""),
+		exec.Command("git", "config", "--global", "--add",
+			"credential.https://git.sigortatahkim.org.helper", helperValue),
+	}
 }
 
 func runInstall() {
@@ -93,10 +119,11 @@ func runInstall() {
 		fmt.Fprintf(os.Stderr, "devplatform-login: kendi yolum bulunamadı: %v\n", err)
 		os.Exit(1)
 	}
-	cmd := installCommand(self)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "devplatform-login: git config başarısız: %v\n%s\n", err, out)
-		os.Exit(1)
+	for _, cmd := range installCommands(self) {
+		if out, err := cmd.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "devplatform-login: git config başarısız: %v\n%s\n", err, out)
+			os.Exit(1)
+		}
 	}
 	fmt.Println("Kuruldu. Artık git.sigortatahkim.org için git işlemleri otomatik kimlik doğrulayacak.")
 }
@@ -112,14 +139,14 @@ func promptAndLogin() (subject, token string, err error) {
 	defer in.Close()
 	defer out.Close()
 
-	fmt.Fprint(out, "STK Atölye kullanıcı adı: ")
+	fmt.Fprint(out, "STK Atölye (Intranet) kullanıcı adı: ")
 	scanner := bufio.NewScanner(in)
 	if !scanner.Scan() {
 		return "", "", fmt.Errorf("kullanıcı adı okunamadı")
 	}
 	username := scanner.Text()
 
-	fmt.Fprint(out, "Şifre: ")
+	fmt.Fprint(out, "Windows şifreniz: ")
 	passwordBytes, err := term.ReadPassword(int(in.Fd()))
 	fmt.Fprintln(out)
 	if err != nil {

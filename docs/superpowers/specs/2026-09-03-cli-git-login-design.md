@@ -121,7 +121,13 @@ kapsamı) ile şifrelenmiş — sadece o Windows kullanıcı hesabı, o makinede
 ```
 devplatform-login install
 ```
-bu, `git config --global credential.https://git.sigortatahkim.org.helper "<tam-yol>\devplatform-login.exe"` çalıştırır. Kullanıcı bundan sonra
+bu iki `git config --global` komutu çalıştırır: önce bu host için
+kalıtılan tüm credential helper zincirini sıfırlar (aksi halde Git for
+Windows'un kendi sistem ayarındaki genel `credential.helper=manager`
+her zaman önce cevap verir ve devplatform-login hiç çağrılmaz), sonra
+`devplatform-login`'i `!'<tam-yol>\devplatform-login.exe'` şeklinde
+(sh için backslash ve boşlukları literal tutan tek-tırnaklı bir shell
+komutu olarak) ekler. Kullanıcı bundan sonra
 remote URL'lerini **token'sız** yazabilir:
 ```
 git remote add origin https://git.sigortatahkim.org/git/<repo>.git

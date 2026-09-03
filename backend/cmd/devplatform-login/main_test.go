@@ -2,20 +2,48 @@ package main
 
 import "testing"
 
-func TestInstallCommand_UsesTheExactHelperConfigKey(t *testing.T) {
-	cmd := installCommand(`C:\tools\devplatform-login.exe`)
+func TestInstallCommands_ResetsThenAddsTheShellSafeHelper(t *testing.T) {
+	cmds := installCommands(`C:\tools\devplatform-login.exe`)
 
-	want := []string{
-		"git", "config", "--global",
-		"credential.https://git.sigortatahkim.org.helper", `C:\tools\devplatform-login.exe`,
+	if len(cmds) != 2 {
+		t.Fatalf("installCommands returned %d commands, want 2", len(cmds))
 	}
-	got := cmd.Args
-	if len(got) != len(want) {
-		t.Fatalf("args = %v, want %v", got, want)
+
+	wantReset := []string{
+		"git", "config", "--global", "--replace-all",
+		"credential.https://git.sigortatahkim.org.helper", "",
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("args[%d] = %q, want %q", i, got[i], want[i])
+	if got := cmds[0].Args; !argsEqual(got, wantReset) {
+		t.Errorf("reset command args = %v, want %v", got, wantReset)
+	}
+
+	wantAdd := []string{
+		"git", "config", "--global", "--add",
+		"credential.https://git.sigortatahkim.org.helper",
+		`!'C:\tools\devplatform-login.exe'`,
+	}
+	if got := cmds[1].Args; !argsEqual(got, wantAdd) {
+		t.Errorf("add command args = %v, want %v", got, wantAdd)
+	}
+}
+
+func TestInstallCommands_QuotesAPathContainingSpaces(t *testing.T) {
+	cmds := installCommands(`C:\Program Files\devplatform-login.exe`)
+
+	want := `!'C:\Program Files\devplatform-login.exe'`
+	if got := cmds[1].Args[len(cmds[1].Args)-1]; got != want {
+		t.Errorf("helper value = %q, want %q", got, want)
+	}
+}
+
+func argsEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
 		}
 	}
+	return true
 }

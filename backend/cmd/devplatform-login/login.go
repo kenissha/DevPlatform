@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -19,19 +20,33 @@ var (
 	devplatformBaseURL = "https://git.sigortatahkim.org"
 )
 
+// httpClient has an explicit timeout — git invokes this whole login
+// chain synchronously from inside a credential-helper call and blocks
+// on it, so an unreachable-but-not-refusing Intranet-B (VPN drop, a
+// load balancer that accepts the connection and never responds) would
+// otherwise hang `git clone`/`pull`/`push` forever with no output and
+// no way to tell what's wrong.
+var httpClient = &http.Client{Timeout: 30 * time.Second}
+
 // login runs the 3-step exchange (Intranet-B login -> devplatform-sso
 // -> DevPlatform git-token) and returns the resulting subject and git
 // token. The AD password is only ever held in this process's memory —
 // never written to disk.
 func login(username, password string) (subject, token string, err error) {
+	// intranetLogin and devplatformSSO's own errors are already
+	// complete, staged Turkish messages (they name which step failed
+	// and why) — wrapping them again here just repeats "giriş"/
+	// "girişi" back to back for no added information. mintGitToken and
+	// jwtSubject's inner errors are comparatively raw/technical, so
+	// those two DO still get a Turkish wrapper naming the stage.
 	intranetJWT, err := intranetLogin(username, password)
 	if err != nil {
-		return "", "", fmt.Errorf("intranet girişi başarısız: %w", err)
+		return "", "", err
 	}
 
 	devplatformJWT, err := devplatformSSO(intranetJWT)
 	if err != nil {
-		return "", "", fmt.Errorf("devplatform yetkisi alınamadı: %w", err)
+		return "", "", err
 	}
 
 	_, gitToken, err := mintGitToken(devplatformJWT, hostLabel())
@@ -41,14 +56,14 @@ func login(username, password string) (subject, token string, err error) {
 
 	subject, err = jwtSubject(devplatformJWT)
 	if err != nil {
-		return "", "", fmt.Errorf("devplatform token'ı okunamadı: %w", err)
+		return "", "", fmt.Errorf("devplatform oturum bilgisi okunamadı: %w", err)
 	}
 	return subject, gitToken, nil
 }
 
 func intranetLogin(username, password string) (string, error) {
 	body, _ := json.Marshal(map[string]string{"Username": username, "Password": password})
-	resp, err := http.Post(intranetBaseURL+"/api/auth/login", "application/json", bytes.NewReader(body))
+	resp, err := httpClient.Post(intranetBaseURL+"/api/auth/login", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return "", err
 	}
@@ -74,7 +89,7 @@ func devplatformSSO(intranetJWT string) (string, error) {
 		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+intranetJWT)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -105,7 +120,7 @@ func mintGitToken(devplatformJWT, label string) (id, token string, err error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+devplatformJWT)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", "", err
 	}

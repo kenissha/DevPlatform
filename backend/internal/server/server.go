@@ -215,10 +215,13 @@ func NewRouter(deps Deps) *http.ServeMux {
 	// why there is no corresponding GET.
 	mux.Handle("PUT /api/secrets/{repo}/{environment}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(secretsHandlers.Set))))
 
-	// Per-person git credentials (see internal/gittoken). Anyone can mint
-	// their own (no {subject} in the path — it always targets the
-	// caller's own JWT subject); only an Admin can revoke someone else's,
-	// the same split /api/access uses between "sees own" and "manages
+	// Per-person git credentials (see internal/gittoken). A person can
+	// have several active tokens at once (one per machine/CLI login);
+	// GenerateMine/ListMine/RevokeMine always target the caller's own
+	// JWT subject (no {subject} in those paths) — only an Admin can
+	// act on someone else's, via the one route that does take
+	// {subject} and revokes every token that subject has, the same
+	// split /api/access uses between "sees own" and "manages
 	// everyone".
 	mux.Handle("POST /api/me/git-token", authMiddleware(http.HandlerFunc(gitTokens.GenerateMine)))
 	mux.Handle("DELETE /api/git-token/{subject}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(gitTokens.Revoke))))

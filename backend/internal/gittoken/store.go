@@ -19,6 +19,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -157,7 +158,11 @@ func (s *Store) Revoke(subject, id string) error {
 			out = append(out, t)
 		}
 	}
-	registry[subject] = out
+	if len(out) == 0 {
+		delete(registry, subject)
+	} else {
+		registry[subject] = out
+	}
 	return s.save(registry)
 }
 
@@ -194,8 +199,14 @@ func (s *Store) Verify(subject, token string) bool {
 	}
 
 	got := hash(token)
+	tokens := registry[subject]
+	if len(tokens) == 0 {
+		subtle.ConstantTimeCompare([]byte(got), []byte(unknownSubjectHash))
+		return false
+	}
+
 	matched := false
-	for _, t := range registry[subject] {
+	for _, t := range tokens {
 		// Compare against every stored hash, not just until the first
 		// match — stopping early would make timing depend on which
 		// token (if any) matched.
@@ -205,6 +216,19 @@ func (s *Store) Verify(subject, token string) bool {
 	}
 	return matched
 }
+
+// unknownSubjectHash is compared against when a subject has zero
+// tokens, so a request for a subject that doesn't exist takes the same
+// time as one for a subject that exists but sent the wrong token —
+// the same discipline internal/gitauth applies elsewhere for this
+// package's git Basic-Auth hot path. The value is arbitrary; it can
+// never equal a real token's hash (every real hash is the SHA-256 of
+// an actual generated token), so this comparison is always expected
+// to fail — its only purpose is to cost the same amount of time as a
+// real comparison would. Built with strings.Repeat rather than a
+// hand-typed literal so its length is exactly right by construction
+// (hex.EncodeToString of a sha256.Sum256 is always 64 characters).
+var unknownSubjectHash = strings.Repeat("0", 64)
 
 func hash(token string) string {
 	sum := sha256.Sum256([]byte(token))

@@ -118,7 +118,11 @@ function GitTokenRevokeButton({ subject }: { subject: string }) {
   const [message, setMessage] = useState<string | null>(null)
 
   async function revoke() {
-    if (!window.confirm('Bu kişinin git anahtarını iptal etmek istediğinizden emin misiniz?')) {
+    if (
+      !window.confirm(
+        'Bu kişinin TÜM git anahtarları iptal edilecek ve bütün makinelerinde git erişimi kesilecek. Emin misiniz?',
+      )
+    ) {
       return
     }
     setRevoking(true)
@@ -136,7 +140,7 @@ function GitTokenRevokeButton({ subject }: { subject: string }) {
   return (
     <>
       <button type="button" className="btn-ghost" disabled={revoking} onClick={revoke}>
-        Git anahtarını iptal et
+        Tüm git anahtarlarını iptal et
       </button>
       {message && <span className="muted">{message}</span>}
     </>

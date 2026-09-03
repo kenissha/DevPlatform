@@ -544,6 +544,34 @@ işi ya da isteğin ömrünü aşan işi olan bir süreç için yanlış barınd
 modeli. Böyle bir süreç Windows Servisi olmalı; IIS sadece önüne
 proxy olarak konulmalı.
 
+**2026-09-03 güncelleme — CLI git login (`devplatform-login`):**
+Token bazlı git kimlik doğrulaması, tek-kişi-tek-token modelinden
+(yeni token üretmek eskisini sessizce geçersiz kılıyordu) çoklu-token,
+bağımsız iptal edilebilir modele geçti (`internal/gittoken`, panelde
+"Hesabım" sayfası). Ayrıca yeni bir Windows CLI aracı eklendi:
+`devplatform-login`, git'in credential-helper protokolünü uyguluyor —
+kurulduktan sonra `git clone`/`pull`/`push` token'sız remote URL'lerle
+çalışıyor, ilk seferde Intranet kullanıcı adı/şifresini soruyor,
+DPAPI ile şifrelenmiş yerel önbellekte tutuyor, token iptal edilirse
+bir sonraki git işleminde otomatik tekrar soruyor.
+
+**Gözetimli doğrulama gerekiyor** (gerçek terminal, gerçek AD hesabı,
+ve hem `devplatform-login.exe` hem sunucu tarafı (Task 1-2) gerçekten
+deploy edilmiş olmalı — `go test` bunları kapsayamaz):
+1. `devplatform-login.exe install` gerçekten git config'i doğru
+   ayarlıyor VE git bu helper'ı gerçekten çağırıyor (sadece anahtarın
+   set edildiğini değil, `git credential fill` ile helper'ın fiilen
+   tetiklendiğini de doğrulamak gerekir).
+2. Önbellekte kayıt yokken taze bir `git clone` gerçek konsolda
+   kullanıcı adı/şifre soruyor (yönlendirilmiş stdin'e yutulmadan) ve
+   doğru girişten sonra başarıyla tamamlanıyor.
+3. Hemen ardından bir `git pull` tekrar sormuyor (önbellek isabeti).
+4. Önbellek dosyası silinirse/bozulursa, ya da bir admin panelden
+   token'ı iptal ederse, bir sonraki git işlemi opak bir 401 yerine
+   otomatik olarak (`erase` üzerinden) tekrar soruyor.
+5. Yanlış şifre net bir Türkçe hata mesajı gösteriyor, ham bir Go
+   hatası ya da AD-içi bir mesaj değil.
+
 ## Kontroller
 
 ```bash
