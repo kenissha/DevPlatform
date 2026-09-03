@@ -236,7 +236,7 @@ export const api = {
     request<void>(`/api/me/git-tokens/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   // Admin-only — revokes EVERY one of subject's tokens (see
   // backend/internal/gittoken.Store.RevokeAll). Unchanged by this
-  // feature; still used from AccessPage.tsx's "Git anahtarını iptal et".
+  // feature; still used from AccessPage.tsx's "Tüm git anahtarlarını iptal et".
   revokeGitToken: (subject: string) =>
     request<void>(`/api/git-token/${encodeURIComponent(subject)}`, { method: 'DELETE' }),
 }
