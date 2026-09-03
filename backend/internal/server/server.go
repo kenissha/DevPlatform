@@ -15,6 +15,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/notify"
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
+	"github.com/kenissha/DevPlatform/backend/internal/secretsvault"
 	"github.com/kenissha/DevPlatform/backend/internal/taskboard"
 	"github.com/kenissha/DevPlatform/backend/internal/users"
 )
@@ -54,6 +55,14 @@ type Deps struct {
 	// subject/email). Optional: a nil Store means everyone falls back to
 	// their email, matching today's behavior.
 	DisplayNames *displaynames.Store
+	// SecretsVault stores per-(repo, environment) encrypted secrets an
+	// admin has uploaded from the panel (see internal/secretsvault) —
+	// deploy.Pipeline reads from it internally when a deploy target's
+	// secretsTarget is set. Optional: a nil Store means /api/secrets
+	// responds 503 rather than accepting an upload nothing will ever
+	// consume, matching Store.Get's own nil-vault-not-configured posture
+	// deploy.Pipeline already relies on.
+	SecretsVault *secretsvault.Store
 	// GitTokens issues and revokes the per-person git credentials that
 	// gate the /git/ route (see internal/gittoken). Not optional in
 	// practice — cmd/devplatform/main.go always constructs one — but a
@@ -77,6 +86,7 @@ func NewRouter(deps Deps) *http.ServeMux {
 	deployments := deps.Deployments
 	accessHandlers := &access.Handlers{Store: deps.Access}
 	displayNameHandlers := &displaynames.Handlers{Store: deps.DisplayNames}
+	secretsHandlers := &secretsvault.Handlers{Store: deps.SecretsVault}
 	gitTokens := deps.GitTokens
 
 	// repoScoped wraps a handler for any route with a {repo} path value:
@@ -201,6 +211,9 @@ func NewRouter(deps Deps) *http.ServeMux {
 	mux.Handle("GET /api/display-names", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(displayNameHandlers.List))))
 	mux.Handle("PUT /api/display-names/{subject}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(displayNameHandlers.Set))))
 	mux.Handle("DELETE /api/display-names/{subject}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(displayNameHandlers.Clear))))
+	// Write-only by design — see secretsvault.Handlers's doc comment for
+	// why there is no corresponding GET.
+	mux.Handle("PUT /api/secrets/{repo}/{environment}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(secretsHandlers.Set))))
 
 	// Per-person git credentials (see internal/gittoken). Anyone can mint
 	// their own (no {subject} in the path — it always targets the

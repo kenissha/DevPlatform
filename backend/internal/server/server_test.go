@@ -23,6 +23,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/notify"
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
+	"github.com/kenissha/DevPlatform/backend/internal/secretsvault"
 	"github.com/kenissha/DevPlatform/backend/internal/taskboard"
 	"github.com/kenissha/DevPlatform/backend/internal/users"
 )
@@ -151,6 +152,42 @@ func TestHealthz_ReturnsOK(t *testing.T) {
 	}
 	if body := rec.Body.String(); body != `{"status":"ok"}`+"\n" {
 		t.Errorf("body = %q, want %q", body, `{"status":"ok"}`+"\n")
+	}
+}
+
+func TestSecrets_Set_RequiresAdmin(t *testing.T) {
+	dataDir := t.TempDir()
+	// A fixed 32-byte key — this test only exercises HTTP routing/gating,
+	// never real encryption strength, so a literal (not randomly
+	// generated) key is fine here.
+	key := []byte("01234567890123456789012345678901"[:32])
+	vault := secretsvault.NewStore(filepath.Join(dataDir, "secrets"), key)
+
+	router := NewRouter(Deps{
+		GitHandler:     http.NotFoundHandler(),
+		AuthMiddleware: testAuthMiddleware(),
+		SecretsVault:   vault,
+	})
+
+	rec := do(t, router, http.MethodPut, "/api/secrets/sample/test", "dev-1", "developer", map[string]string{"content": "OAS_PASSWORD=hunter2"})
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("developer PUT /api/secrets: status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+
+	rec = do(t, router, http.MethodPut, "/api/secrets/sample/test", "admin-1", "admin", map[string]string{"content": "OAS_PASSWORD=hunter2"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("admin PUT /api/secrets: status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "hunter2") {
+		t.Errorf("response echoed the secret content back: %s", rec.Body.String())
+	}
+
+	got, err := vault.Get("sample", "test")
+	if err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+	if string(got) != "OAS_PASSWORD=hunter2" {
+		t.Errorf("stored content = %q, want %q", got, "OAS_PASSWORD=hunter2")
 	}
 }
 

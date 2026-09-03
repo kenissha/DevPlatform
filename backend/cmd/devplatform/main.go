@@ -194,6 +194,7 @@ func main() {
 		Users:          usersStore,
 		Access:         accessStore,
 		DisplayNames:   displayNamesStore,
+		SecretsVault:   secretsStore,
 		GitTokens:      gitTokenHandlers,
 	})
 

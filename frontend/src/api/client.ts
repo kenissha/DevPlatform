@@ -209,6 +209,18 @@ export const api = {
   clearDisplayName: (subject: string) =>
     request<void>(`/api/display-names/${encodeURIComponent(subject)}`, { method: 'DELETE' }),
 
+  // Per-(repo, environment) secrets, encrypted server-side and injected
+  // into a release automatically on every future deploy of that target
+  // (see backend/internal/secretsvault). Deliberately write-only, like
+  // GitHub Actions' own environment secrets — there is no getSecrets:
+  // once saved, a value is never read back through the panel, only
+  // overwritten.
+  setSecrets: (repo: string, environment: string, content: string) =>
+    request<void>(`/api/secrets/${encodeURIComponent(repo)}/${encodeURIComponent(environment)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    }),
+
   // Per-person git credential (Admin-only revoke; anyone can mint their
   // own — see backend/internal/gittoken). The raw token in
   // generateGitToken's response is shown to the caller exactly once;

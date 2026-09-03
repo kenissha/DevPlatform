@@ -102,6 +102,7 @@ export function DeployTargetsPage() {
                   </button>
                 </div>
                 <ReleasesPanel target={t} />
+                <SecretsPanel target={t} />
               </li>
             ))}
           </ul>
@@ -210,6 +211,76 @@ function ReleasesPanel({ target }: { target: DeployTarget }) {
               ))}
             </ul>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// SecretsPanel is a per-target, collapsed-by-default section for
+// uploading the plaintext content that gets encrypted server-side and
+// injected into every future release for this target (see
+// backend/internal/secretsvault). Deliberately write-only, like GitHub
+// Actions' own environment secrets: the textarea always starts empty —
+// there is no API to read a saved value back — and clears again after a
+// successful save so the plaintext never lingers on screen.
+function SecretsPanel({ target }: { target: DeployTarget }) {
+  const [open, setOpen] = useState(false)
+  const [content, setContent] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+
+  async function save() {
+    if (!content.trim()) return
+    setSaving(true)
+    setError(null)
+    setSaved(false)
+    try {
+      await api.setSecrets(target.repo, target.environment, content)
+      setContent('')
+      setSaved(true)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Kaydedilemedi')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="row-sub">
+      <button
+        type="button"
+        className="btn-ghost btn-sm"
+        onClick={() => {
+          setOpen((v) => !v)
+          setSaved(false)
+        }}
+      >
+        Secrets
+      </button>
+      {open && (
+        <div className="release-list">
+          <p className="empty-state">
+            {target.secretsTarget
+              ? `Kaydedilen içerik, her deploy'da release içine "${target.secretsTarget}" olarak yazılır.`
+              : 'Bu hedefte "Secrets hedefi" alanı boş — önce yukarıdaki formda hangi dosya adına yazılacağını belirt.'}
+            {' '}Güvenlik nedeniyle daha önce kaydedilmiş bir değer burada asla gösterilmez, sadece üzerine yazabilirsin.
+          </p>
+          <textarea
+            rows={6}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder={'OAS_USERNAME=...\nOAS_PASSWORD=...'}
+            disabled={saving}
+          />
+          <div className="form-actions">
+            <button type="button" className="btn-primary btn-sm" disabled={saving || !content.trim()} onClick={save}>
+              {saving ? 'Kaydediliyor...' : 'Kaydet'}
+            </button>
+          </div>
+          {saved && <p className="row-meta">Kaydedildi.</p>}
+          {error && <p className="error">{error}</p>}
         </div>
       )}
     </div>
