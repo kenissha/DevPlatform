@@ -49,6 +49,15 @@ type Config struct {
 	// development instead runs the frontend through Vite's dev server,
 	// which proxies API calls to this backend (see frontend/vite.config.ts).
 	FrontendDir string
+	// LoginCLIPath, if set, points at a built devplatform-login.exe on
+	// disk (see backend/cmd/devplatform-login) and turns on serving it
+	// (and a matching install.ps1) so people can set it up with one
+	// command — `irm https://<host>/devplatform-login/install.ps1 | iex`
+	// — instead of the exe being manually copied machine to machine.
+	// Empty by default: no binary is served until an operator points
+	// this at one, the same "nothing until deliberately configured"
+	// pattern as AllowedSitesFile/BackupDir.
+	LoginCLIPath string
 }
 
 // Load reads configuration from the environment, falling back to
@@ -84,6 +93,7 @@ func Load() Config {
 		BackupDir:         getEnv("DEVPLATFORM_BACKUP_DIR", ""),
 		BackupHour:        getEnvInt("DEVPLATFORM_BACKUP_HOUR", 2),
 		FrontendDir:       getEnv("DEVPLATFORM_FRONTEND_DIR", ""),
+		LoginCLIPath:      getEnv("DEVPLATFORM_LOGIN_CLI_PATH", ""),
 	}
 }
 

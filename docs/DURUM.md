@@ -52,7 +52,21 @@ Gerçek giriş, kurumun mevcut sisteminden gelen bir JWT ile olacak (bkz.
 ### Git ile kullanmak
 
 Git artık kişi başına anahtarla çalışıyor — paylaşılan kullanıcı adı/şifre
-yok. Panelde "Hesabım" sayfasından (`POST /api/me/git-token`) kendi
+yok. `main`'e doğrudan push **reddedilir** — merge isteği açman gerekir.
+
+**Gerçek sunucuya karşı, önerilen yol (2026-09-03'ten beri):**
+`devplatform-login` aracını kur (bkz. "CLI git login" güncellemesi,
+aşağıda), sonra remote'u **token'sız** kullan:
+```
+irm https://<host>/devplatform-login/install.ps1 | iex
+git clone https://<host>/git/<repo-adi>.git
+```
+İlk seferde Intranet kullanıcı adı/şifreni sorar, sonrasında hiç
+sormaz. Sunucuda `DEVPLATFORM_LOGIN_CLI_PATH` ayarlı değilse bu iki
+route 404 döner (bkz. `internal/logincli`).
+
+**Lokal geliştirmede, ya da CLI aracı kurulu değilse — elle anahtar:**
+Panelde "Hesabım" sayfasından (`POST /api/me/git-token`) kendi
 anahtarını üret; ham anahtar sadece üretildiği an bir kere gösterilir, o an
 kopyala — sonradan tekrar görüntülenemez.
 
@@ -62,8 +76,7 @@ git push origin <branch>
 ```
 
 Kullanıcı adı, JWT'deki kendi `sub` claim'in; şifre ise üretilen git
-anahtarı. `main`'e doğrudan push **reddedilir** — merge isteği açman
-gerekir.
+anahtarı.
 
 ## Durum
 
@@ -574,6 +587,28 @@ AD hesabıyla, `rifat.ozturk`'ün kendi makinesinde:**
    git'in normal yedek davranışı; o soru artık AD şifresini değil,
    doğrudan git anahtarını (subject + git-token) istiyor, karıştırılmaya
    açık ama beklenen bir davranış.
+
+**2026-09-03 güncelleme — tek satırlık kurulum (`internal/logincli`):**
+Yanlış şifrede artık `promptAndLogin` aynı kullanıcı adıyla **1 kez
+daha** deniyor (`ErrBadCredentials` sentinel'i üzerinden ayırt
+ediliyor) — en yaygın durum (yazım hatası) için git'in kendi yedek
+promptuna hiç düşülmüyor.
+
+Ayrıca exe'nin makineden makineye elle taşınması yerine tek satırlık
+kurulum eklendi: sunucu artık `devplatform-login.exe`'yi ve bir
+kurulum script'ini kendi servis ediyor (auth gerektirmiyor — exe'de
+sır yok, indirmek erişim vermiyor):
+```
+irm https://<host>/devplatform-login/install.ps1 | iex
+```
+Sunucuda ayarlanması gereken tek şey: `DEVPLATFORM_LOGIN_CLI_PATH`
+ortam değişkenini, build edilmiş `devplatform-login.exe`'nin gerçek
+disk yoluna işaret edecek şekilde ayarlamak. Boşsa (varsayılan) her
+iki route da 404 döner — diğer her şeyde kullanılan "bilinçli
+yapılandırılana kadar hiçbir şey" deseniyle aynı. `devplatform.exe`'yi
+güncellerken bu exe'yi de aynı elle-kopyalama adımına dahil et (build
+alırken AV yanlış pozitifini önlemek için yukarıdaki
+`-trimpath -ldflags="-s -w"` bayraklarını unutma).
 
 **Canlı test sırasında bulunup düzeltilen 2 gerçek ops sorunu:**
 - Sunucudaki eski (tek-token) `git-tokens.json` dosyası yeni çoklu-token

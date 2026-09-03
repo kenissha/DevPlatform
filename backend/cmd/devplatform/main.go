@@ -196,6 +196,7 @@ func main() {
 		DisplayNames:   displayNamesStore,
 		SecretsVault:   secretsStore,
 		GitTokens:      gitTokenHandlers,
+		LoginCLIPath:   cfg.LoginCLIPath,
 	})
 
 	if cfg.FrontendDir != "" {
@@ -203,6 +204,12 @@ func main() {
 		log.Printf("serving frontend from %q", cfg.FrontendDir)
 	} else {
 		log.Printf("no DEVPLATFORM_FRONTEND_DIR configured — the panel is not served from this process")
+	}
+
+	if cfg.LoginCLIPath != "" {
+		log.Printf("serving devplatform-login from %q", cfg.LoginCLIPath)
+	} else {
+		log.Printf("no DEVPLATFORM_LOGIN_CLI_PATH configured — devplatform-login is not served from this process")
 	}
 
 	httpServer := &http.Server{Addr: cfg.ListenAddr, Handler: router}

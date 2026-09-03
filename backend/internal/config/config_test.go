@@ -191,6 +191,27 @@ func TestLoad_ReadsAllowedSitesFileFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoad_LoginCLIPathDefaultsToEmptyMeaningNotServed(t *testing.T) {
+	os.Unsetenv("DEVPLATFORM_LOGIN_CLI_PATH")
+
+	cfg := Load()
+
+	if cfg.LoginCLIPath != "" {
+		t.Errorf("LoginCLIPath = %q, want empty", cfg.LoginCLIPath)
+	}
+}
+
+func TestLoad_ReadsLoginCLIPathFromEnv(t *testing.T) {
+	os.Setenv("DEVPLATFORM_LOGIN_CLI_PATH", "C:\\inetpub\\devplatform\\devplatform-login.exe")
+	defer os.Unsetenv("DEVPLATFORM_LOGIN_CLI_PATH")
+
+	cfg := Load()
+
+	if cfg.LoginCLIPath != "C:\\inetpub\\devplatform\\devplatform-login.exe" {
+		t.Errorf("LoginCLIPath = %q, want %q", cfg.LoginCLIPath, "C:\\inetpub\\devplatform\\devplatform-login.exe")
+	}
+}
+
 func TestLoad_FallsBackToDefaultHourWhenEnvValueIsNotAnInt(t *testing.T) {
 	os.Setenv("DEVPLATFORM_BACKUP_HOUR", "not-a-number")
 	defer os.Unsetenv("DEVPLATFORM_BACKUP_HOUR")

@@ -12,6 +12,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/displaynames"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
 	"github.com/kenissha/DevPlatform/backend/internal/gittoken"
+	"github.com/kenissha/DevPlatform/backend/internal/logincli"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/notify"
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
@@ -71,6 +72,12 @@ type Deps struct {
 	// to either route below. Nil-checking it here wouldn't change that,
 	// so it's left to a caller to wire correctly.
 	GitTokens *gittoken.Handlers
+	// LoginCLIPath, if set, points at a built devplatform-login.exe on
+	// disk and turns on serving it plus a matching install script (see
+	// internal/logincli). Empty by default — both routes respond 404
+	// until an operator deliberately configures this, the same pattern
+	// as AllowedSitesFile/BackupDir.
+	LoginCLIPath string
 }
 
 // NewRouter builds the top-level HTTP router.
@@ -88,6 +95,7 @@ func NewRouter(deps Deps) *http.ServeMux {
 	displayNameHandlers := &displaynames.Handlers{Store: deps.DisplayNames}
 	secretsHandlers := &secretsvault.Handlers{Store: deps.SecretsVault}
 	gitTokens := deps.GitTokens
+	loginCLI := &logincli.Handlers{Path: deps.LoginCLIPath}
 
 	// repoScoped wraps a handler for any route with a {repo} path value:
 	// authentication first, then access.RequireRepoAccess (a nil
@@ -111,6 +119,11 @@ func NewRouter(deps Deps) *http.ServeMux {
 	// The "/git/" prefix here must stay in sync with gitserver.Prefix
 	// ("/git") — see internal/gitserver.NewHandler's doc comment.
 	mux.Handle("/git/", gitHandler)
+	// Deliberately unauthenticated, like /healthz — see internal/logincli's
+	// doc comment for why serving the tool itself needs no auth. Both
+	// respond 404 when deps.LoginCLIPath is unset.
+	mux.HandleFunc("GET /devplatform-login.exe", loginCLI.Download)
+	mux.HandleFunc("GET /devplatform-login/install.ps1", loginCLI.InstallScript)
 	// /api/me returns the caller's identity and, as a side effect, records
 	// them in the people registry (see internal/users) — that just-in-time
 	// provisioning is what keeps the assignee picker's list of colleagues
