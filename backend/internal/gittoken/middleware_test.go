@@ -43,7 +43,7 @@ func TestRequireTokenAndAccess_RejectsMissingCredentials(t *testing.T) {
 
 func TestRequireTokenAndAccess_RejectsInvalidToken(t *testing.T) {
 	tokens := NewStore(t.TempDir() + "/git-tokens.json")
-	if _, err := tokens.Generate("dev-1"); err != nil {
+	if _, _, err := tokens.Generate("dev-1", "test"); err != nil {
 		t.Fatalf("Generate returned error: %v", err)
 	}
 	accessStore := access.NewStore(t.TempDir() + "/access.json")
@@ -61,7 +61,7 @@ func TestRequireTokenAndAccess_RejectsInvalidToken(t *testing.T) {
 
 func TestRequireTokenAndAccess_AllowsAnUnrestrictedUser(t *testing.T) {
 	tokens := NewStore(t.TempDir() + "/git-tokens.json")
-	token, err := tokens.Generate("dev-1")
+	_, token, err := tokens.Generate("dev-1", "test")
 	if err != nil {
 		t.Fatalf("Generate returned error: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestRequireTokenAndAccess_AllowsAnUnrestrictedUser(t *testing.T) {
 
 func TestRequireTokenAndAccess_BlocksARestrictedUserFromAnUngrantedRepo(t *testing.T) {
 	tokens := NewStore(t.TempDir() + "/git-tokens.json")
-	token, err := tokens.Generate("dev-1")
+	_, token, err := tokens.Generate("dev-1", "test")
 	if err != nil {
 		t.Fatalf("Generate returned error: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestRequireTokenAndAccess_BlocksARestrictedUserFromAnUngrantedRepo(t *testi
 
 func TestRequireTokenAndAccess_AllowsARestrictedUserTheirGrantedRepo(t *testing.T) {
 	tokens := NewStore(t.TempDir() + "/git-tokens.json")
-	token, err := tokens.Generate("dev-1")
+	_, token, err := tokens.Generate("dev-1", "test")
 	if err != nil {
 		t.Fatalf("Generate returned error: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestRequireTokenAndAccess_AllowsARestrictedUserTheirGrantedRepo(t *testing.
 
 func TestRequireTokenAndAccess_AdminBypassesRestriction(t *testing.T) {
 	tokens := NewStore(t.TempDir() + "/git-tokens.json")
-	token, err := tokens.Generate("admin-1")
+	_, token, err := tokens.Generate("admin-1", "test")
 	if err != nil {
 		t.Fatalf("Generate returned error: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestRequireTokenAndAccess_AdminBypassesRestriction(t *testing.T) {
 
 func TestRequireTokenAndAccess_RejectsPathWithNoRepoName(t *testing.T) {
 	tokens := NewStore(t.TempDir() + "/git-tokens.json")
-	token, err := tokens.Generate("dev-1")
+	_, token, err := tokens.Generate("dev-1", "test")
 	if err != nil {
 		t.Fatalf("Generate returned error: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestRequireTokenAndAccess_RejectsPathWithNoRepoName(t *testing.T) {
 
 func TestRequireTokenAndAccess_RejectsTraversalPath(t *testing.T) {
 	tokens := NewStore(t.TempDir() + "/git-tokens.json")
-	token, err := tokens.Generate("dev-1")
+	_, token, err := tokens.Generate("dev-1", "test")
 	if err != nil {
 		t.Fatalf("Generate returned error: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestRequireTokenAndAccess_RejectsTraversalPath(t *testing.T) {
 // rejected before authorization.
 func TestRequireTokenAndAccess_RejectsEncodedTraversalPath(t *testing.T) {
 	tokens := NewStore(t.TempDir() + "/git-tokens.json")
-	token, err := tokens.Generate("dev-1")
+	_, token, err := tokens.Generate("dev-1", "test")
 	if err != nil {
 		t.Fatalf("Generate returned error: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestRequireTokenAndAccess_RejectsEncodedTraversalPath(t *testing.T) {
 // path through, because "secret" never appears with ".git" attached.
 func TestRequireTokenAndAccess_RejectsSuffixlessTraversalTarget(t *testing.T) {
 	tokens := NewStore(t.TempDir() + "/git-tokens.json")
-	token, err := tokens.Generate("dev-1")
+	_, token, err := tokens.Generate("dev-1", "test")
 	if err != nil {
 		t.Fatalf("Generate returned error: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestRequireTokenAndAccess_RejectsSuffixlessTraversalTarget(t *testing.T) {
 // for a restricted user's own granted repo.
 func TestRequireTokenAndAccess_AllowsGitReceivePackForGrantedRepo(t *testing.T) {
 	tokens := NewStore(t.TempDir() + "/git-tokens.json")
-	token, err := tokens.Generate("dev-1")
+	_, token, err := tokens.Generate("dev-1", "test")
 	if err != nil {
 		t.Fatalf("Generate returned error: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestRequireTokenAndAccess_AllowsGitReceivePackForGrantedRepo(t *testing.T) 
 // were never granted must be blocked before reaching the write handler.
 func TestRequireTokenAndAccess_BlocksGitReceivePackForUngrantedRepo(t *testing.T) {
 	tokens := NewStore(t.TempDir() + "/git-tokens.json")
-	token, err := tokens.Generate("dev-1")
+	_, token, err := tokens.Generate("dev-1", "test")
 	if err != nil {
 		t.Fatalf("Generate returned error: %v", err)
 	}
@@ -345,7 +345,7 @@ func TestRepoNameFromPath(t *testing.T) {
 // authorization decision is made.
 func TestRequireTokenAndAccess_RejectsBackslashTraversalPath(t *testing.T) {
 	tokens := NewStore(t.TempDir() + "/git-tokens.json")
-	token, err := tokens.Generate("dev-1")
+	_, token, err := tokens.Generate("dev-1", "test")
 	if err != nil {
 		t.Fatalf("Generate returned error: %v", err)
 	}
