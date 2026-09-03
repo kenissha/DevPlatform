@@ -222,6 +222,8 @@ func NewRouter(deps Deps) *http.ServeMux {
 	// everyone".
 	mux.Handle("POST /api/me/git-token", authMiddleware(http.HandlerFunc(gitTokens.GenerateMine)))
 	mux.Handle("DELETE /api/git-token/{subject}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(gitTokens.Revoke))))
+	mux.Handle("GET /api/me/git-tokens", authMiddleware(http.HandlerFunc(gitTokens.ListMine)))
+	mux.Handle("DELETE /api/me/git-tokens/{id}", authMiddleware(http.HandlerFunc(gitTokens.RevokeMine)))
 
 	return mux
 }
