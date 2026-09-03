@@ -14,9 +14,12 @@ import (
 
 // intranetBaseURL and devplatformBaseURL are vars, not consts, so
 // tests can point them at an httptest.Server — the same seam pattern
-// internal/deploy/versionstore.go uses for time.Now.
+// internal/deploy/versionstore.go uses for time.Now. Intranet-B's API
+// listens on :8443, not the default HTTPS port — confirmed live
+// (2026-09-03) after the design's assumed bare-443 URL 404'd against
+// the real server.
 var (
-	intranetBaseURL    = "https://intranet.sigortatahkim.org"
+	intranetBaseURL    = "https://intranet.sigortatahkim.org:8443"
 	devplatformBaseURL = "https://git.sigortatahkim.org"
 )
 

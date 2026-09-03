@@ -100,9 +100,9 @@ her eriştiğinde bu aracı üç şekilde çağırır:
   alıyorum" sürprizi olmaz.
 
 **Login zinciri (3 adım, hepsi düz HTTPS JSON çağrısı):**
-1. `POST https://intranet.sigortatahkim.org/api/auth/login`
+1. `POST https://intranet.sigortatahkim.org:8443/api/auth/login`
    `{"Username": "...", "Password": "..."}` → Intranet JWT
-2. `POST https://intranet.sigortatahkim.org/api/auth/devplatform-sso`
+2. `POST https://intranet.sigortatahkim.org:8443/api/auth/devplatform-sso`
    (Bearer: Intranet JWT) → DevPlatform JWT
 3. `POST https://git.sigortatahkim.org/api/me/git-token`
    (Bearer: DevPlatform JWT, body: `{"label": "CLI - <hostname>"}`) →
