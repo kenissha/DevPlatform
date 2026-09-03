@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,14 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+// ErrBadCredentials marks intranetLogin's specific "wrong username or
+// password" outcome (a 401 from Intranet-B) so callers — namely
+// promptAndLogin's one-retry — can distinguish it from every other
+// failure in the chain (network errors, Intranet-B down, not
+// authorized for DevPlatform, ...), which retrying with the same
+// password can't fix and shouldn't be retried blindly.
+var ErrBadCredentials = errors.New("kullanıcı adı/şifre hatalı olabilir")
 
 // intranetBaseURL and devplatformBaseURL are vars, not consts, so
 // tests can point them at an httptest.Server — the same seam pattern
@@ -71,8 +80,11 @@ func intranetLogin(username, password string) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return "", fmt.Errorf("intranet girişi %d döndü: %w", resp.StatusCode, ErrBadCredentials)
+	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("intranet girişi %d döndü — kullanıcı adı/şifre hatalı olabilir", resp.StatusCode)
+		return "", fmt.Errorf("intranet girişi %d döndü", resp.StatusCode)
 	}
 	var parsed struct {
 		Token string `json:"token"`

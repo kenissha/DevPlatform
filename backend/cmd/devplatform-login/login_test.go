@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -106,5 +107,27 @@ func TestLogin_ReturnsAClearErrorOnBadIntranetCredentials(t *testing.T) {
 	_, _, err := login("rifat", "yanlis-sifre")
 	if err == nil {
 		t.Fatal("login returned no error for a 401 from intranet login")
+	}
+	if !errors.Is(err, ErrBadCredentials) {
+		t.Errorf("errors.Is(err, ErrBadCredentials) = false, want true — promptAndLogin's retry depends on this: err = %v", err)
+	}
+}
+
+func TestLogin_DoesNotMarkOtherIntranetFailuresAsBadCredentials(t *testing.T) {
+	intranet := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer intranet.Close()
+
+	origIntranet := intranetBaseURL
+	intranetBaseURL = intranet.URL
+	defer func() { intranetBaseURL = origIntranet }()
+
+	_, _, err := login("rifat", "sifre123")
+	if err == nil {
+		t.Fatal("login returned no error for a 500 from intranet login")
+	}
+	if errors.Is(err, ErrBadCredentials) {
+		t.Error("errors.Is(err, ErrBadCredentials) = true for a 500 — a retry wouldn't fix a server error, only a 401 should trigger one")
 	}
 }

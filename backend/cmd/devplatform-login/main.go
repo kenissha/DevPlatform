@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -146,12 +147,37 @@ func promptAndLogin() (subject, token string, err error) {
 	}
 	username := scanner.Text()
 
-	fmt.Fprint(out, "Windows şifreniz: ")
+	password, err := readPassword(in, out, "Windows şifreniz: ")
+	if err != nil {
+		return "", "", err
+	}
+
+	subject, token, err = login(username, password)
+	if err != nil && errors.Is(err, ErrBadCredentials) {
+		// One retry for the single most common case — a mistyped
+		// password — before giving up. Anything else login can fail
+		// with (network error, Intranet-B down, not authorized for
+		// DevPlatform, ...) isn't something retrying the same password
+		// fixes, so only ErrBadCredentials gets this second chance.
+		fmt.Fprintln(out, "Kullanıcı adı veya şifre hatalı, tekrar deneyin.")
+		password, err = readPassword(in, out, "Windows şifreniz: ")
+		if err != nil {
+			return "", "", err
+		}
+		subject, token, err = login(username, password)
+	}
+	return subject, token, err
+}
+
+// readPassword prompts on out and reads a password from in without
+// echoing it — shared by promptAndLogin's initial attempt and its one
+// retry.
+func readPassword(in, out *os.File, prompt string) (string, error) {
+	fmt.Fprint(out, prompt)
 	passwordBytes, err := term.ReadPassword(int(in.Fd()))
 	fmt.Fprintln(out)
 	if err != nil {
-		return "", "", fmt.Errorf("şifre okunamadı: %w", err)
+		return "", fmt.Errorf("şifre okunamadı: %w", err)
 	}
-
-	return login(username, string(passwordBytes))
+	return string(passwordBytes), nil
 }
