@@ -204,6 +204,15 @@ kopyalıyor. Tasarım:
   disk/makineye ("uzak" bir konuma) bağlanmadı — `DEVPLATFORM_BACKUP_DIR`'i
   gerçek bir hedefe (ayrı disk, ağ paylaşımı, başka makine) işaret etmek
   senin elinle yapılacak bir sonraki adım, tıpkı SMTP ve Intranet gibi.
+- **Bilinen kapsam boşluğu (2026-09-03):** gecelik yedek sadece bare git
+  repolarını kopyalıyor — `deploy-targets.json`, `access.json`,
+  `display-names.json`, secrets vault dosyaları, `tasks/`,
+  `merge-requests/`, `audit.jsonl` gibi diğer tüm `DataDir` içeriği hiç
+  yedeklenmiyor. Sunucu diski kaybedilirse repo'lar güvende olur (GitHub'a
+  da push'lanıyorsa) ama bu ayarların hepsi kaybolur. Gelecekte
+  `backup.Run`'ı (ya da yanına yeni bir fonksiyonu) tüm `DataDir`'i
+  kapsayacak şekilde genişletmek — henüz yapılmadı, bilinçli olarak
+  sonraya bırakıldı.
 
 **2026-08-13 güncelleme — proje bazlı yetkilendirme:** `internal/access`
 eklendi. Yönetici artık belirli bir kişiyi, sadece izin verilen repolarla
