@@ -16,7 +16,7 @@ func TestDownload_ServesTheConfiguredBinary(t *testing.T) {
 	}
 	h := &Handlers{Path: path}
 
-	req := httptest.NewRequest(http.MethodGet, "/devplatform-login.exe", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/devplatform-login.exe", nil)
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
@@ -34,7 +34,7 @@ func TestDownload_ServesTheConfiguredBinary(t *testing.T) {
 func TestDownload_NotConfiguredReturns404(t *testing.T) {
 	h := &Handlers{Path: ""}
 
-	req := httptest.NewRequest(http.MethodGet, "/devplatform-login.exe", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/devplatform-login.exe", nil)
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
@@ -46,7 +46,7 @@ func TestDownload_NotConfiguredReturns404(t *testing.T) {
 func TestDownload_ConfiguredButMissingFileReturns404(t *testing.T) {
 	h := &Handlers{Path: filepath.Join(t.TempDir(), "does-not-exist.exe")}
 
-	req := httptest.NewRequest(http.MethodGet, "/devplatform-login.exe", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/devplatform-login.exe", nil)
 	rec := httptest.NewRecorder()
 	h.Download(rec, req)
 
@@ -62,7 +62,7 @@ func TestInstallScript_ReferencesTheRequestsOwnHost(t *testing.T) {
 	}
 	h := &Handlers{Path: path}
 
-	req := httptest.NewRequest(http.MethodGet, "/devplatform-login/install.ps1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/devplatform-login/install.ps1", nil)
 	req.Host = "git.sigortatahkim.org"
 	rec := httptest.NewRecorder()
 	h.InstallScript(rec, req)
@@ -71,7 +71,7 @@ func TestInstallScript_ReferencesTheRequestsOwnHost(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "https://git.sigortatahkim.org/devplatform-login.exe") {
+	if !strings.Contains(body, "https://git.sigortatahkim.org/api/devplatform-login.exe") {
 		t.Errorf("script body does not reference the download URL for the request's own host: %s", body)
 	}
 	if !strings.Contains(body, "install") {
@@ -82,7 +82,7 @@ func TestInstallScript_ReferencesTheRequestsOwnHost(t *testing.T) {
 func TestInstallScript_NotConfiguredReturns404(t *testing.T) {
 	h := &Handlers{Path: ""}
 
-	req := httptest.NewRequest(http.MethodGet, "/devplatform-login/install.ps1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/devplatform-login/install.ps1", nil)
 	rec := httptest.NewRecorder()
 	h.InstallScript(rec, req)
 

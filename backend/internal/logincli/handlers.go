@@ -1,7 +1,7 @@
 // Package logincli serves the devplatform-login CLI tool (see
 // backend/cmd/devplatform-login) and a one-line PowerShell installer
 // for it, so a developer sets it up with
-// `irm https://<host>/devplatform-login/install.ps1 | iex` instead of
+// `irm https://<host>/api/devplatform-login/install.ps1 | iex` instead of
 // the exe being manually copied from machine to machine. Unauthenticated
 // by design: the binary itself carries no secrets, and downloading it
 // grants no access — real Intranet AD credentials are still required
@@ -50,7 +50,7 @@ func (h *Handlers) InstallScript(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "404 not found", http.StatusNotFound)
 		return
 	}
-	downloadURL := "https://" + r.Host + "/devplatform-login.exe"
+	downloadURL := "https://" + r.Host + "/api/devplatform-login.exe"
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	fmt.Fprintf(w, installScriptTemplate, downloadURL)
 }

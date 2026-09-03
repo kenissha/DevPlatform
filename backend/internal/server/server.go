@@ -121,9 +121,13 @@ func NewRouter(deps Deps) *http.ServeMux {
 	mux.Handle("/git/", gitHandler)
 	// Deliberately unauthenticated, like /healthz — see internal/logincli's
 	// doc comment for why serving the tool itself needs no auth. Both
-	// respond 404 when deps.LoginCLIPath is unset.
-	mux.HandleFunc("GET /devplatform-login.exe", loginCLI.Download)
-	mux.HandleFunc("GET /devplatform-login/install.ps1", loginCLI.InstallScript)
+	// respond 404 when deps.LoginCLIPath is unset. Under /api/ (not a
+	// bare top-level path) on purpose: in production the frontend's own
+	// IIS site only reverse-proxies /api, /healthz, and /git to this
+	// backend — anything outside those falls through to the SPA's
+	// client-side router instead of ever reaching this process.
+	mux.HandleFunc("GET /api/devplatform-login.exe", loginCLI.Download)
+	mux.HandleFunc("GET /api/devplatform-login/install.ps1", loginCLI.InstallScript)
 	// /api/me returns the caller's identity and, as a side effect, records
 	// them in the people registry (see internal/users) — that just-in-time
 	// provisioning is what keeps the assignee picker's list of colleagues

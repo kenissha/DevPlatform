@@ -58,7 +58,7 @@ yok. `main`'e doğrudan push **reddedilir** — merge isteği açman gerekir.
 `devplatform-login` aracını kur (bkz. "CLI git login" güncellemesi,
 aşağıda), sonra remote'u **token'sız** kullan:
 ```
-irm https://<host>/devplatform-login/install.ps1 | iex
+irm https://<host>/api/devplatform-login/install.ps1 | iex
 git clone https://<host>/git/<repo-adi>.git
 ```
 İlk seferde Intranet kullanıcı adı/şifreni sorar, sonrasında hiç
@@ -599,7 +599,7 @@ kurulum eklendi: sunucu artık `devplatform-login.exe`'yi ve bir
 kurulum script'ini kendi servis ediyor (auth gerektirmiyor — exe'de
 sır yok, indirmek erişim vermiyor):
 ```
-irm https://<host>/devplatform-login/install.ps1 | iex
+irm https://<host>/api/devplatform-login/install.ps1 | iex
 ```
 Sunucuda ayarlanması gereken tek şey: `DEVPLATFORM_LOGIN_CLI_PATH`
 ortam değişkenini, build edilmiş `devplatform-login.exe`'nin gerçek
@@ -610,7 +610,7 @@ güncellerken bu exe'yi de aynı elle-kopyalama adımına dahil et (build
 alırken AV yanlış pozitifini önlemek için yukarıdaki
 `-trimpath -ldflags="-s -w"` bayraklarını unutma).
 
-**Canlı test sırasında bulunup düzeltilen 2 gerçek ops sorunu:**
+**Canlı test sırasında bulunup düzeltilen 4 gerçek ops sorunu:**
 - Sunucudaki eski (tek-token) `git-tokens.json` dosyası yeni çoklu-token
   formatına otomatik yükseltilmiyordu — ilk deploy'da hem Hesabım
   sayfası 500 veriyordu hem de önceden token üretmiş herkesin git
@@ -627,6 +627,26 @@ alırken AV yanlış pozitifini önlemek için yukarıdaki
   bu makinede sorunu çözdü; başka bir makinede tekrar ederse aynı build
   bayraklarını dene, olmazsa AV/IT ekibine dosya/klasör istisnası
   gerekecek.
+- İlk halinde `/devplatform-login.exe` ve `/devplatform-login/install.ps1`
+  route'ları backend'in mux'ında en üst seviyede tanımlanmıştı. Gerçek
+  sunucuda frontend'in IIS site'ı sadece `/api`, `/healthz`, `/git`'i
+  backend'e reverse-proxy'liyor — bu ikisi o üç öneke girmediği için
+  IIS'e hiç ulaşmıyor, SPA'nın kendi client-side router'ına düşüyordu
+  (tarayıcı konsolunda "No routes matched" hatası, boş sayfa). İkisi de
+  `/api/` altına taşındı (`/api/devplatform-login.exe`,
+  `/api/devplatform-login/install.ps1`) — mevcut proxy kuralını
+  kullanıyor, IIS tarafında ek bir ayar gerekmiyor.
+
+**Not — bu gerçek sunucuda `devplatform.exe` hâlâ IIS `httpPlatformHandler`
+ile çalışıyor, Windows Servisi olarak DEĞİL** (yukarıdaki 2026-08-14
+güncellemesi "artık Windows Servisi" diyor ama bu, en azından bu
+makinede henüz uygulanmamış — Task Manager'da process olarak görünüyor,
+`services.msc`'de yok). Ortam değişkenleri backend'in kendi
+`web.config`'indeki `<environmentVariables>` bloğunda
+(`D:\inetpub\wwwroot\DevPlatform\Backend\web.config`). Bir değişiklik
+sonrası `devplatform.exe`'yi Task Manager'dan sonlandırmak yeterli — IIS
+bir sonraki istekte web.config'i okuyup süreci otomatik yeniden
+başlatıyor.
 
 ## Kontroller
 
