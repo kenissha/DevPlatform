@@ -555,22 +555,43 @@ kurulduktan sonra `git clone`/`pull`/`push` token'sız remote URL'lerle
 DPAPI ile şifrelenmiş yerel önbellekte tutuyor, token iptal edilirse
 bir sonraki git işleminde otomatik tekrar soruyor.
 
-**Gözetimli doğrulama gerekiyor** (gerçek terminal, gerçek AD hesabı,
-ve hem `devplatform-login.exe` hem sunucu tarafı (Task 1-2) gerçekten
-deploy edilmiş olmalı — `go test` bunları kapsayamaz):
-1. `devplatform-login.exe install` gerçekten git config'i doğru
-   ayarlıyor VE git bu helper'ı gerçekten çağırıyor (sadece anahtarın
-   set edildiğini değil, `git credential fill` ile helper'ın fiilen
-   tetiklendiğini de doğrulamak gerekir).
-2. Önbellekte kayıt yokken taze bir `git clone` gerçek konsolda
-   kullanıcı adı/şifre soruyor (yönlendirilmiş stdin'e yutulmadan) ve
-   doğru girişten sonra başarıyla tamamlanıyor.
-3. Hemen ardından bir `git pull` tekrar sormuyor (önbellek isabeti).
-4. Önbellek dosyası silinirse/bozulursa, ya da bir admin panelden
-   token'ı iptal ederse, bir sonraki git işlemi opak bir 401 yerine
-   otomatik olarak (`erase` üzerinden) tekrar soruyor.
-5. Yanlış şifre net bir Türkçe hata mesajı gösteriyor, ham bir Go
-   hatası ya da AD-içi bir mesaj değil.
+**Gözetimli doğrulama tamamlandı (2026-09-03), gerçek terminalde, gerçek
+AD hesabıyla, `rifat.ozturk`'ün kendi makinesinde:**
+1. ✅ `devplatform-login.exe install` git config'i doğru ayarladı VE git
+   helper'ı fiilen çağırdı (`oasrapor-test` reposu ile).
+2. ✅ Önbellekte kayıt yokken taze bir `git clone` gerçek konsolda
+   kullanıcı adı/şifre sordu ve doğru girişten sonra başarıyla
+   tamamlandı.
+3. ✅ Hemen ardından bir `git pull` hiç sormadı (önbellek isabeti).
+4. ✅ Panelden token iptal edilince, aynı komut içinde değil ama **bir
+   sonraki ayrı git işleminde** otomatik olarak (`erase` üzerinden)
+   tekrar sordu — opak bir 401 ile değil.
+5. ✅ Yanlış şifre net bir Türkçe hata gösterdi
+   (`devplatform-login: giriş başarısız: intranet girişi 401 döndü —
+   kullanıcı adı/şifre hatalı olabilir`). Bunun ardından git'in **kendi
+   yerleşik** (bizim aracımızla ilgisi olmayan) "Username for..."
+   sorusu devreye girdi — bu, helper credential döndürmeden çıkınca
+   git'in normal yedek davranışı; o soru artık AD şifresini değil,
+   doğrudan git anahtarını (subject + git-token) istiyor, karıştırılmaya
+   açık ama beklenen bir davranış.
+
+**Canlı test sırasında bulunup düzeltilen 2 gerçek ops sorunu:**
+- Sunucudaki eski (tek-token) `git-tokens.json` dosyası yeni çoklu-token
+  formatına otomatik yükseltilmiyordu — ilk deploy'da hem Hesabım
+  sayfası 500 veriyordu hem de önceden token üretmiş herkesin git
+  erişimi kırılıyordu. `Store.load()`'a geriye dönük uyumluluk eklendi
+  (commit `9c6f63b`).
+- `intranetBaseURL` tasarımda `https://intranet.sigortatahkim.org`
+  (bare 443) varsayılmıştı; gerçek Intranet-B API'si `:8443`'te
+  dinliyor — düzeltildi (commit `ba837f4`).
+- Ayrıca bu makinede antivirüs (Trend Micro) `devplatform-login.exe`'yi
+  her build'de "Troj.Win32.TRX.XXP" genel sezgisel tespitiyle
+  siliyordu (gerçek bir tehdit değil — imzasız, konsol açan, şifre
+  okuyan, dışarı bağlanan bir Go binary'sinin klasik yanlış pozitifi).
+  `CGO_ENABLED=0 go build -trimpath -ldflags="-s -w"` ile build almak
+  bu makinede sorunu çözdü; başka bir makinede tekrar ederse aynı build
+  bayraklarını dene, olmazsa AV/IT ekibine dosya/klasör istisnası
+  gerekecek.
 
 ## Kontroller
 
