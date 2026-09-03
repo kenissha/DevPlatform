@@ -188,3 +188,13 @@ export type AccessRegistry = Record<string, string[]>
 // override — the panel falls back to their email, same as User.displayName
 // already does for /api/me's own caller.
 export type DisplayNameRegistry = Record<string, string>
+
+// One of a person's active git credentials (see
+// backend/internal/gittoken). A person can have several at once — one
+// per machine/CLI login is the expected pattern — each independently
+// revocable; generating a new one never invalidates an existing one.
+export interface GitTokenInfo {
+  id: string
+  label: string
+  createdAt: string
+}

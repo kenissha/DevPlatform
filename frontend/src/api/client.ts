@@ -10,6 +10,7 @@ import type {
   DeploymentStatus,
   DiffResult,
   DisplayNameRegistry,
+  GitTokenInfo,
   MergeRequest,
   MergeRequestDetail,
   MergeRequestStatus,
@@ -225,7 +226,17 @@ export const api = {
   // own — see backend/internal/gittoken). The raw token in
   // generateGitToken's response is shown to the caller exactly once;
   // DevPlatform never stores or re-displays it.
-  generateGitToken: () => request<{ token: string }>('/api/me/git-token', { method: 'POST' }),
+  generateGitToken: (label: string) =>
+    request<{ id: string; token: string }>('/api/me/git-token', {
+      method: 'POST',
+      body: JSON.stringify({ label }),
+    }),
+  listGitTokens: () => request<GitTokenInfo[]>('/api/me/git-tokens'),
+  revokeMyGitToken: (id: string) =>
+    request<void>(`/api/me/git-tokens/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  // Admin-only — revokes EVERY one of subject's tokens (see
+  // backend/internal/gittoken.Store.RevokeAll). Unchanged by this
+  // feature; still used from AccessPage.tsx's "Git anahtarını iptal et".
   revokeGitToken: (subject: string) =>
     request<void>(`/api/git-token/${encodeURIComponent(subject)}`, { method: 'DELETE' }),
 }
@@ -241,6 +252,7 @@ export type {
   DeploymentRequest,
   DiffResult,
   DisplayNameRegistry,
+  GitTokenInfo,
   MergeRequest,
   MergeRequestDetail,
   Notification,
