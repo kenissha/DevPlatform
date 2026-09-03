@@ -235,8 +235,24 @@ func hash(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// legacyMigrationDate is CreatedAt for tokens upgraded from the
+// pre-multi-token format (see legacyUpgrade) — the real creation time
+// isn't recoverable from that format, so this uses the date that
+// format shipped (docs/superpowers/specs/2026-08-17-per-user-git-
+// access-design.md) rather than time.Now(), so the value is stable
+// across repeated loads instead of drifting to whenever someone
+// happens to open the panel.
+var legacyMigrationDate = time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+
 // load reads the registry. A missing file is an empty registry, not an
-// error — nobody has generated a token yet.
+// error — nobody has generated a token yet. A file written by the
+// single-token Store this package replaced (subject -> hash string,
+// live in production since 2026-08-17, see git history before
+// 2026-09-03) fails to unmarshal into the current shape and is
+// transparently upgraded via legacyUpgrade instead — every subject who
+// already had a git token before this multi-token plan shipped keeps
+// working (both List/Revoke and, critically, git's own Verify auth
+// gate) without needing to regenerate.
 func (s *Store) load() (map[string][]Token, error) {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
@@ -250,9 +266,35 @@ func (s *Store) load() (map[string][]Token, error) {
 		return registry, nil
 	}
 	if err := json.Unmarshal(data, &registry); err != nil {
-		return nil, err
+		legacy := map[string]string{}
+		if legacyErr := json.Unmarshal(data, &legacy); legacyErr != nil {
+			return nil, err
+		}
+		return legacyUpgrade(legacy), nil
 	}
 	return registry, nil
+}
+
+// legacyUpgrade converts a pre-multi-token registry (subject -> single
+// hash string) into the current shape. The new ID is derived
+// deterministically from the hash (not random) so it stays the same
+// across repeated loads without needing to persist the upgrade to disk
+// first — List then Revoke against the same ID keeps working even
+// before anything writes the file in the new format. The next
+// Generate/Revoke/RevokeAll for that subject persists it in the new
+// shape via the normal save path, same as any other change.
+func legacyUpgrade(legacy map[string]string) map[string][]Token {
+	registry := make(map[string][]Token, len(legacy))
+	for subject, oldHash := range legacy {
+		sum := sha256.Sum256([]byte(oldHash))
+		registry[subject] = []Token{{
+			ID:        hex.EncodeToString(sum[:idBytes]),
+			Hash:      oldHash,
+			Label:     "eski anahtar",
+			CreatedAt: legacyMigrationDate,
+		}}
+	}
+	return registry
 }
 
 // save writes the registry via a temp file and rename, so an interrupted
