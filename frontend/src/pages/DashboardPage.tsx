@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
-import type { AuditAction, AuditEvent, DeploymentRequest, MergeRequest, Person, Task } from '../api/types'
+import type {
+  AuditAction,
+  AuditEvent,
+  Contributions,
+  DeploymentRequest,
+  MergeRequest,
+  Person,
+  Task,
+} from '../api/types'
 import { useAuth } from '../auth/AuthContext'
+import { ContributionGraph } from '../components/ContributionGraph'
 import {
   AuditIcon,
   CheckIcon,
@@ -33,6 +42,7 @@ export function DashboardPage() {
   const [deployments, setDeployments] = useState<DeploymentRequest[] | null>(null)
   const [events, setEvents] = useState<AuditEvent[] | null>(null)
   const [people, setPeople] = useState<Person[] | null>(null)
+  const [contributions, setContributions] = useState<Contributions | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -51,6 +61,18 @@ export function DashboardPage() {
         setPeople(p)
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+  }, [])
+
+  // Fetched separately from the batch above: it walks a year of git
+  // history across every repo, so it's the slowest call on the page —
+  // letting it resolve on its own keeps the rest of the dashboard from
+  // waiting on it. A failure here leaves the graph out rather than
+  // failing the whole page.
+  useEffect(() => {
+    api
+      .myContributions()
+      .then(setContributions)
+      .catch(() => setContributions({ days: [], total: 0 }))
   }, [])
 
   // subject -> readable name. Falls back to the subject itself so an
@@ -161,6 +183,35 @@ export function DashboardPage() {
             meta: nameOf(d.author),
           }))}
         />
+      </div>
+
+      <div className="section-title">
+        <h2>Katkıların</h2>
+        {contributions && contributions.days.length > 0 && (
+          <span className="muted" style={{ fontSize: 13 }}>
+            son bir yılda {contributions.total} commit
+          </span>
+        )}
+      </div>
+      <div className="card">
+        <div className="card-body">
+          {contributions === null && <p className="empty-state">Yükleniyor...</p>}
+          {contributions && contributions.days.length === 0 && (
+            <p className="empty-state">Katkı geçmişi okunamadı.</p>
+          )}
+          {contributions && contributions.days.length > 0 && (
+            <>
+              <ContributionGraph days={contributions.days} />
+              {contributions.total === 0 && (
+                <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+                  Henüz commit görünmüyor. Commit'ler git yazar e-postasıyla eşleştiriliyor — yerel{' '}
+                  <code>git config user.email</code> ayarın panel hesabındaki e-postayla aynı değilse burada
+                  görünmezler.
+                </p>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       <div className="dash-columns">

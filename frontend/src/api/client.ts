@@ -3,6 +3,7 @@ import type {
   AuditEvent,
   BranchPreview,
   Commit,
+  Contributions,
   Contributor,
   DayCount,
   DeployRecipe,
@@ -144,6 +145,10 @@ export const api = {
     request<Contributor[]>(`/api/repos/${encodeURIComponent(repo)}/contributors`),
   activity: (repo: string, days = 30) =>
     request<DayCount[]>(`/api/repos/${encodeURIComponent(repo)}/activity?days=${days}`),
+  // The signed-in person's own commits across every repo they can see.
+  // Deliberately takes no subject: the endpoint always answers for the
+  // caller, so there's no parameter to tamper with.
+  myContributions: (days = 365) => request<Contributions>(`/api/contributions?days=${days}`),
 
   listAudit: (limit = 100) => request<AuditEvent[]>(`/api/audit?limit=${limit}`),
 
@@ -265,6 +270,7 @@ export type {
   AuditEvent,
   BranchPreview,
   Commit,
+  Contributions,
   Contributor,
   DayCount,
   DeployRecipe,

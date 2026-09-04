@@ -1309,6 +1309,104 @@ li.unread {
   gap: 7px;
 }
 
+/* --------------------------------------------- contribution heatmap */
+
+.contrib {
+  --cell: 11px;
+  --cell-gap: 3px;
+}
+
+/* A year never fits on a narrow window, so the grid scrolls sideways
+ * inside its own box rather than widening the page. */
+.contrib-scroll {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+/* Month labels ride the same column track as the weeks below, so a
+ * label always sits above the week it names — a plain flex row would
+ * drift as soon as one month had more weeks than another. */
+.contrib-months {
+  display: grid;
+  grid-auto-columns: var(--cell);
+  grid-auto-flow: column;
+  gap: var(--cell-gap);
+  margin-bottom: 5px;
+  height: 14px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.contrib-months span {
+  white-space: nowrap;
+}
+
+.contrib-grid {
+  display: flex;
+  gap: var(--cell-gap);
+}
+
+.contrib-weekdays {
+  display: grid;
+  grid-template-rows: repeat(7, var(--cell));
+  gap: var(--cell-gap);
+  margin-right: 3px;
+  font-size: 10px;
+  line-height: var(--cell);
+  color: var(--text-muted);
+}
+
+.contrib-week {
+  display: grid;
+  grid-template-rows: repeat(7, var(--cell));
+  gap: var(--cell-gap);
+}
+
+.contrib-cell {
+  width: var(--cell);
+  height: var(--cell);
+  border-radius: 2px;
+  background: var(--surface-hover);
+}
+/* Leading days before the range started — the grid's shape, not a real
+ * day with zero commits, so it gets no surface at all. */
+.contrib-cell.is-pad {
+  background: none;
+}
+
+/* Four intensities over one hue. Deliberately green rather than the
+ * platform's purple accent: this reads as "amount of work done", the
+ * same convention every contribution graph uses, and keeping it off the
+ * accent means it never competes with the interactive elements around
+ * it. Built from --success so it re-tunes with the theme instead of
+ * being two hardcoded palettes. */
+.contrib-cell.lvl-1 {
+  background: color-mix(in srgb, var(--success) 26%, var(--surface));
+}
+.contrib-cell.lvl-2 {
+  background: color-mix(in srgb, var(--success) 48%, var(--surface));
+}
+.contrib-cell.lvl-3 {
+  background: color-mix(in srgb, var(--success) 72%, var(--surface));
+}
+.contrib-cell.lvl-4 {
+  background: var(--success);
+}
+
+.contrib-legend {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 10px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.contrib-legend span:first-child {
+  margin-right: 3px;
+}
+.contrib-legend span:last-child {
+  margin-left: 3px;
+}
+
 .commit-msg {
   font-weight: 550;
   color: var(--text-strong);

@@ -180,6 +180,11 @@ func NewRouter(deps Deps) *http.ServeMux {
 	mux.Handle("GET /api/repos/{repo}/commits", repoScoped(http.HandlerFunc(stats.Commits)))
 	mux.Handle("GET /api/repos/{repo}/contributors", repoScoped(http.HandlerFunc(stats.Contributors)))
 	mux.Handle("GET /api/repos/{repo}/activity", repoScoped(http.HandlerFunc(stats.Activity)))
+	// Cross-repo and always scoped to the caller themselves, so it's
+	// behind plain auth rather than repoScoped (there's no single {repo}
+	// to check) — Contributions does its own access filtering, the same
+	// way the /api/tasks-style aggregate views above do.
+	mux.Handle("GET /api/contributions", authMiddleware(http.HandlerFunc(stats.Contributions)))
 	// The branch detail page's data source — branch is a ?branch= query
 	// parameter rather than a {branch} path segment on both of these,
 	// see gitstats.Handlers.BranchCommits' doc comment for why.

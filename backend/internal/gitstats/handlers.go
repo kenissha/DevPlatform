@@ -3,11 +3,14 @@ package gitstats
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/go-git/go-git/v6"
 
+	"github.com/kenissha/DevPlatform/backend/internal/access"
+	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 )
 
@@ -17,6 +20,14 @@ import (
 // of the platform, not a privilege.
 type Handlers struct {
 	Repos *repostore.Store
+	// Access narrows Contributions to the repos its caller may see.
+	// Optional in the same sense as elsewhere: a nil Store means nobody
+	// is restricted (see internal/access). The per-repo endpoints below
+	// don't need it — internal/server already wraps each of them in
+	// access.RequireRepoAccess, which has a {repo} to check. Contributions
+	// spans every repo at once, so it has to filter for itself, the same
+	// way mergerequest.Handlers.ListAll does.
+	Access *access.Store
 }
 
 const (
@@ -24,6 +35,8 @@ const (
 	maxCommitLimit      = 200
 	defaultActivityDays = 30
 	maxActivityDays     = 365
+	// A full year, matching the heatmap the panel draws from it.
+	defaultContributionDays = 365
 )
 
 // Commits handles GET /api/repos/{repo}/commits?limit=N.
@@ -114,6 +127,73 @@ func (h *Handlers) Activity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, activity)
+}
+
+// contributionsResponse is the panel's contribution heatmap: one entry
+// per day over the requested window (oldest first, gaps included) plus
+// the window's total, so the header line doesn't have to re-sum it.
+type contributionsResponse struct {
+	Days  []DayCount `json:"days"`
+	Total int        `json:"total"`
+}
+
+// Contributions handles GET /api/contributions?days=N — the calling
+// user's own commits per day, across every repository they can see.
+//
+// Always scoped to the caller: there is no ?subject= parameter, so this
+// can't be turned into "show me someone else's activity" by editing a
+// URL. Commits are matched by author email (see ActivityByAuthor).
+func (h *Handlers) Contributions(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		http.Error(w, "401 Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	days := intParam(r, "days", defaultContributionDays, 1, maxActivityDays)
+
+	names, err := h.Repos.List()
+	if err != nil {
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	if user.Role != auth.RoleAdmin {
+		names, err = h.Access.FilterRepos(user.Subject, names)
+		if err != nil {
+			http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Merge the raw per-day maps first, then fill the range once — the
+	// window's gaps are the same for every repo, so filling per repo and
+	// summing afterwards would do the same work N times.
+	merged := map[string]int{}
+	for _, name := range names {
+		repo, err := h.Repos.Open(name)
+		if err != nil {
+			// A repo that vanished between List and Open (or is somehow
+			// unreadable) shouldn't take the whole dashboard down with
+			// it — skip it and keep counting the rest.
+			log.Printf("gitstats: skipping %q while counting contributions: %v", name, err)
+			continue
+		}
+		counts, err := ActivityByAuthor(repo, user.Email, days)
+		if err != nil {
+			log.Printf("gitstats: skipping %q while counting contributions: %v", name, err)
+			continue
+		}
+		for day, n := range counts {
+			merged[day] += n
+		}
+	}
+
+	filled := fillDays(merged, days)
+	total := 0
+	for _, d := range filled {
+		total += d.Commits
+	}
+	writeJSON(w, http.StatusOK, contributionsResponse{Days: filled, Total: total})
 }
 
 func (h *Handlers) open(w http.ResponseWriter, r *http.Request) (*git.Repository, bool) {

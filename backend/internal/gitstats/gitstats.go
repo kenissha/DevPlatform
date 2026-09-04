@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v6"
@@ -136,12 +137,38 @@ func Contributors(repo *git.Repository) ([]Contributor, error) {
 // (UTC), oldest first, including days with zero commits so a chart can plot
 // a continuous axis without filling gaps itself.
 func Activity(repo *git.Repository, days int) ([]DayCount, error) {
+	counts, err := countByDay(repo, days, func(*object.Commit) bool { return true })
+	if err != nil {
+		return nil, err
+	}
+	return fillDays(counts, days), nil
+}
+
+// ActivityByAuthor is Activity narrowed to the commits email authored —
+// the per-person contribution heatmap's data, aggregated across repos by
+// the caller. Returns raw per-day counts (keyed YYYY-MM-DD, UTC) rather
+// than a filled range, because a caller summing several repositories
+// wants to merge the maps before the gaps are filled in once.
+//
+// Identity is the commit's author email, compared case-insensitively:
+// that's the only identifier a git commit carries, and it's how
+// Contributors already groups. A person whose local `git config
+// user.email` differs from their platform account's email therefore
+// won't see those commits here — the fix is to align the two, since
+// nothing in the commit object can bridge them.
+func ActivityByAuthor(repo *git.Repository, email string, days int) (map[string]int, error) {
+	return countByDay(repo, days, func(c *object.Commit) bool {
+		return strings.EqualFold(c.Author.Email, email)
+	})
+}
+
+// countByDay tallies commits matching include, per calendar day (UTC),
+// within the last `days` days.
+func countByDay(repo *git.Repository, days int, include func(*object.Commit) bool) (map[string]int, error) {
 	if days < 1 {
 		days = 1
 	}
-
-	today := time.Now().UTC().Truncate(24 * time.Hour)
-	start := today.AddDate(0, 0, -(days - 1))
+	start := startOfRange(days)
 
 	counts := map[string]int{}
 	err := walk(repo, func(c *object.Commit) bool {
@@ -153,19 +180,39 @@ func Activity(repo *git.Repository, days int) ([]DayCount, error) {
 			// stopping at the first out-of-window commit.
 			return true
 		}
-		counts[day.Format("2006-01-02")]++
+		if include(c) {
+			counts[day.Format("2006-01-02")]++
+		}
 		return true
 	})
 	if err != nil {
 		return nil, err
 	}
+	return counts, nil
+}
+
+// fillDays expands per-day counts into one entry for every day in the
+// window, oldest first — including the days with nothing on them, so a
+// chart or heatmap can plot a continuous axis without filling gaps
+// itself.
+func fillDays(counts map[string]int, days int) []DayCount {
+	if days < 1 {
+		days = 1
+	}
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	start := startOfRange(days)
 
 	out := make([]DayCount, 0, days)
 	for d := start; !d.After(today); d = d.AddDate(0, 0, 1) {
 		key := d.Format("2006-01-02")
 		out = append(out, DayCount{Date: key, Commits: counts[key]})
 	}
-	return out, nil
+	return out
+}
+
+func startOfRange(days int) time.Time {
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	return today.AddDate(0, 0, -(days - 1))
 }
 
 // ErrBranchNotFound is returned by CommitsAhead when branch itself

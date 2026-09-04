@@ -120,6 +120,15 @@ export interface DayCount {
   commits: number
 }
 
+// The signed-in person's own commits per day — the panel's contribution
+// heatmap. days is a continuous range ending today, gaps included, so
+// the grid can be drawn straight from it (see backend/internal/gitstats
+// Contributions).
+export interface Contributions {
+  days: DayCount[]
+  total: number
+}
+
 export type TaskStatus = 'in_progress' | 'awaiting_test' | 'done'
 
 export interface Task {

@@ -65,7 +65,7 @@ func newTestRouter(t *testing.T) (*http.ServeMux, *repostore.Store, *access.Stor
 		Audit:  auditLogger,
 		Access: accessStore,
 	}
-	statsHandlers := &gitstats.Handlers{Repos: store}
+	statsHandlers := &gitstats.Handlers{Repos: store, Access: accessStore}
 	auditHandlers := &audit.Handlers{Logger: auditLogger, Access: accessStore}
 	notifyHandlers := &notify.Handlers{Store: notify.NewStore(filepath.Join(dataDir, "notifications"))}
 	// No Pipeline/Targets wired here: nothing in this file's tests exercises
@@ -444,6 +444,53 @@ func TestUsers_CarryTheirDisplayNameForEveryAuthenticatedCaller(t *testing.T) {
 	if bySubject["admin-1"] == "" || bySubject["admin-1"] != emails["admin-1"] {
 		t.Errorf("admin-1 displayName = %q, want it to fall back to the email %q",
 			bySubject["admin-1"], emails["admin-1"])
+	}
+}
+
+// TestContributions_ReturnsAFilledDayRangeForTheCaller covers the
+// panel's contribution heatmap: a continuous day axis (gaps included) so
+// the grid can be drawn without the client filling them, and a total it
+// doesn't have to re-sum.
+func TestContributions_ReturnsAFilledDayRangeForTheCaller(t *testing.T) {
+	router, _, _ := newTestRouter(t)
+
+	rec := do(t, router, http.MethodGet, "/api/contributions?days=30", "dev-1", "developer", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp struct {
+		Days []struct {
+			Date    string `json:"date"`
+			Commits int    `json:"commits"`
+		} `json:"days"`
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(resp.Days) != 30 {
+		t.Fatalf("got %d days, want 30 — every day in the window must be present, including empty ones", len(resp.Days))
+	}
+	// No repos exist in this router, so there is nothing to have
+	// contributed to.
+	if resp.Total != 0 {
+		t.Errorf("total = %d, want 0", resp.Total)
+	}
+	if resp.Days[len(resp.Days)-1].Date != time.Now().UTC().Format("2006-01-02") {
+		t.Errorf("last day = %s, want today — the window must end at today", resp.Days[len(resp.Days)-1].Date)
+	}
+}
+
+func TestContributions_RejectsUnauthenticatedRequest(t *testing.T) {
+	router, _, _ := newTestRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/contributions", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
 

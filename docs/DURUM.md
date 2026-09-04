@@ -422,6 +422,19 @@ gözetimli yapılacak birer adım.
   (`/api/display-names` sadece admin'e açık olduğu için geliştiriciler
   ham subject id'si — "7 açtı" — görüyordu; bu endpoint zaten herkesin
   e-postasını veriyor, isim ondan daha hassas değil).
+
+  Panele ayrıca **katkı ısı haritası** eklendi (GitHub'daki yeşil
+  kareler): `GET /api/contributions?days=365` →
+  `gitstats.ActivityByAuthor`, erişilebilen tüm repoları gezip **çağıran
+  kişinin kendi** commit'lerini gün gün sayıyor. Endpoint'te bilerek
+  `?subject=` yok — her zaman çağıranı cevaplıyor, URL'i kurcalayarak
+  başkasının aktivitesine dönüştürülemiyor.
+  **Önemli sınırlama:** commit'ler **git yazar e-postasıyla**
+  eşleştiriliyor (büyük/küçük harf duyarsız) — bir commit nesnesinde
+  başka kimlik yok. Birinin yerel `git config user.email` ayarı panel
+  hesabındaki e-postadan farklıysa o commit'ler grafikte görünmez;
+  çözüm ikisini aynı yapmak. Panel, toplam 0 çıktığında bunu açıkça
+  yazıyor ki "bozuk" sanılmasın.
 - **2026-09-04 güncelleme — branch'ten inceleme isteği açma (GitHub
   mantığında):** Eski akış "İnceleme İstekleri" sayfasında kaynak/hedef
   branch seçen bir formdu. Artık `/repos/:repo/branches` sayfasındaki

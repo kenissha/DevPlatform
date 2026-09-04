@@ -103,7 +103,7 @@ func main() {
 		Notify: notifyStore,
 		Access: accessStore,
 	}
-	statsHandlers := &gitstats.Handlers{Repos: store}
+	statsHandlers := &gitstats.Handlers{Repos: store, Access: accessStore}
 	auditHandlers := &audit.Handlers{Logger: auditLogger, Access: accessStore}
 	notifyHandlers := &notify.Handlers{
 		Store: notifyStore,
