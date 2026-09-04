@@ -79,13 +79,20 @@ export const api = {
   // Branch detail page's data sources — see backend/internal/gitstats.
   // CommitsAhead and mergerequest.Handlers.BranchPreview's doc comments.
   // Both default target/base to "main" server-side when omitted.
+  //
+  // branch travels as a ?branch= query value, not a path segment —
+  // IIS's request filtering rejects an encoded "/" in the URL PATH by
+  // default (branch names can contain one, e.g.
+  // "feature/hakem-raporlari"), confirmed live (2026-09-04) as a 404
+  // that never even reached the backend. A query value isn't subject
+  // to that same filtering.
   getBranchPreview: (repo: string, branch: string) =>
     request<BranchPreview>(
-      `/api/repos/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}/preview`,
+      `/api/repos/${encodeURIComponent(repo)}/branch-preview?branch=${encodeURIComponent(branch)}`,
     ),
   listBranchCommits: (repo: string, branch: string) =>
     request<Commit[]>(
-      `/api/repos/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}/commits`,
+      `/api/repos/${encodeURIComponent(repo)}/branch-commits?branch=${encodeURIComponent(branch)}`,
     ),
 
   listMergeRequests: (repo: string) =>

@@ -325,14 +325,23 @@ type branchPreview struct {
 }
 
 // BranchPreview handles
-// GET /api/repos/{repo}/branches/{branch}/preview?target=main — the
+// GET /api/repos/{repo}/branch-preview?branch=X&target=main — the
 // branch detail page's data source. target defaults to "main", the only
 // branch DevPlatform ever protects.
+//
+// branch is a query parameter, not a {branch} path segment — see
+// gitstats.Handlers.BranchCommits' doc comment for why (IIS's request
+// filtering rejects an encoded "/" in the URL path by default;
+// confirmed live 2026-09-04).
 func (h *Handlers) BranchPreview(w http.ResponseWriter, r *http.Request) {
 	repo := r.PathValue("repo")
-	branch := r.PathValue("branch")
 	if !h.repoExists(repo) {
 		http.Error(w, "404 repository not found", http.StatusNotFound)
+		return
+	}
+	branch := r.URL.Query().Get("branch")
+	if branch == "" {
+		http.Error(w, "400 branch query parameter is required", http.StatusBadRequest)
 		return
 	}
 	target := r.URL.Query().Get("target")

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -101,7 +102,7 @@ func newMux(h *Handlers) *http.ServeMux {
 	mux.Handle("POST /api/repos/{repo}/merge-requests/{id}/reject",
 		authMW(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(h.Reject))))
 	mux.Handle("GET /api/merge-requests", authMW(http.HandlerFunc(h.ListAll)))
-	mux.Handle("GET /api/repos/{repo}/branches/{branch}/preview", authMW(http.HandlerFunc(h.BranchPreview)))
+	mux.Handle("GET /api/repos/{repo}/branch-preview", authMW(http.HandlerFunc(h.BranchPreview)))
 	return mux
 }
 
@@ -483,6 +484,42 @@ func TestCreate_NotifiesAllAdmins(t *testing.T) {
 	}
 }
 
+// TestBranchPreview_HandlesABranchNameContainingASlash is a regression
+// test for a real production incident (2026-09-04): with branch as a
+// {branch} path segment, a name like "feature/hakem-raporlari" reached
+// this handler fine in every local/CI test (net/http's ServeMux
+// resolves an encoded "%2F" within one path segment correctly), but IIS
+// — sitting in front of the real deployment — rejects an encoded "/" in
+// the URL PATH by default ("Double Escape Sequence") before the request
+// ever reaches this process, so this exact scenario passed every
+// automated test while being completely broken live. branch now
+// travels as a query value specifically to avoid that class of bug;
+// this test at least confirms the handler itself has no problem with
+// the slash once it arrives, which a query parameter guarantees IIS
+// won't interfere with.
+func TestBranchPreview_HandlesABranchNameContainingASlash(t *testing.T) {
+	h, _ := newTestHandlers(t)
+	mux := newMux(h)
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/repos/sample/branch-preview?"+url.Values{"branch": {"feature/deep-nested-branch"}}.Encode(),
+		nil,
+	)
+	req = addAuth(req, t, "dev-1", "developer")
+	rec := httptest.NewRecorder()
+
+	// feature/deep-nested-branch doesn't exist in this fixture repo, so
+	// the real assertion here is "not a 404 from bad routing" — Diff
+	// returning its own 400 "branch not found" still proves the query
+	// value round-tripped correctly into Diff's branch argument.
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusNotFound {
+		t.Fatalf("status = 404 — branch query parameter likely wasn't read correctly, body: %s", rec.Body.String())
+	}
+}
+
 // TestBranchPreview_NoExistingRequestReturnsJustTheDiff is the branch
 // detail page's default case: nobody has opened an İnceleme İsteği for
 // this branch yet, so it should just show the diff and let the
@@ -491,7 +528,7 @@ func TestBranchPreview_NoExistingRequestReturnsJustTheDiff(t *testing.T) {
 	h, _ := newTestHandlers(t)
 	mux := newMux(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/repos/sample/branches/feature-x/preview", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/repos/sample/branch-preview?branch=feature-x", nil)
 	req = addAuth(req, t, "dev-1", "developer")
 	rec := httptest.NewRecorder()
 
@@ -527,7 +564,7 @@ func TestBranchPreview_ReturnsTheOpenRequestForThisBranch(t *testing.T) {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/repos/sample/branches/feature-x/preview", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/repos/sample/branch-preview?branch=feature-x", nil)
 	req = addAuth(req, t, "dev-1", "developer")
 	rec := httptest.NewRecorder()
 
@@ -560,7 +597,7 @@ func TestBranchPreview_ReturnsTheMostRecentRejectionWithItsNote(t *testing.T) {
 		t.Fatalf("SetStatus failed: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/repos/sample/branches/feature-x/preview", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/repos/sample/branch-preview?branch=feature-x", nil)
 	req = addAuth(req, t, "dev-1", "developer")
 	rec := httptest.NewRecorder()
 

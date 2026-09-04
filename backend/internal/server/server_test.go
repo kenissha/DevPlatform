@@ -484,8 +484,8 @@ func TestAccess_RestrictedDeveloperIsBlockedFromAnUngrantedRepoThroughEveryRepoS
 		{http.MethodGet, "/api/repos/intranet-backend/commits"},
 		{http.MethodGet, "/api/repos/intranet-backend/deploy-targets"},
 		{http.MethodGet, "/api/repos/intranet-backend/deployments"},
-		{http.MethodGet, "/api/repos/intranet-backend/branches/feature-x/commits"},
-		{http.MethodGet, "/api/repos/intranet-backend/branches/feature-x/preview"},
+		{http.MethodGet, "/api/repos/intranet-backend/branch-commits?branch=feature-x"},
+		{http.MethodGet, "/api/repos/intranet-backend/branch-preview?branch=feature-x"},
 	} {
 		rec := do(t, router, tc.method, tc.path, "dev-1", "developer", nil)
 		if rec.Code != http.StatusForbidden {

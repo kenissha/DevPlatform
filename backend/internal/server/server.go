@@ -180,10 +180,11 @@ func NewRouter(deps Deps) *http.ServeMux {
 	mux.Handle("GET /api/repos/{repo}/commits", repoScoped(http.HandlerFunc(stats.Commits)))
 	mux.Handle("GET /api/repos/{repo}/contributors", repoScoped(http.HandlerFunc(stats.Contributors)))
 	mux.Handle("GET /api/repos/{repo}/activity", repoScoped(http.HandlerFunc(stats.Activity)))
-	// The branch detail page's data source — see gitstats.CommitsAhead
-	// and mergerequest.Handlers.BranchPreview's doc comments.
-	mux.Handle("GET /api/repos/{repo}/branches/{branch}/commits", repoScoped(http.HandlerFunc(stats.BranchCommits)))
-	mux.Handle("GET /api/repos/{repo}/branches/{branch}/preview", repoScoped(http.HandlerFunc(mr.BranchPreview)))
+	// The branch detail page's data source — branch is a ?branch= query
+	// parameter rather than a {branch} path segment on both of these,
+	// see gitstats.Handlers.BranchCommits' doc comment for why.
+	mux.Handle("GET /api/repos/{repo}/branch-commits", repoScoped(http.HandlerFunc(stats.BranchCommits)))
+	mux.Handle("GET /api/repos/{repo}/branch-preview", repoScoped(http.HandlerFunc(mr.BranchPreview)))
 
 	// The audit log is readable by any authenticated user — see
 	// audit.Handlers' doc comment for why it isn't Admin-gated. Not
