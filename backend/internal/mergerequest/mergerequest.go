@@ -1,13 +1,21 @@
-// Package mergerequest implements the "Geliştirici main'e birleştir talebi
-// açar, Yönetici diff'i görüp onaylar/reddeder" flow from the design doc.
+// Package mergerequest implements DevPlatform's "İnceleme İsteği" flow:
+// a Geliştirici opens one when a branch is ready, a Yönetici reviews the
+// diff and approves or rejects it.
 //
-// A merge request records intent (merge SourceBranch into TargetBranch in a
-// given repository) and a review status; it does not, on its own, perform
-// the git merge. Approval only records that a Yönetici reviewed and signed
-// off — actually moving TargetBranch is a separate, deliberately deferred
-// step (see the package's design notes in the project's plan docs) because
-// it has to interact carefully with gitserver's branch protection instead
-// of just bypassing it.
+// A merge request records intent (merge SourceBranch into TargetBranch in
+// a given repository) and a review status; it never performs a git
+// operation of its own. TargetBranch (in practice always "main") only
+// ever actually moves via an Admin's own direct push — gitserver's
+// branch protection lets an Admin (and only an Admin) push straight to a
+// protected ref, via the same admin determination this package's
+// Approve/Reject already needed for their own authorization (see
+// gitserver.WithAdmin/IsAdmin). So Approve is a record, not a trigger: by
+// the time a Yönetici clicks it, they've already merged — real
+// conflict resolution included, using real git, not limited by whatever
+// this project's pinned go-git version can do — and pushed the result
+// themselves. A request marked "reddedildi" carries an optional Note
+// explaining why; there's no "re-open," a developer who addresses the
+// note just opens a new request for the same branches.
 package mergerequest
 
 import (
@@ -62,10 +70,11 @@ type MergeRequest struct {
 	Author       string    `json:"author"`
 	Status       Status    `json:"status"`
 	CreatedAt    time.Time `json:"createdAt"`
-	// MergedCommit is the commit TargetBranch was fast-forwarded to when
-	// this request was approved (see Handlers.Approve / FastForwardMerge).
-	// Empty until then.
-	MergedCommit string `json:"mergedCommit,omitempty"`
+	// Note is the Yönetici's short comment recorded alongside the
+	// decision (see Handlers.Approve/Reject) — typically why a request
+	// was rejected, e.g. "şunu düzelt, tekrar aç". Empty until a
+	// decision is made, and optional even then.
+	Note string `json:"note,omitempty"`
 }
 
 // Store persists merge requests as one JSON file per request under
@@ -218,17 +227,21 @@ func (s *Store) List(repo string) ([]MergeRequest, error) {
 	return mrs, nil
 }
 
-// ErrNotOpen is returned by SetStatus and MarkApproved when the merge
-// request has already left StatusOpen — a request can be approved or
-// rejected exactly once, not re-decided.
+// ErrNotOpen is returned by SetStatus when the merge request has already
+// left StatusOpen — a request can be approved or rejected exactly once,
+// not re-decided. A developer who needs another look after a rejection
+// opens a new request for the same branches instead (see
+// Handlers.Reject's doc comment) — there's no "re-open."
 var ErrNotOpen = errors.New("mergerequest: merge request is not open")
 
 // SetStatus transitions the merge request identified by (repo, id) from
-// StatusOpen to status. Only StatusRejected is a valid target here —
-// approval goes through MarkApproved instead, since it also has to record
-// the resulting merged commit in the same write.
-func (s *Store) SetStatus(repo, id string, status Status) (MergeRequest, error) {
-	if status != StatusRejected {
+// StatusOpen to status (StatusApproved or StatusRejected — StatusOpen
+// itself is not a valid target), recording note alongside the decision.
+// Approving performs no git operation of any kind — see
+// Handlers.Approve's doc comment for why that's now a deliberate design
+// choice, not a gap.
+func (s *Store) SetStatus(repo, id string, status Status, note string) (MergeRequest, error) {
+	if status != StatusApproved && status != StatusRejected {
 		return MergeRequest{}, ErrInvalidStatus
 	}
 
@@ -240,28 +253,7 @@ func (s *Store) SetStatus(repo, id string, status Status) (MergeRequest, error) 
 		return MergeRequest{}, ErrNotOpen
 	}
 	mr.Status = status
-
-	if err := s.overwrite(repo, id, mr); err != nil {
-		return MergeRequest{}, err
-	}
-	return mr, nil
-}
-
-// MarkApproved transitions the merge request identified by (repo, id) from
-// StatusOpen to StatusApproved and records mergedCommit — the commit its
-// target branch was fast-forwarded to (see FastForwardMerge). Both fields
-// are written together so a request can never end up "approved" on disk
-// without also recording what it was actually merged to.
-func (s *Store) MarkApproved(repo, id, mergedCommit string) (MergeRequest, error) {
-	mr, err := s.Get(repo, id)
-	if err != nil {
-		return MergeRequest{}, err
-	}
-	if mr.Status != StatusOpen {
-		return MergeRequest{}, ErrNotOpen
-	}
-	mr.Status = StatusApproved
-	mr.MergedCommit = mergedCommit
+	mr.Note = note
 
 	if err := s.overwrite(repo, id, mr); err != nil {
 		return MergeRequest{}, err

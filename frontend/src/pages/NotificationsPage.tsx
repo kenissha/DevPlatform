@@ -11,7 +11,7 @@ export function NotificationsPage() {
         <div className="page-title-group">
           <h1>Bildirimler</h1>
           <p className="page-subtitle">
-            Size atanan görevler ve onay bekleyen merge istekleri gibi olaylar burada listelenir.
+            Size atanan görevler ve onay bekleyen inceleme istekleri gibi olaylar burada listelenir.
           </p>
         </div>
       </div>

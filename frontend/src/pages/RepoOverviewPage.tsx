@@ -71,7 +71,7 @@ export function RepoOverviewPage() {
       </div>
 
       <div className="section-title">
-        <h2>Açık merge istekleri</h2>
+        <h2>Açık inceleme istekleri</h2>
         <span className="badge badge-neutral">{openMrs.length}</span>
         <div className="spacer" />
         <Link to={`/repos/${encodeURIComponent(repo)}/merge-requests`}>Tümü →</Link>
@@ -79,7 +79,7 @@ export function RepoOverviewPage() {
       <div className="card">
         {mergeRequests === null && <p className="empty-state">Yükleniyor...</p>}
         {mergeRequests !== null && openMrs.length === 0 && (
-          <p className="empty-state">Açık merge isteği yok.</p>
+          <p className="empty-state">Açık inceleme isteği yok.</p>
         )}
         {openMrs.length > 0 && (
           <ul className="row-list">

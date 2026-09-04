@@ -221,71 +221,6 @@ func TestCreate_AllowsNonexistentTargetBranch(t *testing.T) {
 	}
 }
 
-// TestApprove_CreatesRepoDefaultBranchOnFirstMerge covers the scenario the
-// smoke test caught: a freshly created repo has no commits at all, so
-// "main" doesn't exist as a ref yet, and protectingLoader rejects every
-// direct push to it unconditionally — meaning the merge-request flow is
-// the only way a first commit ever reaches it. This exercises that whole
-// path end to end: create, then approve.
-func TestApprove_CreatesRepoDefaultBranchOnFirstMerge(t *testing.T) {
-	requireGit(t)
-
-	dataDir := t.TempDir()
-	repos := repostore.New(dataDir)
-	repoPath, err := repos.Create("empty-repo")
-	if err != nil {
-		t.Fatalf("failed to create bare repo: %v", err)
-	}
-
-	work := t.TempDir()
-	runGit(t, work, "init", "-b", "feature-x")
-	runGit(t, work, "config", "user.email", "test@example.com")
-	runGit(t, work, "config", "user.name", "Test")
-	runGit(t, work, "remote", "add", "origin", repoPath)
-	if err := os.WriteFile(filepath.Join(work, "README.md"), []byte("line one\n"), 0o644); err != nil {
-		t.Fatalf("failed to write file: %v", err)
-	}
-	runGit(t, work, "add", "README.md")
-	runGit(t, work, "commit", "-m", "initial commit")
-	runGit(t, work, "push", "origin", "feature-x")
-
-	h := &Handlers{
-		Store: NewStore(filepath.Join(dataDir, "merge-requests")),
-		Repos: repos,
-	}
-	mux := newMux(h)
-
-	createBody, _ := json.Marshal(map[string]string{
-		"title":        "First commit onto main",
-		"sourceBranch": "feature-x",
-		"targetBranch": "main",
-	})
-	createReq := httptest.NewRequest(http.MethodPost, "/api/repos/empty-repo/merge-requests", bytes.NewReader(createBody))
-	createReq = addAuth(createReq, t, "dev-1", "developer")
-	createRec := httptest.NewRecorder()
-	mux.ServeHTTP(createRec, createReq)
-	if createRec.Code != http.StatusCreated {
-		t.Fatalf("create status = %d, want %d, body: %s", createRec.Code, http.StatusCreated, createRec.Body.String())
-	}
-	var created MergeRequest
-	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
-		t.Fatalf("failed to decode create response: %v", err)
-	}
-
-	approveReq := httptest.NewRequest(http.MethodPost, "/api/repos/empty-repo/merge-requests/"+created.ID+"/approve", nil)
-	approveReq = addAuth(approveReq, t, "admin-1", "admin")
-	approveRec := httptest.NewRecorder()
-	mux.ServeHTTP(approveRec, approveReq)
-	if approveRec.Code != http.StatusOK {
-		t.Fatalf("approve status = %d, want %d, body: %s", approveRec.Code, http.StatusOK, approveRec.Body.String())
-	}
-
-	mainTip := runGit(t, repoPath, "rev-parse", "main")
-	if strings.TrimSpace(mainTip) == "" {
-		t.Fatal("expected main to exist on the server after approval, but rev-parse returned nothing")
-	}
-}
-
 func TestCreate_RejectsUnknownRepo(t *testing.T) {
 	h, _ := newTestHandlers(t)
 	mux := newMux(h)
@@ -364,16 +299,23 @@ func TestApprove_RejectsNonAdmin(t *testing.T) {
 	}
 }
 
+// TestApprove_AllowsAdmin confirms Approve performs no git operation —
+// main's tip on the server must be completely unchanged by it (see
+// Handlers.Approve's doc comment: an Admin's own direct push is what
+// actually advances main now, not this endpoint).
 func TestApprove_AllowsAdmin(t *testing.T) {
 	h, repoPath := newTestHandlers(t)
 	mux := newMux(h)
+
+	mainTipBefore := runGit(t, repoPath, "rev-parse", "main")
 
 	created, err := h.Store.Create("sample", "Add line two", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/merge-requests/"+created.ID+"/approve", nil)
+	body, _ := json.Marshal(decisionRequest{Note: "gerçek merge tamamlandı, main'e push edildi"})
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/merge-requests/"+created.ID+"/approve", bytes.NewReader(body))
 	req = addAuth(req, t, "admin-1", "admin")
 	rec := httptest.NewRecorder()
 
@@ -390,13 +332,13 @@ func TestApprove_AllowsAdmin(t *testing.T) {
 	if reread.Status != StatusApproved {
 		t.Errorf("Status = %q, want %q", reread.Status, StatusApproved)
 	}
-	if reread.MergedCommit == "" {
-		t.Error("expected MergedCommit to be recorded after a successful approval")
+	if reread.Note != "gerçek merge tamamlandı, main'e push edildi" {
+		t.Errorf("Note = %q, want the submitted note", reread.Note)
 	}
 
-	mainTip := runGit(t, repoPath, "rev-parse", "main")
-	if reread.MergedCommit+"\n" != mainTip {
-		t.Errorf("main tip after approval = %s, want %s", mainTip, reread.MergedCommit+"\n")
+	mainTipAfter := runGit(t, repoPath, "rev-parse", "main")
+	if mainTipAfter != mainTipBefore {
+		t.Errorf("main tip changed after approval (before=%s after=%s) — Approve must not touch git at all", mainTipBefore, mainTipAfter)
 	}
 }
 
@@ -408,8 +350,8 @@ func TestApprove_RejectsAlreadyDecidedRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
-	if _, err := h.Store.MarkApproved("sample", created.ID, "deadbeef"); err != nil {
-		t.Fatalf("MarkApproved setup failed: %v", err)
+	if _, err := h.Store.SetStatus("sample", created.ID, StatusApproved, ""); err != nil {
+		t.Fatalf("SetStatus setup failed: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/merge-requests/"+created.ID+"/approve", nil)
@@ -432,7 +374,8 @@ func TestReject_AllowsAdmin(t *testing.T) {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/merge-requests/"+created.ID+"/reject", nil)
+	body, _ := json.Marshal(decisionRequest{Note: "testler eksik, tamamla ve tekrar aç"})
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/merge-requests/"+created.ID+"/reject", bytes.NewReader(body))
 	req = addAuth(req, t, "admin-1", "admin")
 	rec := httptest.NewRecorder()
 
@@ -448,6 +391,9 @@ func TestReject_AllowsAdmin(t *testing.T) {
 	}
 	if reread.Status != StatusRejected {
 		t.Errorf("Status = %q, want %q", reread.Status, StatusRejected)
+	}
+	if reread.Note != "testler eksik, tamamla ve tekrar aç" {
+		t.Errorf("Note = %q, want the submitted note", reread.Note)
 	}
 }
 

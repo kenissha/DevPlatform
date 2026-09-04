@@ -85,15 +85,15 @@ export const api = {
     }),
   getMergeRequest: (repo: string, id: string) =>
     request<MergeRequestDetail>(`/api/repos/${encodeURIComponent(repo)}/merge-requests/${encodeURIComponent(id)}`),
-  approveMergeRequest: (repo: string, id: string) =>
+  approveMergeRequest: (repo: string, id: string, note?: string) =>
     request<MergeRequest>(
       `/api/repos/${encodeURIComponent(repo)}/merge-requests/${encodeURIComponent(id)}/approve`,
-      { method: 'POST' },
+      { method: 'POST', body: JSON.stringify({ note: note ?? '' }) },
     ),
-  rejectMergeRequest: (repo: string, id: string) =>
+  rejectMergeRequest: (repo: string, id: string, note?: string) =>
     request<MergeRequest>(
       `/api/repos/${encodeURIComponent(repo)}/merge-requests/${encodeURIComponent(id)}/reject`,
-      { method: 'POST' },
+      { method: 'POST', body: JSON.stringify({ note: note ?? '' }) },
     ),
 
   listTasks: (repo: string) => request<Task[]>(`/api/repos/${encodeURIComponent(repo)}/tasks`),

@@ -13,6 +13,7 @@ export function MergeRequestDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [acting, setActing] = useState(false)
+  const [note, setNote] = useState('')
 
   function reload() {
     setError(null)
@@ -24,15 +25,22 @@ export function MergeRequestDetailPage() {
 
   useEffect(reload, [repo, id])
 
+  // Approve/Reject never touch git — see backend/internal/mergerequest's
+  // package doc comment. By the time a Yönetici clicks Onayla they've
+  // already merged the real result themselves (with real git, outside
+  // this panel) and pushed it — this call is only their record of that,
+  // with note as an optional comment (why it was rejected, or a
+  // reference to what was actually merged).
   async function decide(action: 'approve' | 'reject') {
     setActing(true)
     setActionError(null)
     try {
       if (action === 'approve') {
-        await api.approveMergeRequest(repo, id)
+        await api.approveMergeRequest(repo, id, note.trim())
       } else {
-        await api.rejectMergeRequest(repo, id)
+        await api.rejectMergeRequest(repo, id, note.trim())
       }
+      setNote('')
       reload()
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'İşlem başarısız')
@@ -45,7 +53,7 @@ export function MergeRequestDetailPage() {
     return (
       <div className="page">
         <p>
-          <Link to={`/repos/${encodeURIComponent(repo)}/merge-requests`}>← Merge istekleri</Link>
+          <Link to={`/repos/${encodeURIComponent(repo)}/merge-requests`}>← İnceleme istekleri</Link>
         </p>
         <p className="error">{error}</p>
       </div>
@@ -90,12 +98,11 @@ export function MergeRequestDetailPage() {
         </div>
       </div>
 
-      {mr.mergedCommit && (
+      {mr.status !== 'open' && mr.note && (
         <div className="card">
           <div className="card-body">
             <p className="muted" style={{ fontSize: 13 }}>
-              <strong style={{ color: 'var(--success)' }}>Birleştirildi</strong> —{' '}
-              <code>{mr.targetBranch}</code> artık <code>{mr.mergedCommit.slice(0, 10)}</code> commit'inde.
+              <strong>Not:</strong> {mr.note}
             </p>
           </div>
         </div>
@@ -104,9 +111,19 @@ export function MergeRequestDetailPage() {
       {canDecide && (
         <div className="card">
           <div className="card-body">
+            <div className="field">
+              <label htmlFor="mr-note">Not (opsiyonel)</label>
+              <textarea
+                id="mr-note"
+                rows={2}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="örn. şunu düzelt, tekrar aç — ya da gerçek merge commit'ine referans"
+              />
+            </div>
             <div className="form-actions" style={{ marginTop: 0 }}>
               <button type="button" className="btn-primary" onClick={() => decide('approve')} disabled={acting}>
-                Onayla ve birleştir
+                Onayla
               </button>
               <button type="button" className="btn-danger" onClick={() => decide('reject')} disabled={acting}>
                 Reddet

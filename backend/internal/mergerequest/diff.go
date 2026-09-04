@@ -33,10 +33,11 @@ type FileStat struct {
 // Diff computes the changes that merging sourceBranch into targetBranch
 // would introduce, i.e. "what does source add on top of target" — the same
 // direction a GitHub-style base...compare view shows. If targetBranch
-// doesn't exist yet (see FastForwardMerge's doc comment — this is how a
-// repo's first commit reaches its default branch), the diff is computed
-// against an empty tree, so the review screen shows every file in
-// sourceBranch as newly added rather than erroring out.
+// doesn't exist yet (e.g. a brand new repo whose default branch has no
+// commits at all — an Admin's own direct push is what actually creates
+// it, see gitserver.WithAdmin/IsAdmin), the diff is computed against an
+// empty tree, so the review screen shows every file in sourceBranch as
+// newly added rather than erroring out.
 func Diff(repo *git.Repository, targetBranch, sourceBranch string) (DiffResult, error) {
 	sourceCommit, err := resolveBranchTip(repo, sourceBranch)
 	if err != nil {

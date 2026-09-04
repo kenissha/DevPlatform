@@ -6,6 +6,7 @@
 package gitserver
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/go-git/go-billy/v6/osfs"
@@ -19,10 +20,46 @@ import (
 // internal/server.NewRouter — see that function's comment.
 const Prefix = "/git"
 
+type contextKey int
+
+const adminContextKey contextKey = iota
+
+// WithAdmin returns a copy of ctx recording whether the caller has Admin
+// privileges. gittoken.RequireTokenAndAccess calls this (it already
+// looks up the caller's role to decide the repo-access check) before
+// invoking this package's handler; NewHandler reads it back per request
+// to decide whether protected refs (e.g. main) can be written directly —
+// an Admin can push straight to main (the review flow becomes optional
+// for them, since they already are the review step), a non-Admin still
+// cannot, matching internal/mergerequest's "İnceleme İsteği" flow.
+func WithAdmin(ctx context.Context, admin bool) context.Context {
+	return context.WithValue(ctx, adminContextKey, admin)
+}
+
+// IsAdmin reports whether ctx carries WithAdmin(true). A context that
+// never went through WithAdmin (e.g. this package's own tests, which
+// call NewHandler directly without gittoken in front) reports false —
+// the safe, protected-by-default outcome. Exported as the read half of
+// the WithAdmin/IsAdmin pair (mirroring internal/auth's
+// RequireAuth/UserFromContext) so other packages — e.g. gittoken's own
+// tests, verifying RequireTokenAndAccess actually sets this — can
+// observe it without gitserver needing test-only exports.
+func IsAdmin(ctx context.Context) bool {
+	admin, _ := ctx.Value(adminContextKey).(bool)
+	return admin
+}
+
 // NewHandler returns an http.Handler serving every bare repository under
 // dataDir via the git smart-HTTP protocol. Repository names are resolved
 // the same way repostore.Store names them (e.g. "foo" on disk as
 // "foo.git"); callers must request "/foo.git/...", not "/foo/...".
+//
+// The loader/backend chain is built fresh for every request (rather than
+// once at startup) so protection can depend on that request's own caller
+// (IsAdmin) — none of transport.NewFilesystemLoader,
+// newProtectingLoader, newScanningLoader, or backend.New do any I/O of
+// their own at construction time, so this costs no more per request than
+// the git operation itself already does.
 //
 // The returned handler is wrapped with withReceivePackAuthShim, a
 // permanent go-git v6-alpha workaround (see that function's doc comment)
@@ -30,12 +67,15 @@ const Prefix = "/git"
 // has no guarantee callers wrap it with gittoken.RequireTokenAndAccess
 // (this package's own tests call it directly, unwrapped).
 func NewHandler(dataDir string) http.Handler {
-	loader := transport.NewFilesystemLoader(osfs.New(dataDir), false)
-	protected := newProtectingLoader(loader)
-	scanned := newScanningLoader(protected)
-	b := backend.New(scanned)
-	b.Prefix = Prefix
-	return withReceivePackAuthShim(b)
+	return withReceivePackAuthShim(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		admin := IsAdmin(r.Context())
+		loader := transport.NewFilesystemLoader(osfs.New(dataDir), false)
+		protected := newProtectingLoader(loader, admin)
+		scanned := newScanningLoader(protected)
+		b := backend.New(scanned)
+		b.Prefix = Prefix
+		b.ServeHTTP(w, r)
+	}))
 }
 
 // withReceivePackAuthShim works around a gap in go-git v6-alpha.5's

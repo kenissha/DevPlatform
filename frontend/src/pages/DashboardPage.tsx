@@ -95,7 +95,7 @@ export function DashboardPage() {
       </div>
       <div className="card">
         {mergeRequests === null && <p className="empty-state">Yükleniyor...</p>}
-        {mergeRequests?.length === 0 && <p className="empty-state">Bekleyen merge isteği yok.</p>}
+        {mergeRequests?.length === 0 && <p className="empty-state">Bekleyen inceleme isteği yok.</p>}
         {mergeRequests && mergeRequests.length > 0 && (
           <ul className="row-list">
             {mergeRequests.map((mr) => (

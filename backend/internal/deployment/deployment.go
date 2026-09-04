@@ -58,9 +58,7 @@ const KindRollback Kind = "rollback"
 
 // Request is a request to release repo's sourceBranch into environment.
 // Approval runs the deploy synchronously and records the outcome in the
-// same object — there is no separate "deploy log" to cross-reference,
-// mirroring how MergeRequest records its own MergedCommit rather than
-// pointing elsewhere for it.
+// same object — there is no separate "deploy log" to cross-reference.
 type Request struct {
 	ID          string `json:"id"`
 	Repo        string `json:"repo"`

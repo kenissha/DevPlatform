@@ -1,6 +1,7 @@
 package gitserver
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -9,6 +10,18 @@ import (
 
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 )
+
+// withAdminContext wraps h so every request it serves carries
+// WithAdmin(ctx, true) — standing in for what gittoken.RequireTokenAndAccess
+// does in production once it's determined the caller is an Admin, without
+// pulling that package's full Basic-Auth/token-verification machinery
+// into this package's tests (gittoken already imports gitserver for
+// Prefix, so the reverse import isn't available here anyway).
+func withAdminContext(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(WithAdmin(r.Context(), true)))
+	})
+}
 
 func TestPush_DirectlyToMain_IsRejected(t *testing.T) {
 	requireGit(t)
@@ -192,4 +205,98 @@ func TestPush_ToFeatureBranch_StillSucceeds(t *testing.T) {
 	runGit(t, work, "remote", "add", "origin", srv.URL+"/protected2.git")
 	runGit(t, work, "push", "origin", "feature-y")
 	// runGit already fails the test via t.Fatalf if this push is rejected.
+}
+
+// TestPush_DirectlyToMain_AdminContextAllowsIt proves the other half of
+// the protection: a caller whose request context carries WithAdmin(true)
+// (what gittoken.RequireTokenAndAccess sets once it's determined the
+// caller is an Admin) CAN push straight to main — the whole reason this
+// context plumbing exists. Without withAdminContext wrapping NewHandler
+// here, this exact push is what TestPush_DirectlyToMain_IsRejected proves
+// fails.
+func TestPush_DirectlyToMain_AdminContextAllowsIt(t *testing.T) {
+	requireGit(t)
+
+	dataDir := t.TempDir()
+	store := repostore.New(dataDir)
+	if _, err := store.Create("adminpush"); err != nil {
+		t.Fatalf("failed to create test repo: %v", err)
+	}
+
+	srv := httptest.NewServer(withAdminContext(NewHandler(dataDir)))
+	defer srv.Close()
+
+	work := t.TempDir()
+	runGit(t, work, "init", "-b", "main")
+	runGit(t, work, "config", "user.email", "test@example.com")
+	runGit(t, work, "config", "user.name", "Test")
+	runGit(t, work, "config", "core.autocrlf", "false")
+	if err := os.WriteFile(filepath.Join(work, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	runGit(t, work, "add", "README.md")
+	runGit(t, work, "commit", "-m", "initial commit")
+	runGit(t, work, "remote", "add", "origin", srv.URL+"/adminpush.git")
+
+	// runGit fails the test via t.Fatalf if this push is rejected — the
+	// assertion here IS that it doesn't need to fall back to inspecting
+	// stderr or re-cloning to verify, unlike the rejection-side tests
+	// above, since a clean exit already proves the ref update went
+	// through the smart-HTTP protocol's normal success path.
+	runGit(t, work, "push", "origin", "main")
+
+	verifyDir := t.TempDir()
+	cloneTarget := filepath.Join(verifyDir, "adminpush")
+	runGit(t, verifyDir, "clone", srv.URL+"/adminpush.git", cloneTarget)
+	cmd := exec.Command("git", "rev-parse", "--verify", "refs/remotes/origin/main")
+	cmd.Dir = cloneTarget
+	if err := cmd.Run(); err != nil {
+		t.Fatal("refs/heads/main does not exist on the server after an admin-context push")
+	}
+}
+
+// TestPush_DeleteMain_AdminContextAllowsIt mirrors
+// TestPush_DirectlyToMain_AdminContextAllowsIt for deletion — an Admin
+// bypasses RemoveReference's guard the same way SetReference's is
+// bypassed, since protectingLoader applies allowProtected uniformly
+// across both (see protectedStorer's doc comment).
+func TestPush_DeleteMain_AdminContextAllowsIt(t *testing.T) {
+	requireGit(t)
+
+	dataDir := t.TempDir()
+	store := repostore.New(dataDir)
+	bareRepoPath, err := store.Create("adminpushdelete")
+	if err != nil {
+		t.Fatalf("failed to create test repo: %v", err)
+	}
+
+	work := t.TempDir()
+	runGit(t, work, "init", "-b", "main")
+	runGit(t, work, "config", "user.email", "test@example.com")
+	runGit(t, work, "config", "user.name", "Test")
+	runGit(t, work, "config", "core.autocrlf", "false")
+	if err := os.WriteFile(filepath.Join(work, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatalf("failed to write file: %v", err)
+	}
+	runGit(t, work, "add", "README.md")
+	runGit(t, work, "commit", "-m", "initial commit")
+
+	// Seed "main" the same way TestPush_DeleteMain_IsRejected does — see
+	// that test's comment for why this has to bypass the HTTP server.
+	runGit(t, work, "push", bareRepoPath, "main")
+
+	srv := httptest.NewServer(withAdminContext(NewHandler(dataDir)))
+	defer srv.Close()
+	runGit(t, work, "remote", "add", "origin", srv.URL+"/adminpushdelete.git")
+
+	runGit(t, work, "push", "origin", "--delete", "main")
+
+	verifyDir := t.TempDir()
+	cloneTarget := filepath.Join(verifyDir, "adminpushdelete")
+	runGit(t, verifyDir, "clone", srv.URL+"/adminpushdelete.git", cloneTarget)
+	cmd := exec.Command("git", "rev-parse", "--verify", "refs/remotes/origin/main")
+	cmd.Dir = cloneTarget
+	if err := cmd.Run(); err == nil {
+		t.Fatal("refs/heads/main still exists on the server after an admin-context delete")
+	}
 }

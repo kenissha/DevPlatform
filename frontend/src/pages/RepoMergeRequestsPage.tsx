@@ -50,17 +50,17 @@ export function RepoMergeRequestsPage() {
     }
   }
 
-  // The target may legitimately be a branch that doesn't exist yet (the
-  // backend creates it on approval — that's how a new repo's protected
-  // "main" gets its first commit), so the picker offers a free-text
-  // fallback rather than only listing existing branches.
+  // The target may legitimately be a branch that doesn't exist yet — a
+  // brand new repo's protected "main" has no commits until an Admin
+  // pushes its first one directly — so the picker still offers "main"
+  // as a choice rather than only listing existing branches.
   const targetOptions = branches?.includes('main') ? branches : ['main', ...(branches ?? [])]
 
   return (
     <div className="page">
       <div className="page-header">
         <div className="page-title-group">
-          <h1>Merge istekleri</h1>
+          <h1>İnceleme istekleri</h1>
           <p className="page-subtitle">{repo} için inceleme bekleyen değişiklikler</p>
         </div>
       </div>
@@ -69,7 +69,7 @@ export function RepoMergeRequestsPage() {
 
       <div className="card">
         {mergeRequests === null && <p className="empty-state">Yükleniyor...</p>}
-        {mergeRequests?.length === 0 && <p className="empty-state">Henüz merge isteği yok.</p>}
+        {mergeRequests?.length === 0 && <p className="empty-state">Henüz inceleme isteği yok.</p>}
         {mergeRequests && mergeRequests.length > 0 && (
           <ul className="row-list">
             {mergeRequests.map((mr) => (
@@ -108,7 +108,7 @@ export function RepoMergeRequestsPage() {
       {branches && branches.length > 0 && (
         <>
           <div className="section-title">
-            <h2>Yeni merge isteği</h2>
+            <h2>Yeni inceleme isteği</h2>
           </div>
           <div className="card">
             <div className="card-body">
@@ -153,7 +153,7 @@ export function RepoMergeRequestsPage() {
                     className="btn-primary"
                     disabled={creating || !title.trim() || !sourceBranch || !targetBranch || sourceBranch === targetBranch}
                   >
-                    {creating ? 'Oluşturuluyor...' : 'Merge isteği oluştur'}
+                    {creating ? 'Oluşturuluyor...' : 'İnceleme isteği oluştur'}
                   </button>
                   {sourceBranch === targetBranch && (
                     <p className="error">Kaynak ve hedef branch aynı olamaz.</p>

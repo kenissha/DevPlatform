@@ -36,13 +36,19 @@ func isProtectedRef(name plumbing.ReferenceName) bool {
 }
 
 // protectingLoader wraps a transport.Loader so every storer it returns
-// rejects reference updates to protectedRefNames.
+// rejects reference updates to protectedRefNames — unless allowProtected
+// is true, in which case protection is skipped entirely for every storer
+// this loader produces. allowProtected reflects a single request's
+// caller (see WithAdmin/IsAdmin): gitserver.NewHandler builds
+// a fresh protectingLoader per request, so this is never shared or
+// reused across two different callers.
 type protectingLoader struct {
-	inner transport.Loader
+	inner          transport.Loader
+	allowProtected bool
 }
 
-func newProtectingLoader(inner transport.Loader) transport.Loader {
-	return &protectingLoader{inner: inner}
+func newProtectingLoader(inner transport.Loader, allowProtected bool) transport.Loader {
+	return &protectingLoader{inner: inner, allowProtected: allowProtected}
 }
 
 func (l *protectingLoader) Load(u *url.URL) (storage.Storer, error) {
@@ -50,12 +56,19 @@ func (l *protectingLoader) Load(u *url.URL) (storage.Storer, error) {
 	if err != nil {
 		return nil, err
 	}
+	if l.allowProtected {
+		return st, nil
+	}
 	return &protectedStorer{Storer: st}, nil
 }
 
 // protectedStorer embeds a real storage.Storer so every method is
 // delegated automatically via Go's interface embedding, except the
 // reference-write methods, which are overridden to reject protected refs.
+// protectingLoader only ever constructs one of these when allowProtected
+// is false, so protectedStorer itself doesn't need its own bypass flag —
+// its mere existence means "this request's caller may not touch
+// protected refs."
 type protectedStorer struct {
 	storage.Storer
 }

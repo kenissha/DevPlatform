@@ -6,8 +6,21 @@ import (
 	"testing"
 
 	"github.com/kenissha/DevPlatform/backend/internal/access"
+	"github.com/kenissha/DevPlatform/backend/internal/gitserver"
 	"github.com/kenissha/DevPlatform/backend/internal/users"
 )
+
+// contextRecordingGitHandler is stubGitHandler plus a hook into what the
+// request context carried by the time it reached next.ServeHTTP —
+// RequireTokenAndAccess is the ONLY place that's supposed to set this,
+// so recording it here is how these tests observe that side effect
+// without gitserver exporting anything test-only of its own.
+func contextRecordingGitHandler(sawAdmin *bool) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*sawAdmin = gitserver.IsAdmin(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+}
 
 func stubGitHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -144,6 +157,66 @@ func TestRequireTokenAndAccess_AdminBypassesRestriction(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d (admins always bypass)", rec.Code, http.StatusOK)
+	}
+}
+
+// TestRequireTokenAndAccess_CarriesAdminIntoContextForAdmins and its
+// non-admin counterpart below verify the actual wiring
+// gitserver.NewHandler depends on for the admin-can-push-to-main
+// bypass: RequireTokenAndAccess must call gitserver.WithAdmin with the
+// SAME admin value it just computed for the repo-access check, not an
+// independent (and possibly out-of-sync) determination.
+func TestRequireTokenAndAccess_CarriesAdminIntoContextForAdmins(t *testing.T) {
+	tokens := NewStore(t.TempDir() + "/git-tokens.json")
+	_, token, err := tokens.Generate("admin-1", "test")
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	accessStore := access.NewStore(t.TempDir() + "/access.json")
+	usersStore := users.NewStore(t.TempDir() + "/users.json")
+	if _, err := usersStore.Upsert("admin-1", "admin@example.com", "admin"); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+
+	var sawAdmin bool
+	handler := RequireTokenAndAccess(tokens, accessStore, usersStore, contextRecordingGitHandler(&sawAdmin))
+
+	req := newTestRequest("some-repo", "admin-1", token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if !sawAdmin {
+		t.Error("gitserver.IsAdmin(ctx) = false for an Admin subject, want true")
+	}
+}
+
+func TestRequireTokenAndAccess_DoesNotCarryAdminIntoContextForDevelopers(t *testing.T) {
+	tokens := NewStore(t.TempDir() + "/git-tokens.json")
+	_, token, err := tokens.Generate("dev-1", "test")
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	accessStore := access.NewStore(t.TempDir() + "/access.json")
+	usersStore := users.NewStore(t.TempDir() + "/users.json")
+	if _, err := usersStore.Upsert("dev-1", "dev@example.com", "developer"); err != nil {
+		t.Fatalf("Upsert returned error: %v", err)
+	}
+
+	var sawAdmin bool
+	handler := RequireTokenAndAccess(tokens, accessStore, usersStore, contextRecordingGitHandler(&sawAdmin))
+
+	req := newTestRequest("some-repo", "dev-1", token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if sawAdmin {
+		t.Error("gitserver.IsAdmin(ctx) = true for a non-Admin subject, want false")
 	}
 }
 

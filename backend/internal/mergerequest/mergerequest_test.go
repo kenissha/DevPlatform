@@ -114,27 +114,30 @@ func TestList_ReturnsEmptySliceForRepoWithNoRequests(t *testing.T) {
 	}
 }
 
-func TestSetStatus_TransitionsToRejected(t *testing.T) {
+func TestSetStatus_TransitionsToRejectedWithANote(t *testing.T) {
 	store := NewStore(t.TempDir())
 	created, err := store.Create("intranet-backend", "Fix login bug", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	updated, err := store.SetStatus("intranet-backend", created.ID, StatusRejected)
+	updated, err := store.SetStatus("intranet-backend", created.ID, StatusRejected, "şunu düzelt, tekrar aç")
 	if err != nil {
 		t.Fatalf("SetStatus returned error: %v", err)
 	}
 	if updated.Status != StatusRejected {
 		t.Errorf("Status = %q, want %q", updated.Status, StatusRejected)
 	}
+	if updated.Note != "şunu düzelt, tekrar aç" {
+		t.Errorf("Note = %q, want %q", updated.Note, "şunu düzelt, tekrar aç")
+	}
 
 	reread, err := store.Get("intranet-backend", created.ID)
 	if err != nil {
 		t.Fatalf("Get after SetStatus failed: %v", err)
 	}
-	if reread.Status != StatusRejected {
-		t.Errorf("persisted Status = %q, want %q", reread.Status, StatusRejected)
+	if reread.Status != StatusRejected || reread.Note != "şunu düzelt, tekrar aç" {
+		t.Errorf("persisted = %+v, want Status=rejected Note=\"şunu düzelt, tekrar aç\"", reread)
 	}
 }
 
@@ -144,54 +147,55 @@ func TestSetStatus_RejectsAlreadyDecidedRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
-	if _, err := store.SetStatus("intranet-backend", created.ID, StatusRejected); err != nil {
+	if _, err := store.SetStatus("intranet-backend", created.ID, StatusRejected, ""); err != nil {
 		t.Fatalf("first SetStatus failed: %v", err)
 	}
 
-	_, err = store.SetStatus("intranet-backend", created.ID, StatusRejected)
+	_, err = store.SetStatus("intranet-backend", created.ID, StatusRejected, "")
 	if err != ErrNotOpen {
 		t.Fatalf("err = %v, want ErrNotOpen", err)
 	}
 }
 
-func TestMarkApproved_TransitionsAndRecordsMergedCommit(t *testing.T) {
+// TestSetStatus_TransitionsToApproved covers what Handlers.Approve now
+// does: a pure status+note record, no git operation of any kind (see
+// that handler's doc comment for why — main only ever advances via an
+// Admin's own direct push, per gitserver.WithAdmin).
+func TestSetStatus_TransitionsToApproved(t *testing.T) {
 	store := NewStore(t.TempDir())
 	created, err := store.Create("intranet-backend", "Fix login bug", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	updated, err := store.MarkApproved("intranet-backend", created.ID, "deadbeef")
+	updated, err := store.SetStatus("intranet-backend", created.ID, StatusApproved, "")
 	if err != nil {
-		t.Fatalf("MarkApproved returned error: %v", err)
+		t.Fatalf("SetStatus returned error: %v", err)
 	}
 	if updated.Status != StatusApproved {
 		t.Errorf("Status = %q, want %q", updated.Status, StatusApproved)
 	}
-	if updated.MergedCommit != "deadbeef" {
-		t.Errorf("MergedCommit = %q, want %q", updated.MergedCommit, "deadbeef")
-	}
 
 	reread, err := store.Get("intranet-backend", created.ID)
 	if err != nil {
-		t.Fatalf("Get after MarkApproved failed: %v", err)
+		t.Fatalf("Get after SetStatus failed: %v", err)
 	}
-	if reread.Status != StatusApproved || reread.MergedCommit != "deadbeef" {
-		t.Errorf("persisted = %+v, want Status=approved MergedCommit=deadbeef", reread)
+	if reread.Status != StatusApproved {
+		t.Errorf("persisted Status = %q, want %q", reread.Status, StatusApproved)
 	}
 }
 
-func TestMarkApproved_RejectsAlreadyDecidedRequest(t *testing.T) {
+func TestSetStatus_RejectsApprovingAnAlreadyDecidedRequest(t *testing.T) {
 	store := NewStore(t.TempDir())
 	created, err := store.Create("intranet-backend", "Fix login bug", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
-	if _, err := store.MarkApproved("intranet-backend", created.ID, "deadbeef"); err != nil {
-		t.Fatalf("first MarkApproved failed: %v", err)
+	if _, err := store.SetStatus("intranet-backend", created.ID, StatusApproved, ""); err != nil {
+		t.Fatalf("first SetStatus failed: %v", err)
 	}
 
-	_, err = store.MarkApproved("intranet-backend", created.ID, "cafebabe")
+	_, err = store.SetStatus("intranet-backend", created.ID, StatusApproved, "")
 	if err != ErrNotOpen {
 		t.Fatalf("err = %v, want ErrNotOpen", err)
 	}
@@ -204,8 +208,43 @@ func TestSetStatus_RejectsInvalidTargetStatus(t *testing.T) {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	_, err = store.SetStatus("intranet-backend", created.ID, StatusOpen)
+	_, err = store.SetStatus("intranet-backend", created.ID, StatusOpen, "")
 	if err != ErrInvalidStatus {
 		t.Fatalf("err = %v, want ErrInvalidStatus", err)
+	}
+}
+
+// TestCreate_AllowsANewRequestForTheSameBranchPairAfterRejection is the
+// mechanism that replaces "re-opening" a rejected request (see
+// Handlers.Reject's doc comment): there's no branch-pair uniqueness
+// constraint, so a developer who fixes what a rejection note asked for
+// just opens a fresh request on the same branches.
+func TestCreate_AllowsANewRequestForTheSameBranchPairAfterRejection(t *testing.T) {
+	store := NewStore(t.TempDir())
+	first, err := store.Create("intranet-backend", "Fix login bug", "feature-x", "main", "dev-1")
+	if err != nil {
+		t.Fatalf("first Create failed: %v", err)
+	}
+	if _, err := store.SetStatus("intranet-backend", first.ID, StatusRejected, "eksik test var"); err != nil {
+		t.Fatalf("SetStatus(rejected) failed: %v", err)
+	}
+
+	second, err := store.Create("intranet-backend", "Fix login bug (v2)", "feature-x", "main", "dev-1")
+	if err != nil {
+		t.Fatalf("second Create failed: %v", err)
+	}
+	if second.ID == first.ID {
+		t.Fatal("second Create returned the same ID as the first")
+	}
+	if second.Status != StatusOpen {
+		t.Errorf("second.Status = %q, want %q", second.Status, StatusOpen)
+	}
+
+	all, err := store.List("intranet-backend")
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("List returned %d requests, want 2 (the rejected one plus the new one)", len(all))
 	}
 }

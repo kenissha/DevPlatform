@@ -34,9 +34,9 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   'repo.created': 'Repo oluşturuldu',
   'task.created': 'Görev açıldı',
   'task.updated': 'Görev güncellendi',
-  'merge_request.opened': 'Merge isteği açıldı',
-  'merge_request.approved': 'Merge onaylandı',
-  'merge_request.rejected': 'Merge reddedildi',
+  'merge_request.opened': 'İnceleme isteği açıldı',
+  'merge_request.approved': 'İnceleme isteği onaylandı',
+  'merge_request.rejected': 'İnceleme isteği reddedildi',
   'deployment.opened': 'Deploy isteği açıldı',
   'deployment.deployed': 'Deploy edildi',
   'deployment.failed': 'Deploy başarısız',
@@ -77,7 +77,7 @@ export const DEPLOYMENT_STATUS_BADGE: Record<DeploymentStatus, string> = {
 // taskboard, backend/internal/mergerequest).
 export const NOTIFICATION_KIND_LABELS: Record<string, string> = {
   task_assigned: 'Görev atandı',
-  merge_request_opened: 'Merge isteği açıldı',
+  merge_request_opened: 'İnceleme isteği açıldı',
   deployment_opened: 'Deploy isteği açıldı',
   deployment_decided: 'Deploy sonucu',
 }

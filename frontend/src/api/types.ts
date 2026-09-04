@@ -18,6 +18,13 @@ export interface User {
 
 export type MergeRequestStatus = 'open' | 'approved' | 'rejected'
 
+// An "İnceleme İsteği" — mirrors backend/internal/mergerequest.MergeRequest.
+// Approving/rejecting never performs a git operation: TargetBranch (in
+// practice always "main") only ever advances via an Admin's own direct
+// push (branch protection allows exactly that, and only that, for an
+// Admin — see backend/internal/gitserver.WithAdmin/IsAdmin). note is the
+// Yönetici's optional comment recorded alongside the decision — most
+// often why a request was rejected.
 export interface MergeRequest {
   id: string
   repo: string
@@ -27,7 +34,7 @@ export interface MergeRequest {
   author: string
   status: MergeRequestStatus
   createdAt: string
-  mergedCommit?: string
+  note?: string
 }
 
 export interface FileStat {

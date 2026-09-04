@@ -55,6 +55,10 @@ func RequireTokenAndAccess(tokens *Store, accessStore *access.Store, usersStore 
 			}
 		}
 
+		// Carried through so gitserver.NewHandler can decide, per request,
+		// whether this caller may write protected refs (e.g. push straight
+		// to main) — see gitserver.WithAdmin's doc comment.
+		r = r.WithContext(gitserver.WithAdmin(r.Context(), admin))
 		next.ServeHTTP(w, r)
 	})
 }

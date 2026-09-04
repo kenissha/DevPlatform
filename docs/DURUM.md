@@ -52,7 +52,11 @@ Gerçek giriş, kurumun mevcut sisteminden gelen bir JWT ile olacak (bkz.
 ### Git ile kullanmak
 
 Git artık kişi başına anahtarla çalışıyor — paylaşılan kullanıcı adı/şifre
-yok. `main`'e doğrudan push **reddedilir** — merge isteği açman gerekir.
+yok. `main`'e doğrudan push geliştiriciler için **reddedilir** — "İnceleme
+İsteği" açman gerekir. **Admin (sen) `main`'e doğrudan push atabilir**
+(bkz. "Bilinmesi gereken kararlar"daki 2026-09-04 güncellemesi) — gerçek
+merge/conflict çözümünü kendi bilgisayarında yapıp sonucu direkt push
+etmen bunun için.
 
 **Gerçek sunucuya karşı, önerilen yol (2026-09-03'ten beri):**
 `devplatform-login` aracını kur (bkz. "CLI git login" güncellemesi,
@@ -437,9 +441,26 @@ gözetimli yapılacak birer adım.
 - **`main`'e ilk commit merge isteğiyle girer.** Yeni repo boşken `main`
   ref'i yoktur ve doğrudan push kapalıdır; hedefi `main` olan bir merge
   isteği onaylandığında branch o an oluşturulur.
-- **Merge sadece fast-forward.** Kullandığımız go-git alfa sürümünde
-  gerçek 3-way merge yok. Branch'ler ayrışmışsa istek 409 ile reddedilir
-  ve açık kalır; o durumda git CLI ile elle birleştirmek gerekir.
+- **Çözüldü — "Merge İsteği" artık "İnceleme İsteği", gerçek merge
+  platformdan çıktı (2026-09-04):** Eski model (fast-forward-only,
+  go-git alfa sürümünde gerçek 3-way merge yoktu, branch'ler ayrışırsa
+  409 ile reddedip açık bırakıyordu) tamamen kaldırıldı — bu artık bir
+  eksiklik değil, bilinçli bir mimari. `mergerequest.Handlers.Approve`
+  hiçbir git işlemi yapmıyor, sadece durum+not kaydı. `main`'i gerçekten
+  ilerleten tek yol artık bir **Admin'in kendi doğrudan push'u**:
+  `gitserver`'ın korumalı-ref engeli artık kimin push attığını biliyor
+  (`gittoken.RequireTokenAndAccess` zaten admin'i tespit ediyordu, bu
+  bilgiyi `gitserver.WithAdmin`/`IsAdmin` ile context üzerinden
+  taşıyoruz) — geliştiriciler hâlâ `main`'e doğrudan push atamaz, Admin
+  atabilir. Akış: geliştirici branch açar, işi bitince "İnceleme İsteği"
+  açar; Admin (gerekirse Claude ile) gerçek git kullanarak (bu projenin
+  pinlenmiş go-git sürümüyle sınırlı olmadan) kendi bilgisayarında
+  merge/conflict çözümü yapar, `main`'i doğrudan push eder, sonra
+  panelden "Onayla" ile sadece "bunu ben yaptım" kaydı bırakır. Reddet
+  artık kısa bir not taşıyabiliyor ("şunu düzelt, tekrar aç") — yeniden
+  açma mekanizması yok, geliştirici aynı branch'te devam edip yeni bir
+  istek açıyor. `mergerequest/merge.go` (FastForwardMerge) tamamen
+  silindi.
 - **Audit log yalnızca eklenir.** Dosya hiçbir zaman yeniden yazılmaz.
   Dosya sistemine erişimi olan biri yine de düzenleyebilir; gerçek
   kurcalama kanıtı (hash zinciri / dış sunucu) kapsam dışı bırakıldı.

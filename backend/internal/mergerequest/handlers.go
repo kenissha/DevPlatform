@@ -82,10 +82,13 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 		h.writeBranchError(w, err)
 		return
 	}
-	// TargetBranch is allowed not to exist yet — FastForwardMerge creates
-	// it on approval (see its doc comment). This is the only way a brand
-	// new repo's default branch ever gets a first commit, since direct
-	// pushes to it are rejected unconditionally.
+	// TargetBranch is allowed not to exist yet — a brand new repo's
+	// default branch has no commits until an Admin pushes its first one
+	// directly (protected refs reject everyone else's direct push, but
+	// not an Admin's — see gitserver.WithAdmin/IsAdmin). Requesting a
+	// review before that first push is still meaningful: the diff just
+	// shows every file in SourceBranch as newly added (see Diff's doc
+	// comment).
 	if _, err := resolveBranchTip(gitRepo, req.TargetBranch); err != nil && !errors.Is(err, ErrBranchNotFound) {
 		h.writeBranchError(w, err)
 		return
@@ -98,7 +101,7 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = h.Audit.Log(user.Subject, audit.ActionMROpened, repo, mr.ID,
-		"Merge isteği açıldı: "+mr.Title+" ("+mr.SourceBranch+" → "+mr.TargetBranch+")")
+		"İnceleme isteği açıldı: "+mr.Title+" ("+mr.SourceBranch+" → "+mr.TargetBranch+")")
 
 	h.notifyAdmins(repo, mr)
 
@@ -119,7 +122,7 @@ func (h *Handlers) notifyAdmins(repo string, mr MergeRequest) {
 		return
 	}
 
-	message := "Yeni merge isteği açıldı: " + mr.Title + " (" + mr.SourceBranch + " → " + mr.TargetBranch + ") - " + repo
+	message := "Yeni inceleme isteği açıldı: " + mr.Title + " (" + mr.SourceBranch + " → " + mr.TargetBranch + ") - " + repo
 	link := "/repos/" + repo + "/merge-requests/" + mr.ID
 	for _, u := range all {
 		// users.User.Role is a bare string (set straight from the JWT's
@@ -229,13 +232,24 @@ func (h *Handlers) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, mergeRequestDetail{MergeRequest: mr, Diff: diff})
 }
 
+type decisionRequest struct {
+	Note string `json:"note"`
+}
+
 // Approve handles POST /api/repos/{repo}/merge-requests/{id}/approve. It
-// actually performs the merge (fast-forwarding TargetBranch to
-// SourceBranch's tip — see FastForwardMerge) before recording the
-// approval; if the merge can't be done, the request is left StatusOpen
-// rather than being marked approved without anything having actually
-// merged. Mount this behind auth.RequireRole(auth.RoleAdmin, ...) — this
-// handler itself does not check the caller's role.
+// performs no git operation of any kind — it only records that a
+// Yönetici reviewed this request and signed off, with an optional Note.
+// Approving through the panel is not how TargetBranch (in practice
+// always "main") actually advances: an Admin pushes the real, reviewed
+// result there directly (gitserver's branch protection allows exactly
+// that, and only that, for an Admin — see gitserver.WithAdmin/IsAdmin),
+// using real git for any conflict resolution needed, unconstrained by
+// whatever this project's pinned go-git version can or can't do. By the
+// time this handler runs, that push has already happened; clicking
+// Approve is the Yönetici's own record that they did it, not a request
+// for this handler to do it for them. Mount this behind
+// auth.RequireRole(auth.RoleAdmin, ...) — this handler itself does not
+// check the caller's role.
 func (h *Handlers) Approve(w http.ResponseWriter, r *http.Request) {
 	repo := r.PathValue("repo")
 	id := r.PathValue("id")
@@ -244,32 +258,12 @@ func (h *Handlers) Approve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mr, err := h.Store.Get(repo, id)
-	if err != nil {
-		h.writeStoreError(w, err)
-		return
-	}
-	if mr.Status != StatusOpen {
-		http.Error(w, "409 merge request is not open", http.StatusConflict)
-		return
+	var req decisionRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
 	}
 
-	gitRepo, err := h.Repos.Open(repo)
-	if err != nil {
-		http.Error(w, "404 repository not found", http.StatusNotFound)
-		return
-	}
-	mergedHash, err := FastForwardMerge(gitRepo, mr.TargetBranch, mr.SourceBranch)
-	if err != nil {
-		if errors.Is(err, ErrNotFastForward) {
-			http.Error(w, "409 "+err.Error(), http.StatusConflict)
-			return
-		}
-		h.writeBranchError(w, err)
-		return
-	}
-
-	updated, err := h.Store.MarkApproved(repo, id, mergedHash.String())
+	updated, err := h.Store.SetStatus(repo, id, StatusApproved, req.Note)
 	if err != nil {
 		h.writeStoreError(w, err)
 		return
@@ -277,16 +271,20 @@ func (h *Handlers) Approve(w http.ResponseWriter, r *http.Request) {
 
 	if user, ok := auth.UserFromContext(r.Context()); ok {
 		_ = h.Audit.Log(user.Subject, audit.ActionMRApproved, repo, updated.ID,
-			"Merge onaylandı ve birleştirildi: "+updated.Title+" → "+updated.TargetBranch+
-				" ("+mergedHash.String()[:8]+")")
+			"İnceleme isteği onaylandı: "+updated.Title+" → "+updated.TargetBranch)
 	}
 
 	writeJSON(w, http.StatusOK, updated)
 }
 
-// Reject handles POST /api/repos/{repo}/merge-requests/{id}/reject.
-// Mount this behind auth.RequireRole(auth.RoleAdmin, ...) — this handler
-// itself does not check the caller's role.
+// Reject handles POST /api/repos/{repo}/merge-requests/{id}/reject —
+// "henüz hazır değil, devam et": the Yönetici sends the request back
+// with an optional Note explaining what's missing. There's no "re-open";
+// the Geliştirici keeps working on the same source branch and opens a
+// new request once it's addressed (Create has no branch-pair uniqueness
+// constraint, so this is always available). Mount this behind
+// auth.RequireRole(auth.RoleAdmin, ...) — this handler itself does not
+// check the caller's role.
 func (h *Handlers) Reject(w http.ResponseWriter, r *http.Request) {
 	repo := r.PathValue("repo")
 	id := r.PathValue("id")
@@ -295,14 +293,19 @@ func (h *Handlers) Reject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mr, err := h.Store.SetStatus(repo, id, StatusRejected)
+	var req decisionRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	mr, err := h.Store.SetStatus(repo, id, StatusRejected, req.Note)
 	if err != nil {
 		h.writeStoreError(w, err)
 		return
 	}
 
 	if user, ok := auth.UserFromContext(r.Context()); ok {
-		_ = h.Audit.Log(user.Subject, audit.ActionMRRejected, repo, mr.ID, "Merge reddedildi: "+mr.Title)
+		_ = h.Audit.Log(user.Subject, audit.ActionMRRejected, repo, mr.ID, "İnceleme isteği reddedildi: "+mr.Title)
 	}
 
 	writeJSON(w, http.StatusOK, mr)

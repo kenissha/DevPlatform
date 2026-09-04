@@ -32,7 +32,7 @@ export function RepoTabBar({ repo }: { repo: string }) {
         <li>
           <NavLink to={`/repos/${encoded}/merge-requests`} className={tabClass}>
             <MergeIcon />
-            <span>Merge istekleri</span>
+            <span>İnceleme istekleri</span>
           </NavLink>
         </li>
         <li>
