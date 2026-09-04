@@ -150,6 +150,21 @@ export const api = {
   // caller, so there's no parameter to tamper with.
   myContributions: (days = 365) => request<Contributions>(`/api/contributions?days=${days}`),
 
+  // The caller's own extra git author addresses, so the contribution
+  // graph can find commits stamped with an address other than their
+  // platform email (see backend/internal/gitemails). All three answer
+  // for the caller only — no subject travels in the URL. Add/remove
+  // return the full updated list, so the page never needs a follow-up
+  // fetch to re-render.
+  listMyGitEmails: () => request<string[]>('/api/me/git-emails'),
+  addMyGitEmail: (email: string) =>
+    request<string[]>('/api/me/git-emails', { method: 'POST', body: JSON.stringify({ email }) }),
+  // Query parameter rather than a path segment: an address is
+  // user-supplied text, and IIS rejects some encoded characters in a
+  // path outright — the same lesson the branch endpoints learned.
+  removeMyGitEmail: (email: string) =>
+    request<string[]>(`/api/me/git-emails?email=${encodeURIComponent(email)}`, { method: 'DELETE' }),
+
   listAudit: (limit = 100) => request<AuditEvent[]>(`/api/audit?limit=${limit}`),
 
   listNotifications: () => request<Notification[]>('/api/notifications'),

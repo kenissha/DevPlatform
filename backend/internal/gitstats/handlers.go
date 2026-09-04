@@ -11,6 +11,7 @@ import (
 
 	"github.com/kenissha/DevPlatform/backend/internal/access"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
+	"github.com/kenissha/DevPlatform/backend/internal/gitemails"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 )
 
@@ -20,6 +21,11 @@ import (
 // of the platform, not a privilege.
 type Handlers struct {
 	Repos *repostore.Store
+	// GitEmails supplies the extra author addresses a person commits
+	// under, on top of their platform email (see internal/gitemails for
+	// why one address is rarely enough). Optional: a nil Store means
+	// nobody registered any, so only the platform email is matched.
+	GitEmails *gitemails.Store
 	// Access narrows Contributions to the repos its caller may see.
 	// Optional in the same sense as elsewhere: a nil Store means nobody
 	// is restricted (see internal/access). The per-repo endpoints below
@@ -142,7 +148,8 @@ type contributionsResponse struct {
 //
 // Always scoped to the caller: there is no ?subject= parameter, so this
 // can't be turned into "show me someone else's activity" by editing a
-// URL. Commits are matched by author email (see ActivityByAuthor).
+// URL. Commits are matched against the caller's platform email plus any
+// address they registered (see ActivityByAuthors and internal/gitemails).
 func (h *Handlers) Contributions(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
@@ -151,6 +158,19 @@ func (h *Handlers) Contributions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	days := intParam(r, "days", defaultContributionDays, 1, maxActivityDays)
+
+	// The platform email always counts, without needing to be
+	// registered — it's the one address the platform actually knows is
+	// theirs, and requiring people to re-enter it would be busywork.
+	emails := []string{user.Email}
+	registered, err := h.GitEmails.List(user.Subject)
+	if err != nil {
+		// Degrade to the platform email rather than failing: a graph
+		// missing some commits still beats an error where a graph
+		// should be.
+		log.Printf("gitstats: failed to read registered git emails for %q: %v", user.Subject, err)
+	}
+	emails = append(emails, registered...)
 
 	names, err := h.Repos.List()
 	if err != nil {
@@ -178,7 +198,7 @@ func (h *Handlers) Contributions(w http.ResponseWriter, r *http.Request) {
 			log.Printf("gitstats: skipping %q while counting contributions: %v", name, err)
 			continue
 		}
-		counts, err := ActivityByAuthor(repo, user.Email, days)
+		counts, err := ActivityByAuthors(repo, emails, days)
 		if err != nil {
 			log.Printf("gitstats: skipping %q while counting contributions: %v", name, err)
 			continue

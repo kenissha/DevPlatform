@@ -10,6 +10,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/deployment"
 	"github.com/kenissha/DevPlatform/backend/internal/displaynames"
+	"github.com/kenissha/DevPlatform/backend/internal/gitemails"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
 	"github.com/kenissha/DevPlatform/backend/internal/gittoken"
 	"github.com/kenissha/DevPlatform/backend/internal/logincli"
@@ -72,6 +73,11 @@ type Deps struct {
 	// to either route below. Nil-checking it here wouldn't change that,
 	// so it's left to a caller to wire correctly.
 	GitTokens *gittoken.Handlers
+	// GitEmails lets a person register the extra author addresses their
+	// commits carry, so the panel's contribution graph can find them
+	// (see internal/gitemails). Optional: a nil Handlers' Store is also
+	// nil, which reads as "nobody registered anything".
+	GitEmails *gitemails.Handlers
 	// LoginCLIPath, if set, points at a built devplatform-login.exe on
 	// disk and turns on serving it plus a matching install script (see
 	// internal/logincli). Empty by default — both routes respond 404
@@ -260,6 +266,18 @@ func NewRouter(deps Deps) *http.ServeMux {
 	mux.Handle("DELETE /api/git-token/{subject}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(gitTokens.Revoke))))
 	mux.Handle("GET /api/me/git-tokens", authMiddleware(http.HandlerFunc(gitTokens.ListMine)))
 	mux.Handle("DELETE /api/me/git-tokens/{id}", authMiddleware(http.HandlerFunc(gitTokens.RevokeMine)))
+
+	// A person's own git author addresses, for the contribution graph
+	// (see internal/gitemails). Personal configuration, not an
+	// administrative one, so plain auth like the /api/me routes above —
+	// each handler reads the subject from the JWT, never from the path.
+	gitEmails := deps.GitEmails
+	if gitEmails == nil {
+		gitEmails = &gitemails.Handlers{}
+	}
+	mux.Handle("GET /api/me/git-emails", authMiddleware(http.HandlerFunc(gitEmails.ListMine)))
+	mux.Handle("POST /api/me/git-emails", authMiddleware(http.HandlerFunc(gitEmails.AddMine)))
+	mux.Handle("DELETE /api/me/git-emails", authMiddleware(http.HandlerFunc(gitEmails.RemoveMine)))
 
 	return mux
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/deploy"
 	"github.com/kenissha/DevPlatform/backend/internal/deployment"
 	"github.com/kenissha/DevPlatform/backend/internal/displaynames"
+	"github.com/kenissha/DevPlatform/backend/internal/gitemails"
 	"github.com/kenissha/DevPlatform/backend/internal/gitserver"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
 	"github.com/kenissha/DevPlatform/backend/internal/gittoken"
@@ -96,6 +97,12 @@ func main() {
 	}
 	repoHandlers := &repoapi.Handlers{Repos: store, Audit: auditLogger, Access: accessStore}
 	gitTokenHandlers := &gittoken.Handlers{Store: gitTokenStore}
+	// The extra git author addresses a person commits under, so the
+	// panel's contribution graph can match commits whose author email
+	// isn't the one their platform account carries (see
+	// internal/gitemails).
+	gitEmailStore := gitemails.NewStore(filepath.Join(cfg.DataDir, "git-emails.json"))
+	gitEmailHandlers := &gitemails.Handlers{Store: gitEmailStore}
 	taskHandlers := &taskboard.Handlers{
 		Store:  taskboard.NewStore(filepath.Join(cfg.DataDir, "tasks")),
 		Repos:  store,
@@ -103,7 +110,7 @@ func main() {
 		Notify: notifyStore,
 		Access: accessStore,
 	}
-	statsHandlers := &gitstats.Handlers{Repos: store, Access: accessStore}
+	statsHandlers := &gitstats.Handlers{Repos: store, Access: accessStore, GitEmails: gitEmailStore}
 	auditHandlers := &audit.Handlers{Logger: auditLogger, Access: accessStore}
 	notifyHandlers := &notify.Handlers{
 		Store: notifyStore,
@@ -196,6 +203,7 @@ func main() {
 		DisplayNames:    displayNamesStore,
 		SecretsVault:    secretsStore,
 		GitTokens:       gitTokenHandlers,
+		GitEmails:       gitEmailHandlers,
 		LoginCLIPath:    cfg.LoginCLIPath,
 		LoginCLIBaseURL: cfg.BaseURL,
 	})

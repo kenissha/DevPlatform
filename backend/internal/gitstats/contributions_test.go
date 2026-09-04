@@ -10,14 +10,14 @@ import (
 // seedRepo (gitstats_test.go) puts two commits on one@example.com and one
 // on two@example.com, all authored today.
 
-func TestActivityByAuthor_CountsOnlyThatAuthorsCommits(t *testing.T) {
+func TestActivityByAuthors_CountsOnlyThatAuthorsCommits(t *testing.T) {
 	repos := seedRepo(t)
 	repo, err := repos.Open("sample")
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}
 
-	counts, err := ActivityByAuthor(repo, "one@example.com", 30)
+	counts, err := ActivityByAuthors(repo, []string{"one@example.com"}, 30)
 	if err != nil {
 		t.Fatalf("ActivityByAuthor returned error: %v", err)
 	}
@@ -40,14 +40,14 @@ func TestActivityByAuthor_CountsOnlyThatAuthorsCommits(t *testing.T) {
 // committing as "One@Example.com" from a second machine is still them,
 // and an address's domain (and, in practice, its mailbox) is not
 // case-sensitive.
-func TestActivityByAuthor_MatchesTheEmailCaseInsensitively(t *testing.T) {
+func TestActivityByAuthors_MatchesTheEmailCaseInsensitively(t *testing.T) {
 	repos := seedRepo(t)
 	repo, err := repos.Open("sample")
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}
 
-	counts, err := ActivityByAuthor(repo, "ONE@EXAMPLE.COM", 30)
+	counts, err := ActivityByAuthors(repo, []string{"ONE@EXAMPLE.COM"}, 30)
 	if err != nil {
 		t.Fatalf("ActivityByAuthor returned error: %v", err)
 	}
@@ -61,14 +61,54 @@ func TestActivityByAuthor_MatchesTheEmailCaseInsensitively(t *testing.T) {
 	}
 }
 
-func TestActivityByAuthor_UnknownEmailIsEmptyNotAnError(t *testing.T) {
+// The whole reason this takes a set: one person's commits are split
+// across the address their platform account uses and whatever their git
+// config was set to on each machine. Passing both must count both.
+func TestActivityByAuthors_CountsEveryAddressInTheSet(t *testing.T) {
 	repos := seedRepo(t)
 	repo, err := repos.Open("sample")
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}
 
-	counts, err := ActivityByAuthor(repo, "nobody@example.com", 30)
+	counts, err := ActivityByAuthors(repo, []string{"one@example.com", "two@example.com"}, 30)
+	if err != nil {
+		t.Fatalf("ActivityByAuthors returned error: %v", err)
+	}
+
+	total := 0
+	for _, n := range counts {
+		total += n
+	}
+	if total != 3 {
+		t.Errorf("total = %d, want 3 (two commits from one author plus one from the other)", total)
+	}
+}
+
+func TestActivityByAuthors_EmptySetCountsNothing(t *testing.T) {
+	repos := seedRepo(t)
+	repo, err := repos.Open("sample")
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	counts, err := ActivityByAuthors(repo, nil, 30)
+	if err != nil {
+		t.Fatalf("ActivityByAuthors returned error: %v", err)
+	}
+	if len(counts) != 0 {
+		t.Errorf("counts = %v, want empty — no address means no match, not every match", counts)
+	}
+}
+
+func TestActivityByAuthors_UnknownEmailIsEmptyNotAnError(t *testing.T) {
+	repos := seedRepo(t)
+	repo, err := repos.Open("sample")
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	counts, err := ActivityByAuthors(repo, []string{"nobody@example.com"}, 30)
 	if err != nil {
 		t.Fatalf("ActivityByAuthor returned error: %v", err)
 	}
@@ -80,7 +120,7 @@ func TestActivityByAuthor_UnknownEmailIsEmptyNotAnError(t *testing.T) {
 // A repository with no commits at all is the normal state of a
 // just-created repo, so it must read as "no contributions" rather than
 // failing the whole dashboard.
-func TestActivityByAuthor_EmptyRepoIsNotAnError(t *testing.T) {
+func TestActivityByAuthors_EmptyRepoIsNotAnError(t *testing.T) {
 	requireGit(t)
 
 	repos := repostore.New(t.TempDir())
@@ -92,7 +132,7 @@ func TestActivityByAuthor_EmptyRepoIsNotAnError(t *testing.T) {
 		t.Fatalf("Open failed: %v", err)
 	}
 
-	counts, err := ActivityByAuthor(repo, "one@example.com", 30)
+	counts, err := ActivityByAuthors(repo, []string{"one@example.com"}, 30)
 	if err != nil {
 		t.Fatalf("ActivityByAuthor returned error: %v", err)
 	}

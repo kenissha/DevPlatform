@@ -429,12 +429,28 @@ gözetimli yapılacak birer adım.
   kişinin kendi** commit'lerini gün gün sayıyor. Endpoint'te bilerek
   `?subject=` yok — her zaman çağıranı cevaplıyor, URL'i kurcalayarak
   başkasının aktivitesine dönüştürülemiyor.
-  **Önemli sınırlama:** commit'ler **git yazar e-postasıyla**
-  eşleştiriliyor (büyük/küçük harf duyarsız) — bir commit nesnesinde
-  başka kimlik yok. Birinin yerel `git config user.email` ayarı panel
-  hesabındaki e-postadan farklıysa o commit'ler grafikte görünmez;
-  çözüm ikisini aynı yapmak. Panel, toplam 0 çıktığında bunu açıkça
-  yazıyor ki "bozuk" sanılmasın.
+  Commit'ler **git yazar e-postasıyla** eşleştiriliyor (büyük/küçük
+  harf duyarsız) — bir commit nesnesinde başka kimlik yok.
+- **2026-09-04 güncelleme — "Git e-postaların" (`internal/gitemails`):**
+  Yukarıdaki eşleştirmenin gerçek hayattaki sorunu: git commit'e,
+  o makinedeki `git config user.email` ne yazıyorsa onu damgalıyor ve
+  bu genellikle panel hesabının (SSO'dan gelen) e-postası **değil**.
+  Örnek: bu projenin sahibinin commit'leri `rifatozturk061@gmail.com`,
+  panel hesabı ise `rifat.ozturk@sigortatahkim.org` — yani grafik
+  hiçbir şey göstermeyecekti. GitHub'ın "hesabına birden fazla e-posta
+  tanımla" çözümünün aynısı eklendi: Hesabım sayfasında kişi kendi
+  commit adreslerini ekliyor, `Contributions` panel e-postası **artı**
+  bu listeyle eşleştiriyor (`gitstats.ActivityByAuthors`).
+  Uçlar: `GET/POST /api/me/git-emails`, `DELETE /api/me/git-emails?email=`
+  — üçü de sadece çağıranın kendi listesini görüyor/değiştiriyor, URL'de
+  subject taşınmıyor, bu yüzden admin yetkisi de gerekmiyor (kişisel
+  ayar, yönetimsel değil).
+  **Doğrulama gerekmiyor, bilinçli:** buraya yazılan adres kimseye
+  erişim vermiyor ve yeni bir bilgi de açmıyor — kimin ne zaman commit
+  attığı zaten katkıda bulunanlar ve denetim kaydı üzerinden her
+  kullanıcıya görünür. Sadece kişinin **kendi** grafiğinde hangi
+  commit'lerin sayılacağını genişletiyor. SSO arkasındaki 2 kişilik bir
+  ekip için e-posta doğrulama turu gereksiz karmaşıklık.
 - **2026-09-04 güncelleme — branch'ten inceleme isteği açma (GitHub
   mantığında):** Eski akış "İnceleme İstekleri" sayfasında kaynak/hedef
   branch seçen bir formdu. Artık `/repos/:repo/branches` sayfasındaki

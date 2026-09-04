@@ -144,21 +144,27 @@ func Activity(repo *git.Repository, days int) ([]DayCount, error) {
 	return fillDays(counts, days), nil
 }
 
-// ActivityByAuthor is Activity narrowed to the commits email authored —
-// the per-person contribution heatmap's data, aggregated across repos by
-// the caller. Returns raw per-day counts (keyed YYYY-MM-DD, UTC) rather
-// than a filled range, because a caller summing several repositories
-// wants to merge the maps before the gaps are filled in once.
+// ActivityByAuthors is Activity narrowed to the commits authored by any
+// of emails — the per-person contribution heatmap's data, aggregated
+// across repos by the caller. Returns raw per-day counts (keyed
+// YYYY-MM-DD, UTC) rather than a filled range, because a caller summing
+// several repositories wants to merge the maps before the gaps are
+// filled in once.
 //
-// Identity is the commit's author email, compared case-insensitively:
-// that's the only identifier a git commit carries, and it's how
-// Contributors already groups. A person whose local `git config
-// user.email` differs from their platform account's email therefore
-// won't see those commits here — the fix is to align the two, since
-// nothing in the commit object can bridge them.
-func ActivityByAuthor(repo *git.Repository, email string, days int) (map[string]int, error) {
+// It takes a set, not one address, because a commit's author email is
+// the only identifier it carries and that address is whatever `git
+// config user.email` happened to be — frequently a personal account
+// rather than the one the platform knows someone by. Callers pass the
+// platform email plus whatever the person registered in
+// internal/gitemails. Comparison is case-insensitive.
+func ActivityByAuthors(repo *git.Repository, emails []string, days int) (map[string]int, error) {
 	return countByDay(repo, days, func(c *object.Commit) bool {
-		return strings.EqualFold(c.Author.Email, email)
+		for _, email := range emails {
+			if strings.EqualFold(c.Author.Email, email) {
+				return true
+			}
+		}
+		return false
 	})
 }
 

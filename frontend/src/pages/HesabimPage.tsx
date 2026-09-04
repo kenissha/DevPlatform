@@ -162,6 +162,115 @@ export function HesabimPage() {
           )}
         </div>
       </div>
+
+      <GitEmailsSection platformEmail={user?.email ?? ''} />
     </div>
+  )
+}
+
+// Lets a person claim the git author addresses their commits actually
+// carry. A commit records whatever `git config user.email` was set to,
+// which is very often not the address the platform knows someone by —
+// without this, the panel's contribution graph silently shows nothing
+// for them (see backend/internal/gitemails).
+function GitEmailsSection({ platformEmail }: { platformEmail: string }) {
+  const [emails, setEmails] = useState<string[] | null>(null)
+  const [input, setInput] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    api
+      .listMyGitEmails()
+      .then(setEmails)
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'E-postalar yüklenemedi'))
+  }, [])
+
+  async function add(e: FormEvent) {
+    e.preventDefault()
+    if (!input.trim()) return
+    setBusy(true)
+    setError(null)
+    try {
+      setEmails(await api.addMyGitEmail(input.trim()))
+      setInput('')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'E-posta eklenemedi')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove(email: string) {
+    setError(null)
+    try {
+      setEmails(await api.removeMyGitEmail(email))
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'E-posta kaldırılamadı')
+    }
+  }
+
+  return (
+    <>
+      <div className="section-title">
+        <h2>Git e-postaların</h2>
+      </div>
+      <div className="card">
+        <div className="card-body">
+          <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
+            Panelin katkı grafiği, commit'lerini e-posta adresine bakarak buluyor. Bir commit'in içinde
+            bundan başka kimlik bilgisi yok — git, commit atarken kendi bilgisayarındaki{' '}
+            <code>git config user.email</code> ne yazıyorsa onu damgalıyor. Bu adres panel hesabındakinden
+            farklıysa, o commit'ler grafikte görünmez. Kullandığın diğer adresleri buraya ekle.
+          </p>
+
+          <ul className="row-list">
+            <li>
+              <div className="row-main">
+                <span className="row-title mono">{platformEmail}</span>
+                <div className="spacer" />
+                <span className="badge badge-neutral">Panel hesabın</span>
+              </div>
+            </li>
+            {emails?.map((email) => (
+              <li key={email}>
+                <div className="row-main">
+                  <span className="row-title mono">{email}</span>
+                  <div className="spacer" />
+                  <button type="button" className="btn-ghost" onClick={() => remove(email)}>
+                    Kaldır
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <form onSubmit={add} className="stacked-form">
+            <div className="field">
+              <label htmlFor="git-email">Başka bir adres ekle</label>
+              <input
+                id="git-email"
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="ornek@gmail.com"
+                spellCheck={false}
+              />
+            </div>
+            <div className="form-actions">
+              <button type="submit" className="btn-primary" disabled={busy || !input.trim()}>
+                {busy ? 'Ekleniyor...' : 'Ekle'}
+              </button>
+              {error && <p className="error">{error}</p>}
+            </div>
+          </form>
+
+          <p className="muted" style={{ fontSize: 12 }}>
+            Kendi <code>git config user.email</code> değerini öğrenmek için terminalde{' '}
+            <code>git config user.email</code> çalıştırabilirsin.
+          </p>
+        </div>
+      </div>
+    </>
   )
 }
