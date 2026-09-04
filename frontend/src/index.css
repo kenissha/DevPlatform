@@ -1163,12 +1163,13 @@ li.unread {
   color: var(--text-muted);
 }
 
-.dash-columns {
+/* The contribution graph beside the team/repo rail. minmax(0, …) rather
+ * than 1fr alone: a grid track defaults to min-content width, so the
+ * graph's own 50-odd week columns would otherwise widen the track and
+ * push the rail off-screen instead of scrolling inside their own box. */
+.dash-split {
   display: grid;
-  /* minmax(0, …) rather than 1fr alone: a grid track defaults to
-   * min-content width, so one long unbroken commit message in the feed
-   * would otherwise widen the column and push the rail off-screen. */
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 300px;
   gap: 22px;
   align-items: start;
   /* Carries the gap below the focus cards itself, because the section
@@ -1177,14 +1178,14 @@ li.unread {
   margin-top: 26px;
 }
 @media (max-width: 1080px) {
-  .dash-columns {
+  .dash-split {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
 /* Both columns open with a section heading; without this the default
  * 26px top margin pushes them below the grid's own start. */
-.dash-columns .section-title:first-child {
+.dash-split .section-title:first-child {
   margin-top: 0;
 }
 
@@ -1311,8 +1312,12 @@ li.unread {
 
 /* --------------------------------------------- contribution heatmap */
 
+/* Sized so a full year (53 columns) fits beside the 300px rail without
+ * scrolling at the dashboard's 1180px width: 53 × (10 + 3) ≈ 690px,
+ * plus the weekday gutter. Narrower windows scroll the grid rather than
+ * the page — see .contrib-scroll. */
 .contrib {
-  --cell: 11px;
+  --cell: 10px;
   --cell-gap: 3px;
 }
 

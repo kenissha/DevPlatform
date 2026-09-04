@@ -185,74 +185,27 @@ export function DashboardPage() {
         />
       </div>
 
-      <div className="section-title">
-        <h2>Katkıların</h2>
-        {contributions && contributions.days.length > 0 && (
-          <span className="muted" style={{ fontSize: 13 }}>
-            son bir yılda {contributions.total} commit
-          </span>
-        )}
-      </div>
-      <div className="card">
-        <div className="card-body">
-          {contributions === null && <p className="empty-state">Yükleniyor...</p>}
-          {contributions && contributions.days.length === 0 && (
-            <p className="empty-state">Katkı geçmişi okunamadı.</p>
-          )}
-          {contributions && contributions.days.length > 0 && (
-            <>
-              <ContributionGraph days={contributions.days} />
-              {contributions.total === 0 && (
-                <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
-                  Henüz commit görünmüyor. Commit'ler git yazar e-postasıyla eşleştiriliyor — yerel{' '}
-                  <code>git config user.email</code> ayarın panel hesabındaki e-postayla aynı değilse burada
-                  görünmezler.
-                </p>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="dash-columns">
+      <div className="dash-split">
         <section>
           <div className="section-title">
-            <h2>Son hareketler</h2>
-          </div>
-          <div className="card">
-            {events === null && <p className="empty-state">Yükleniyor...</p>}
-            {events?.length === 0 && <p className="empty-state">Henüz bir hareket yok.</p>}
-            {events && events.length > 0 && (
-              <ul className="feed">
-                {events.slice(0, 15).map((e, i) => (
-                  <li key={`${e.at}-${i}`}>
-                    <span className={`feed-icon ${ACTION_TONE[e.action] ?? 'tone-neutral'}`}>
-                      {ACTION_ICON[e.action] ?? <AuditIcon />}
-                    </span>
-                    <div className="feed-body">
-                      <p className="feed-text">{e.summary || e.action}</p>
-                      <p className="feed-meta">
-                        <strong>{nameOf(e.actor)}</strong>
-                        {e.repo && (
-                          <>
-                            <span>·</span>
-                            <Link to={`/repos/${encodeURIComponent(e.repo)}`}>{e.repo}</Link>
-                          </>
-                        )}
-                        <span>·</span>
-                        {formatRelative(e.at)}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+            <h2>Katkıların</h2>
+            {contributions && contributions.days.length > 0 && (
+              <span className="muted" style={{ fontSize: 13 }}>
+                son bir yılda {contributions.total} commit
+              </span>
             )}
           </div>
-          {events && events.length > 0 && (
-            <p className="muted" style={{ fontSize: 13 }}>
-              <Link to="/audit">Tüm denetim kaydı →</Link>
-            </p>
-          )}
+          <div className="card">
+            <div className="card-body">
+              {contributions === null && <p className="empty-state">Yükleniyor...</p>}
+              {contributions && contributions.days.length === 0 && (
+                <p className="empty-state">Katkı geçmişi okunamadı.</p>
+              )}
+              {contributions && contributions.days.length > 0 && (
+                <ContributionGraph days={contributions.days} />
+              )}
+            </div>
+          </div>
         </section>
 
         <aside className="dash-rail">
@@ -273,7 +226,9 @@ export function DashboardPage() {
                   <div className="workload-bar">
                     <span
                       className={subject ? undefined : 'unassigned'}
-                      style={{ width: `${busiest ? (list.length / busiest) * 100 : 0}%` }}
+                      style={{
+                        width: `${busiest ? (list.length / busiest) * 100 : 0}%`,
+                      }}
                     />
                   </div>
                 </div>
@@ -308,6 +263,46 @@ export function DashboardPage() {
           </div>
         </aside>
       </div>
+
+      <section>
+        <div className="section-title">
+          <h2>Son hareketler</h2>
+        </div>
+        <div className="card">
+          {events === null && <p className="empty-state">Yükleniyor...</p>}
+          {events?.length === 0 && <p className="empty-state">Henüz bir hareket yok.</p>}
+          {events && events.length > 0 && (
+            <ul className="feed">
+              {events.slice(0, 15).map((e, i) => (
+                <li key={`${e.at}-${i}`}>
+                  <span className={`feed-icon ${ACTION_TONE[e.action] ?? 'tone-neutral'}`}>
+                    {ACTION_ICON[e.action] ?? <AuditIcon />}
+                  </span>
+                  <div className="feed-body">
+                    <p className="feed-text">{e.summary || e.action}</p>
+                    <p className="feed-meta">
+                      <strong>{nameOf(e.actor)}</strong>
+                      {e.repo && (
+                        <>
+                          <span>·</span>
+                          <Link to={`/repos/${encodeURIComponent(e.repo)}`}>{e.repo}</Link>
+                        </>
+                      )}
+                      <span>·</span>
+                      {formatRelative(e.at)}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {events && events.length > 0 && (
+          <p className="muted" style={{ fontSize: 13 }}>
+            <Link to="/audit">Tüm denetim kaydı →</Link>
+          </p>
+        )}
+      </section>
     </div>
   )
 }
