@@ -42,6 +42,36 @@ func (h *Handlers) Commits(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, commits)
 }
 
+// BranchCommits handles
+// GET /api/repos/{repo}/branches/{branch}/commits?base=main&limit=N —
+// the branch detail page's commit list (see CommitsAhead's doc comment
+// for the exact comparison it shows). base defaults to "main", the only
+// branch DevPlatform ever protects.
+func (h *Handlers) BranchCommits(w http.ResponseWriter, r *http.Request) {
+	repo, ok := h.open(w, r)
+	if !ok {
+		return
+	}
+
+	branch := r.PathValue("branch")
+	base := r.URL.Query().Get("base")
+	if base == "" {
+		base = "main"
+	}
+	limit := intParam(r, "limit", defaultCommitLimit, 1, maxCommitLimit)
+
+	commits, err := CommitsAhead(repo, branch, base, limit)
+	if err != nil {
+		if errors.Is(err, ErrBranchNotFound) {
+			http.Error(w, "404 "+err.Error(), http.StatusNotFound)
+			return
+		}
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, commits)
+}
+
 // Contributors handles GET /api/repos/{repo}/contributors.
 func (h *Handlers) Contributors(w http.ResponseWriter, r *http.Request) {
 	repo, ok := h.open(w, r)

@@ -397,6 +397,20 @@ gözetimli yapılacak birer adım.
 
 ## Bilinmesi gereken kararlar
 
+- **2026-09-04 güncelleme — branch'ten inceleme isteği açma (GitHub
+  mantığında):** Eski akış "İnceleme İstekleri" sayfasında kaynak/hedef
+  branch seçen bir formdu. Artık `/repos/:repo/branches` sayfasındaki
+  her branch tıklanabilir — kendi sayfasına götürüyor
+  (`/repos/:repo/branches/*`, splat route çünkü branch adları slash
+  içerebiliyor, örn. `feature/hakem-raporlari`). O sayfada: main'e göre
+  bu branch'in eklediği commit'ler (yeni: `gitstats.CommitsAhead`,
+  `GET /api/repos/{repo}/branches/{branch}/commits`), değişiklik özeti
+  (yeni: `mergerequest.Handlers.BranchPreview`,
+  `GET /api/repos/{repo}/branches/{branch}/preview` — mevcut `Diff`'i
+  tekrar kullanıyor), ve tek butonla **"İşim bitti, incele"**. Bu buton
+  zaten açık bir istek varsa onu gösteriyor, en son reddedilmişse notunu
+  gösterip "Tekrar iste" sunuyor. "İnceleme İstekleri" sayfası artık
+  sadece salt-okunur geçmiş — yeni istek açma formu tamamen kaldırıldı.
 - **Çözüldü — git artık kişi başına anahtarla çalışıyor (2026-08-17):**
   `internal/gitauth`'ın tek paylaşılan `DEVPLATFORM_GIT_USERNAME`/
   `_PASSWORD` çifti tamamen kaldırıldı (geçiş dönemi yok). Yeni

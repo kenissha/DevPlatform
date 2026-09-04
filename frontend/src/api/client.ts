@@ -1,6 +1,7 @@
 import type {
   AccessRegistry,
   AuditEvent,
+  BranchPreview,
   Commit,
   Contributor,
   DayCount,
@@ -75,6 +76,17 @@ export const api = {
       body: JSON.stringify({ name }),
     }),
   listBranches: (repo: string) => request<string[]>(`/api/repos/${encodeURIComponent(repo)}/branches`),
+  // Branch detail page's data sources — see backend/internal/gitstats.
+  // CommitsAhead and mergerequest.Handlers.BranchPreview's doc comments.
+  // Both default target/base to "main" server-side when omitted.
+  getBranchPreview: (repo: string, branch: string) =>
+    request<BranchPreview>(
+      `/api/repos/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}/preview`,
+    ),
+  listBranchCommits: (repo: string, branch: string) =>
+    request<Commit[]>(
+      `/api/repos/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}/commits`,
+    ),
 
   listMergeRequests: (repo: string) =>
     request<MergeRequest[]>(`/api/repos/${encodeURIComponent(repo)}/merge-requests`),
@@ -244,6 +256,7 @@ export const api = {
 export type {
   AccessRegistry,
   AuditEvent,
+  BranchPreview,
   Commit,
   Contributor,
   DayCount,

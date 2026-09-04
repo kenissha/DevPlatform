@@ -101,6 +101,7 @@ func newMux(h *Handlers) *http.ServeMux {
 	mux.Handle("POST /api/repos/{repo}/merge-requests/{id}/reject",
 		authMW(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(h.Reject))))
 	mux.Handle("GET /api/merge-requests", authMW(http.HandlerFunc(h.ListAll)))
+	mux.Handle("GET /api/repos/{repo}/branches/{branch}/preview", authMW(http.HandlerFunc(h.BranchPreview)))
 	return mux
 }
 
@@ -479,5 +480,103 @@ func TestCreate_NotifiesAllAdmins(t *testing.T) {
 	}
 	if len(devNotifications) != 0 {
 		t.Errorf("Developer got %d notifications, want 0", len(devNotifications))
+	}
+}
+
+// TestBranchPreview_NoExistingRequestReturnsJustTheDiff is the branch
+// detail page's default case: nobody has opened an İnceleme İsteği for
+// this branch yet, so it should just show the diff and let the
+// developer open one.
+func TestBranchPreview_NoExistingRequestReturnsJustTheDiff(t *testing.T) {
+	h, _ := newTestHandlers(t)
+	mux := newMux(h)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/repos/sample/branches/feature-x/preview", nil)
+	req = addAuth(req, t, "dev-1", "developer")
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var preview branchPreview
+	if err := json.Unmarshal(rec.Body.Bytes(), &preview); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if len(preview.Diff.Stats) == 0 {
+		t.Error("expected non-empty diff stats")
+	}
+	if preview.OpenRequest != nil {
+		t.Errorf("OpenRequest = %+v, want nil", preview.OpenRequest)
+	}
+	if preview.LastRejected != nil {
+		t.Errorf("LastRejected = %+v, want nil", preview.LastRejected)
+	}
+}
+
+// TestBranchPreview_ReturnsTheOpenRequestForThisBranch confirms the page
+// can point the developer at their already-pending request instead of
+// letting them open a duplicate.
+func TestBranchPreview_ReturnsTheOpenRequestForThisBranch(t *testing.T) {
+	h, _ := newTestHandlers(t)
+	mux := newMux(h)
+
+	created, err := h.Store.Create("sample", "Add line two", "feature-x", "main", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/repos/sample/branches/feature-x/preview", nil)
+	req = addAuth(req, t, "dev-1", "developer")
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var preview branchPreview
+	if err := json.Unmarshal(rec.Body.Bytes(), &preview); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if preview.OpenRequest == nil || preview.OpenRequest.ID != created.ID {
+		t.Errorf("OpenRequest = %+v, want the request just created (%s)", preview.OpenRequest, created.ID)
+	}
+}
+
+// TestBranchPreview_ReturnsTheMostRecentRejectionWithItsNote lets the
+// branch page show the developer why their last attempt was sent back,
+// without them having to dig through the full İnceleme İstekleri list.
+func TestBranchPreview_ReturnsTheMostRecentRejectionWithItsNote(t *testing.T) {
+	h, _ := newTestHandlers(t)
+	mux := newMux(h)
+
+	created, err := h.Store.Create("sample", "Add line two", "feature-x", "main", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if _, err := h.Store.SetStatus("sample", created.ID, StatusRejected, "testler eksik"); err != nil {
+		t.Fatalf("SetStatus failed: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/repos/sample/branches/feature-x/preview", nil)
+	req = addAuth(req, t, "dev-1", "developer")
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var preview branchPreview
+	if err := json.Unmarshal(rec.Body.Bytes(), &preview); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if preview.OpenRequest != nil {
+		t.Errorf("OpenRequest = %+v, want nil (this one was rejected, not left open)", preview.OpenRequest)
+	}
+	if preview.LastRejected == nil || preview.LastRejected.Note != "testler eksik" {
+		t.Errorf("LastRejected = %+v, want the rejected request with its note", preview.LastRejected)
 	}
 }

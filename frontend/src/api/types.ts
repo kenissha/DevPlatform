@@ -52,6 +52,16 @@ export interface MergeRequestDetail extends MergeRequest {
   diff: DiffResult
 }
 
+// The branch detail page's data source — mirrors backend/internal/
+// mergerequest's branchPreview. openRequest/lastRejected are mutually
+// exclusive: a pending request always takes priority over showing an
+// older rejection's note (see BranchPreview's doc comment).
+export interface BranchPreview {
+  diff: DiffResult
+  openRequest?: MergeRequest
+  lastRejected?: MergeRequest
+}
+
 // A person the platform has seen. Created just-in-time on their first
 // authenticated request (see backend/internal/users), so this list is
 // "who has access", not "who was invited".

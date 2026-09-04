@@ -168,6 +168,77 @@ func Activity(repo *git.Repository, days int) ([]DayCount, error) {
 	return out, nil
 }
 
+// ErrBranchNotFound is returned by CommitsAhead when branch itself
+// doesn't exist — unlike base (see CommitsAhead's doc comment), there's
+// no sensible fallback for a branch that isn't there at all.
+var ErrBranchNotFound = errors.New("gitstats: branch not found")
+
+// CommitsAhead returns up to limit of branch's commits that base's
+// history doesn't already contain, newest first — "what does this
+// branch add on top of base", the same direction a GitHub branch
+// comparison view shows, and the backing data for the branch detail
+// page's commit list (see backend/internal/mergerequest.Diff for the
+// same comparison at the file-content level instead of per-commit).
+//
+// If base doesn't exist yet (a brand new repo's protected default
+// branch has no commits until an Admin's first direct push — see
+// backend/internal/gitserver.WithAdmin/IsAdmin), every commit on branch
+// counts as ahead, mirroring Diff's same-situation behavior.
+func CommitsAhead(repo *git.Repository, branch, base string, limit int) ([]Commit, error) {
+	branchRef, err := repo.Reference(plumbing.NewBranchReferenceName(branch), true)
+	if err != nil {
+		if errors.Is(err, plumbing.ErrReferenceNotFound) {
+			return nil, ErrBranchNotFound
+		}
+		return nil, fmt.Errorf("gitstats: resolving %q: %w", branch, err)
+	}
+
+	var baseCommit *object.Commit
+	baseRef, err := repo.Reference(plumbing.NewBranchReferenceName(base), true)
+	if err != nil {
+		if !errors.Is(err, plumbing.ErrReferenceNotFound) {
+			return nil, fmt.Errorf("gitstats: resolving %q: %w", base, err)
+		}
+		// base not existing yet is not an error — see doc comment.
+	} else {
+		baseCommit, err = repo.CommitObject(baseRef.Hash())
+		if err != nil {
+			return nil, fmt.Errorf("gitstats: reading %q's commit: %w", base, err)
+		}
+	}
+
+	iter, err := repo.Log(&git.LogOptions{From: branchRef.Hash(), Order: git.LogOrderCommitterTime})
+	if err != nil {
+		return nil, fmt.Errorf("gitstats: reading log: %w", err)
+	}
+	defer iter.Close()
+
+	commits := []Commit{}
+	err = iter.ForEach(func(c *object.Commit) error {
+		if baseCommit != nil {
+			if c.Hash == baseCommit.Hash {
+				return storer.ErrStop
+			}
+			isAncestorOfBase, aErr := c.IsAncestor(baseCommit)
+			if aErr != nil {
+				return aErr
+			}
+			if isAncestorOfBase {
+				return storer.ErrStop
+			}
+		}
+		commits = append(commits, toCommit(c))
+		if len(commits) >= limit {
+			return storer.ErrStop
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, storer.ErrStop) {
+		return nil, fmt.Errorf("gitstats: walking log: %w", err)
+	}
+	return commits, nil
+}
+
 func toCommit(c *object.Commit) Commit {
 	hash := c.Hash.String()
 	short := hash

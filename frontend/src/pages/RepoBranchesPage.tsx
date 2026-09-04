@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import { BranchIcon } from '../components/icons'
 
@@ -36,10 +36,17 @@ export function RepoBranchesPage() {
             {branches.map((b) => (
               <li key={b}>
                 <div className="row-main">
-                  <span className="branch-chip">
-                    <BranchIcon />
-                    {b}
-                  </span>
+                  {/* Raw branch name in the URL, not encodeURIComponent'd —
+                      the route is a splat ("/branches/*"), which captures
+                      a literal "/" the same way it appears here; no
+                      escaping round-trip needed for names like
+                      "feature/hakem-raporlari". */}
+                  <Link to={`/repos/${encodeURIComponent(repo)}/branches/${b}`} className="row-title">
+                    <span className="branch-chip">
+                      <BranchIcon />
+                      {b}
+                    </span>
+                  </Link>
                   {b === 'main' && (
                     <span className="badge badge-warn">Korumalı — doğrudan push kapalı</span>
                   )}

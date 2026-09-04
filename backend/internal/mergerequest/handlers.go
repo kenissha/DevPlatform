@@ -311,6 +311,73 @@ func (h *Handlers) Reject(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, mr)
 }
 
+type branchPreview struct {
+	Diff DiffResult `json:"diff"`
+	// OpenRequest is this branch's currently open İnceleme İsteği
+	// targeting the same target, if any — the branch page shows its
+	// status instead of letting a developer open a duplicate.
+	OpenRequest *MergeRequest `json:"openRequest,omitempty"`
+	// LastRejected is the most recently rejected request for this exact
+	// (branch, target) pair, only populated when there's no OpenRequest
+	// — so the branch page can surface why, via its Note, without the
+	// developer digging through the full İnceleme İstekleri list.
+	LastRejected *MergeRequest `json:"lastRejected,omitempty"`
+}
+
+// BranchPreview handles
+// GET /api/repos/{repo}/branches/{branch}/preview?target=main — the
+// branch detail page's data source. target defaults to "main", the only
+// branch DevPlatform ever protects.
+func (h *Handlers) BranchPreview(w http.ResponseWriter, r *http.Request) {
+	repo := r.PathValue("repo")
+	branch := r.PathValue("branch")
+	if !h.repoExists(repo) {
+		http.Error(w, "404 repository not found", http.StatusNotFound)
+		return
+	}
+	target := r.URL.Query().Get("target")
+	if target == "" {
+		target = "main"
+	}
+
+	gitRepo, err := h.Repos.Open(repo)
+	if err != nil {
+		http.Error(w, "404 repository not found", http.StatusNotFound)
+		return
+	}
+	diff, err := Diff(gitRepo, target, branch)
+	if err != nil {
+		h.writeBranchError(w, err)
+		return
+	}
+
+	all, err := h.Store.List(repo)
+	if err != nil {
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	preview := branchPreview{Diff: diff}
+	// Store.List returns newest first, so the first match of each kind
+	// found here is already the most recent one.
+	for _, candidate := range all {
+		if candidate.SourceBranch != branch || candidate.TargetBranch != target {
+			continue
+		}
+		mr := candidate
+		if mr.Status == StatusOpen && preview.OpenRequest == nil {
+			preview.OpenRequest = &mr
+		}
+		if mr.Status == StatusRejected && preview.LastRejected == nil {
+			preview.LastRejected = &mr
+		}
+	}
+	if preview.OpenRequest != nil {
+		preview.LastRejected = nil
+	}
+
+	writeJSON(w, http.StatusOK, preview)
+}
+
 func (h *Handlers) repoExists(repo string) bool {
 	repos, err := h.Repos.List()
 	if err != nil {
