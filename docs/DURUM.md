@@ -40,14 +40,21 @@ CORS ayarı yok — üretimde de aynı origin varsayılıyor.
 ### Giriş yapmak
 
 Gerçek giriş, kurumun mevcut sisteminden gelen bir JWT ile olacak (bkz.
-"Kimlik doğrulama"). Lokalde test için token üretmek gerekiyor: HS256 ile,
-`DEVPLATFORM_JWT_SECRET` (varsayılan `dev-not-a-real-secret`) kullanarak,
-şu claim'lerle: `sub`, `email`, `role` (`admin` | `developer`), `exp`.
+"Kimlik doğrulama"). Lokalde (`npm run dev`) `/login` sayfasında
+**"Yönetici olarak gir (yerel)"** butonu var (2026-09-04, sadece
+`import.meta.env.DEV` iken render ediliyor, production build'e hiç
+girmiyor) — tıklaman yeterli, elle JWT üretmene gerek yok:
+`frontend/src/auth/devToken.ts`, Web Crypto API ile tarayıcıda gerçek
+bir HS256 JWT imzalıyor (backend'in varsayılan
+`DEVPLATFORM_JWT_SECRET`'ı olan `dev-not-a-real-secret` ile), admin rolüyle.
 
-Ürettiğin token'ı iki şekilde kullanabilirsin:
+Elle token üretmek istersen (farklı bir subject/role denemek için):
+HS256 ile, `DEVPLATFORM_JWT_SECRET` (varsayılan `dev-not-a-real-secret`)
+kullanarak, şu claim'lerle: `sub`, `email`, `role` (`admin` | `developer`),
+`exp`. İki şekilde kullanabilirsin:
 
 - `http://localhost:5173/?token=<JWT>` adresine git (SSO devrini taklit eder), veya
-- `/login` sayfasındaki kutuya yapıştır.
+- `/login` sayfasındaki "elle bir JWT ile" kutusuna yapıştır.
 
 ### Git ile kullanmak
 

@@ -1,11 +1,13 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
+import { signDevToken } from '../auth/devToken'
 import { LogoMark } from '../components/icons'
 
 export function LoginPage() {
   const { status, login } = useAuth()
   const [tokenInput, setTokenInput] = useState('')
+  const [devLoggingIn, setDevLoggingIn] = useState(false)
 
   if (status === 'authenticated') {
     return <Navigate to="/" replace />
@@ -15,6 +17,20 @@ export function LoginPage() {
     e.preventDefault()
     if (tokenInput.trim()) {
       login(tokenInput.trim())
+    }
+  }
+
+  // One click, no JWT to hand-craft: signs a token client-side (see
+  // devToken.ts) with the same default secret the local backend falls
+  // back to, and logs straight in as an Admin — the SSO devir'i
+  // taklit eden ?token= flow's manual-paste step, automated away.
+  async function handleDevLogin() {
+    setDevLoggingIn(true)
+    try {
+      const token = await signDevToken('local-dev', 'dev@localhost', 'admin')
+      login(token)
+    } finally {
+      setDevLoggingIn(false)
     }
   }
 
@@ -39,6 +55,15 @@ export function LoginPage() {
           <>
             <div className="login-divider">Geliştirme girişi</div>
 
+            <div className="form-actions">
+              <button type="button" className="btn-primary" onClick={handleDevLogin} disabled={devLoggingIn}>
+                {devLoggingIn ? 'Giriş yapılıyor...' : 'Yönetici olarak gir (yerel)'}
+              </button>
+            </div>
+
+            <p className="login-note" style={{ marginTop: 16 }}>
+              veya elle bir JWT ile:
+            </p>
             <form onSubmit={handleSubmit}>
               <div className="field">
                 <label htmlFor="token">JWT</label>
