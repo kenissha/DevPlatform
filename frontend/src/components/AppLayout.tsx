@@ -2,7 +2,19 @@ import { Link, NavLink, Outlet, useMatch } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { useNotifications } from '../notifications/useNotifications'
 import { useRepos } from '../repos/ReposContext'
-import { AuditIcon, BellIcon, DeployIcon, KeyIcon, LockIcon, LogoMark, OverviewIcon, RepoIcon } from './icons'
+import { useTheme } from '../theme/useTheme'
+import {
+  AuditIcon,
+  BellIcon,
+  DeployIcon,
+  KeyIcon,
+  LockIcon,
+  LogoMark,
+  MoonIcon,
+  OverviewIcon,
+  RepoIcon,
+  SunIcon,
+} from './icons'
 import { RepoTabBar } from './RepoTabBar'
 
 // AppLayout is the persistent chrome every authenticated page renders
@@ -13,6 +25,7 @@ export function AppLayout() {
   const { user, logout } = useAuth()
   const { repos } = useRepos()
   const { unreadCount } = useNotifications()
+  const { resolved, toggle } = useTheme()
   // useParams would return {} here: a layout route only sees params its own
   // path pattern matched, not its descendants'. useMatch runs against the
   // full location, so the layout can tell which repo the page below it is
@@ -33,6 +46,17 @@ export function AppLayout() {
           STK Atölye
         </Link>
         <div className="topbar-spacer" />
+        <button
+          type="button"
+          onClick={toggle}
+          className="icon-button"
+          // The label names what the click DOES, not the current state —
+          // an icon button's accessible name is read as its action.
+          title={resolved === 'dark' ? 'Açık temaya geç' : 'Koyu temaya geç'}
+          aria-label={resolved === 'dark' ? 'Açık temaya geç' : 'Koyu temaya geç'}
+        >
+          {resolved === 'dark' ? <SunIcon /> : <MoonIcon />}
+        </button>
         {user && (
           <div className="topbar-user">
             <div className="user-identity">

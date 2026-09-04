@@ -98,3 +98,44 @@ export function formatDate(iso: string): string {
     minute: '2-digit',
   })
 }
+
+// "3 saat önce" — what an activity feed wants, where the gap since an
+// event matters more than the wall-clock time it happened at. Falls
+// back to formatDate past a week, when "23 gün önce" stops being easier
+// to read than the date itself.
+export function formatRelative(iso: string): string {
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return ''
+
+  const seconds = Math.round((Date.now() - then) / 1000)
+  // A clock skew between server and browser can put a just-recorded
+  // event slightly in the future; "az önce" reads better than "-2 saniye".
+  if (seconds < 60) return 'az önce'
+
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes} dakika önce`
+
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours} saat önce`
+
+  const days = Math.round(hours / 24)
+  if (days === 1) return 'dün'
+  if (days < 7) return `${days} gün önce`
+
+  return formatDate(iso)
+}
+
+// The time-of-day greeting the dashboard opens with. Turkish splits the
+// day differently from English: "iyi günler" covers midday through late
+// afternoon, and "günaydın" is strictly morning.
+export function greeting(now = new Date()): string {
+  const hour = now.getHours()
+  if (hour < 6) return 'İyi geceler'
+  if (hour < 12) return 'Günaydın'
+  if (hour < 18) return 'İyi günler'
+  return 'İyi akşamlar'
+}
+
+export function formatDayHeading(now = new Date()): string {
+  return now.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' })
+}

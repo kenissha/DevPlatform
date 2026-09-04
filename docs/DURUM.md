@@ -404,6 +404,24 @@ gözetimli yapılacak birer adım.
 
 ## Bilinmesi gereken kararlar
 
+- **2026-09-04 güncelleme — açık/koyu tema ve yeni Panel:**
+  Açık tema paleti `index.css`'te zaten tanımlıydı ama sadece işletim
+  sistemini takip ediyordu. Artık üst barda güneş/ay butonu var
+  (`frontend/src/theme/`): seçim `localStorage`'a yazılıp `<html>`
+  üzerine `data-theme` olarak basılıyor. Üç durum var, iki değil —
+  hiç seçim yapılmadığında **hiçbir şey basılmıyor**, böylece CSS'in
+  `prefers-color-scheme` sorgusu devreye giriyor ve OS takip ediliyor.
+  Media query bu yüzden `:root:not([data-theme="dark"])` ile korunuyor:
+  aksi halde açık OS'ta koyuyu seçen biri yine açık tema görürdü.
+  Panel sayfası (`DashboardPage.tsx`) baştan yazıldı: selamlama +
+  "bekleyen işin" özeti, üç odak kartı (bana atanan / inceleme bekleyen
+  / onay bekleyen deploy — her biri ilk 3 gerçek işi de gösteriyor),
+  `/api/audit`'ten beslenen "Son hareketler" akışı, ve sağ rayda ekip
+  iş yükü + repo listesi. Yeni backend toplaması yok; tek eklenen şey
+  `/api/users`'ın artık `displayName` de döndürmesi
+  (`/api/display-names` sadece admin'e açık olduğu için geliştiriciler
+  ham subject id'si — "7 açtı" — görüyordu; bu endpoint zaten herkesin
+  e-postasını veriyor, isim ondan daha hassas değil).
 - **2026-09-04 güncelleme — branch'ten inceleme isteği açma (GitHub
   mantığında):** Eski akış "İnceleme İstekleri" sayfasında kaynak/hedef
   branch seçen bir formdu. Artık `/repos/:repo/branches` sayfasındaki

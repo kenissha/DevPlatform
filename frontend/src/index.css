@@ -54,8 +54,20 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/* The light palette, defined once and applied from two places below.
+ *
+ * The theme has three states, not two (see frontend/src/theme/): an
+ * explicit choice stamps data-theme="light"/"dark" on <html>, and the
+ * default "system" setting stamps nothing at all — so an un-stamped
+ * document must still follow prefers-color-scheme. That's why the
+ * media query is guarded with :not([data-theme="dark"]): without it, a
+ * user on a light OS who deliberately picks dark would still get light,
+ * because the media query would keep matching and win on order. The
+ * explicit [data-theme="light"] rule below covers the mirror case (dark
+ * OS, user picks light). */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme='dark']) {
+    color-scheme: light;
     --bg: #f6f7f9;
     --bg-chrome: #fff;
     --surface: #fff;
@@ -86,6 +98,46 @@
 
     --shadow: 0 1px 2px rgba(16, 22, 38, 0.06), 0 8px 24px rgba(16, 22, 38, 0.06);
   }
+}
+
+/* Pinned rather than inherited from :root's "dark light": an explicit
+ * choice must also drive native UI (scrollbars, form controls), or a
+ * light page keeps dark scrollbars on a dark-OS machine. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --bg-chrome: #fff;
+  --surface: #fff;
+  --surface-hover: #f2f3f7;
+  --surface-raised: #fbfbfd;
+
+  --border: #e2e5ec;
+  --border-strong: #cdd2dd;
+
+  --text: #414957;
+  --text-muted: #737d8f;
+  --text-strong: #171b23;
+
+  --accent: #6b3fe8;
+  --accent-hover: #5a2fd6;
+  --accent-soft: rgba(107, 63, 232, 0.09);
+  --accent-border: rgba(107, 63, 232, 0.32);
+
+  --success: #1a7f37;
+  --success-soft: rgba(26, 127, 55, 0.1);
+  --danger: #c73832;
+  --danger-soft: rgba(199, 56, 50, 0.09);
+  --warn: #9a6700;
+  --warn-soft: rgba(154, 103, 0, 0.11);
+
+  --diff-add-bg: rgba(26, 127, 55, 0.09);
+  --diff-del-bg: rgba(199, 56, 50, 0.08);
+
+  --shadow: 0 1px 2px rgba(16, 22, 38, 0.06), 0 8px 24px rgba(16, 22, 38, 0.06);
 }
 
 * {
@@ -705,6 +757,25 @@ button:disabled {
   padding: 4px 9px;
 }
 
+/* A square, icon-only control — the theme toggle in the top bar. Sized
+ * to the topbar's other controls so the row stays on one baseline. */
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+}
+.icon-button:hover {
+  color: var(--text-strong);
+  background: var(--surface-hover);
+  border-color: var(--border);
+}
+
 .inline-form {
   display: flex;
   gap: 8px;
@@ -947,19 +1018,295 @@ li.unread {
   color: var(--text-strong);
 }
 
-.person-block + .person-block {
-  border-top: 1px solid var(--border);
+/* ----------------------------------------------------------- dashboard */
+
+/* Wider than the 940px reading column every other page uses: this is the
+ * one screen with a genuine two-column layout, and squeezing a rail into
+ * 940px leaves neither side usable. */
+.page.dashboard {
+  max-width: 1180px;
 }
 
-.person-head {
+.hero {
+  margin-bottom: 22px;
+}
+.hero h1 {
+  margin: 0;
+  font-size: 23px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--text-strong);
+}
+.hero-sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.alert-strip {
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  font-size: 13px;
+  border: 1px solid var(--danger-soft);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--text-strong);
+}
+
+.focus-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 14px;
+}
+
+.focus-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 15px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.focus-head {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 10px 16px;
-  background: var(--surface-raised);
+}
+
+/* The card's only colour. Tone tracks the kind of work, not a status —
+ * three cards sit side by side here and the chip is what tells them
+ * apart at a glance, so the statuses inside stay free to use the badge
+ * palette as they do everywhere else. */
+.focus-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: var(--radius-sm);
+}
+.focus-card.tone-accent .focus-icon {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.focus-card.tone-warn .focus-icon {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.focus-card.tone-success .focus-icon {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.focus-label {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.focus-count {
+  margin-left: auto;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.focus-empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.focus-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.focus-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.focus-list a {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 550;
+}
+.focus-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.focus-item-meta {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focus-more {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.dash-columns {
+  display: grid;
+  /* minmax(0, …) rather than 1fr alone: a grid track defaults to
+   * min-content width, so one long unbroken commit message in the feed
+   * would otherwise widen the column and push the rail off-screen. */
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 22px;
+  align-items: start;
+  /* Carries the gap below the focus cards itself, because the section
+   * headings that would normally provide it have their top margin
+   * zeroed below so both columns start on the same line. */
+  margin-top: 26px;
+}
+@media (max-width: 1080px) {
+  .dash-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Both columns open with a section heading; without this the default
+ * 26px top margin pushes them below the grid's own start. */
+.dash-columns .section-title:first-child {
+  margin-top: 0;
+}
+
+.feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.feed li {
+  display: flex;
+  gap: 12px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border);
+}
+.feed li:last-child {
+  border-bottom: none;
+}
+
+.feed-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.feed-icon.tone-accent {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+.feed-icon.tone-success {
+  color: var(--success);
+  border-color: var(--success);
+  background: var(--success-soft);
+}
+.feed-icon.tone-danger {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.feed-body {
+  min-width: 0;
+}
+.feed-text {
+  margin: 0;
   font-size: 13px;
   color: var(--text-strong);
+}
+.feed-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.feed-meta strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.workload-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.workload-row:last-child {
+  border-bottom: none;
+}
+
+.workload-body {
+  flex: 1;
+  min-width: 0;
+}
+.workload-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.workload-name {
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workload-head .mono {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.workload-bar {
+  margin-top: 5px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-hover);
+  overflow: hidden;
+}
+.workload-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+}
+/* Unassigned work is a gap to fill, not someone's load — muted so it
+ * doesn't read as a person with the same standing as the rest. */
+.workload-bar span.unassigned {
+  background: var(--border-strong);
+}
+
+.repo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .commit-msg {

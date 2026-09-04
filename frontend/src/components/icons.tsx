@@ -148,3 +148,45 @@ export function KeyIcon({ className }: IconProps) {
     </svg>
   )
 }
+
+export function SunIcon({ className }: IconProps) {
+  return (
+    <svg className={className} {...base} aria-hidden="true">
+      <circle cx="8" cy="8" r="3.1" />
+      <path d="M8 1v1.6M8 13.4V15M15 8h-1.6M2.6 8H1M12.95 3.05l-1.13 1.13M4.18 11.82l-1.13 1.13M12.95 12.95l-1.13-1.13M4.18 4.18L3.05 3.05" />
+    </svg>
+  )
+}
+
+export function MoonIcon({ className }: IconProps) {
+  return (
+    <svg className={className} {...base} aria-hidden="true">
+      <path d="M13.5 9.6A5.9 5.9 0 0 1 6.4 2.5a5.9 5.9 0 1 0 7.1 7.1z" />
+    </svg>
+  )
+}
+
+export function ClockIcon({ className }: IconProps) {
+  return (
+    <svg className={className} {...base} aria-hidden="true">
+      <circle cx="8" cy="8" r="6.4" />
+      <path d="M8 4.4V8l2.4 1.6" />
+    </svg>
+  )
+}
+
+export function CheckIcon({ className }: IconProps) {
+  return (
+    <svg className={className} {...base} aria-hidden="true">
+      <path d="M3 8.5l3.4 3.4L13 4.8" />
+    </svg>
+  )
+}
+
+export function PlusIcon({ className }: IconProps) {
+  return (
+    <svg className={className} {...base} aria-hidden="true">
+      <path d="M8 3v10M3 8h10" />
+    </svg>
+  )
+}

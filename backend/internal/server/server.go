@@ -139,7 +139,7 @@ func NewRouter(deps Deps) *http.ServeMux {
 	// provisioning is what keeps the assignee picker's list of colleagues
 	// accurate without anyone maintaining it by hand.
 	mux.Handle("GET /api/me", authMiddleware(handleMe(deps.Users, deps.DisplayNames)))
-	mux.Handle("GET /api/users", authMiddleware(handleUsers(deps.Users)))
+	mux.Handle("GET /api/users", authMiddleware(handleUsers(deps.Users, deps.DisplayNames)))
 
 	// Any authenticated user can list repos (List narrows the result to
 	// what they're allowed to see itself — no {repo} in this path for
@@ -303,7 +303,24 @@ func handleMe(registry *users.Store, displayNames *displaynames.Store) http.Hand
 	})
 }
 
-func handleUsers(registry *users.Store) http.Handler {
+// userResponse is users.User plus the admin-set display name. The name
+// lives in a separate store (see internal/displaynames), so it's joined
+// on here at the API layer rather than being denormalised into the
+// registry's own persisted shape.
+//
+// It's carried on this endpoint specifically because /api/display-names
+// is Admin-only: without it, a Geliştirici loading any cross-repo view
+// could only render raw subject ids. This endpoint is readable by any
+// authenticated caller and already exposes everyone's email, so a name
+// an admin chose to set alongside it discloses nothing further.
+// DisplayName always falls back to the email when no override exists,
+// so callers can render it directly instead of repeating that rule.
+type userResponse struct {
+	users.User
+	DisplayName string `json:"displayName"`
+}
+
+func handleUsers(registry *users.Store, displayNames *displaynames.Store) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		list := []users.User{}
 		if registry != nil {
@@ -314,9 +331,30 @@ func handleUsers(registry *users.Store) http.Handler {
 				return
 			}
 		}
+
+		// Read the whole override registry once rather than calling
+		// Get per user, which would re-read the file for every entry.
+		// A read failure degrades to "no overrides" instead of failing
+		// the request: the list itself is still correct and useful,
+		// just with emails where names would have been.
+		overrides, err := displayNames.List()
+		if err != nil {
+			log.Printf("handleUsers: failed to read display names: %v", err)
+			overrides = map[string]string{}
+		}
+
+		resp := make([]userResponse, 0, len(list))
+		for _, u := range list {
+			name := overrides[u.Subject]
+			if name == "" {
+				name = u.Email
+			}
+			resp = append(resp, userResponse{User: u, DisplayName: name})
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		if err := json.NewEncoder(w).Encode(list); err != nil {
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			log.Printf("handleUsers: failed to encode response: %v", err)
 		}
 	})

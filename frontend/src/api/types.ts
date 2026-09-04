@@ -71,6 +71,11 @@ export interface Person {
   role: Role
   firstSeen: string
   lastSeen: string
+  // The admin-set display name, already falling back to the email
+  // server-side when no override exists — so it's always safe to render
+  // directly. Carried here because /api/display-names is Admin-only,
+  // and every page needs to turn a subject id into a readable name.
+  displayName: string
 }
 
 export type AuditAction =

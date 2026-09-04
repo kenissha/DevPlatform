@@ -94,7 +94,12 @@ func newTestRouter(t *testing.T) (*http.ServeMux, *repostore.Store, *access.Stor
 		Deployments:    deploymentHandlers,
 		Users:          users.NewStore(filepath.Join(dataDir, "users.json")),
 		Access:         accessStore,
-		GitTokens:      gitTokenHandlers,
+		// Wired (rather than left nil) so tests can exercise the real
+		// admin display-name API and observe its effect on other
+		// endpoints — see
+		// TestUsers_CarryTheirDisplayNameForEveryAuthenticatedCaller.
+		DisplayNames: displaynames.NewStore(filepath.Join(dataDir, "display-names.json")),
+		GitTokens:    gitTokenHandlers,
 	})
 	return router, store, accessStore
 }
@@ -385,6 +390,60 @@ func TestUsers_AreRegisteredJustInTimeOnFirstCall(t *testing.T) {
 	}
 	if subjects["dev-1"] != "developer" || subjects["admin-1"] != "admin" {
 		t.Errorf("registry = %+v, want dev-1/developer and admin-1/admin", subjects)
+	}
+}
+
+// TestUsers_CarryTheirDisplayNameForEveryAuthenticatedCaller covers what
+// the panel's dashboard needs: /api/display-names is Admin-only, so a
+// Geliştirici loading a cross-repo view could only ever render raw
+// subject ids ("7 açtı"). /api/users is readable by any authenticated
+// caller and already exposes everyone's email, so carrying the
+// admin-set display name alongside it reveals nothing new while giving
+// every page one list to resolve names from.
+func TestUsers_CarryTheirDisplayNameForEveryAuthenticatedCaller(t *testing.T) {
+	router, _, _ := newTestRouter(t)
+
+	// Register both people just-in-time, the way a real first visit does.
+	do(t, router, http.MethodGet, "/api/me", "dev-1", "developer", nil)
+	do(t, router, http.MethodGet, "/api/me", "admin-1", "admin", nil)
+
+	// An Admin names dev-1 through the real (Admin-only) endpoint.
+	named := do(t, router, http.MethodPut, "/api/display-names/dev-1", "admin-1", "admin",
+		map[string]string{"name": "Rifat Öztürk"})
+	if named.Code != http.StatusOK {
+		t.Fatalf("PUT display-name status = %d, want %d, body: %s", named.Code, http.StatusOK, named.Body.String())
+	}
+
+	// A Geliştirici — who cannot read /api/display-names at all — still
+	// sees the name through /api/users.
+	rec := do(t, router, http.MethodGet, "/api/users", "dev-1", "developer", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	var list []struct {
+		Subject     string `json:"subject"`
+		Email       string `json:"email"`
+		DisplayName string `json:"displayName"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	bySubject := map[string]string{}
+	emails := map[string]string{}
+	for _, u := range list {
+		bySubject[u.Subject] = u.DisplayName
+		emails[u.Subject] = u.Email
+	}
+	if bySubject["dev-1"] != "Rifat Öztürk" {
+		t.Errorf("dev-1 displayName = %q, want %q", bySubject["dev-1"], "Rifat Öztürk")
+	}
+	// admin-1 has no override, so displayName must fall back to their
+	// email rather than being empty — a caller can render it directly
+	// without repeating the fallback rule on every page.
+	if bySubject["admin-1"] == "" || bySubject["admin-1"] != emails["admin-1"] {
+		t.Errorf("admin-1 displayName = %q, want it to fall back to the email %q",
+			bySubject["admin-1"], emails["admin-1"])
 	}
 }
 
