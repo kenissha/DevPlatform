@@ -715,6 +715,17 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* inline-flex so a button that carries a leading icon lines it up with
+   its label and spaces the two. Text-only buttons — the majority — render
+   identically to the inline-block they were before. */
+.btn-primary,
+.btn-secondary,
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .btn-primary {
   background: var(--accent);
   color: var(--on-accent);
@@ -783,6 +794,134 @@ button:disabled {
 }
 .inline-form input {
   width: 220px;
+}
+
+.form-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.card-body > .error {
+  margin-top: 10px;
+}
+
+/* ---------------------------------------------------------- repo listesi */
+
+.create-repo {
+  margin-bottom: 16px;
+}
+
+/* auto-fill, not auto-fit: with one or two repos, auto-fit would stretch
+   a lone card the full width of the page and undo the point of a grid.
+   auto-fill keeps every card the same size no matter how many there
+   are. */
+.repo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
+  gap: 14px;
+}
+
+.repo-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.repo-card:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.repo-card-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  color: var(--text-strong);
+  font-weight: 600;
+  font-size: 14.5px;
+}
+
+.repo-card-head:hover {
+  color: var(--accent);
+}
+
+.repo-card-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.repo-card-head:hover .repo-card-icon {
+  color: var(--accent);
+}
+
+.repo-card-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  /* Reserves the line's height before the summary requests land, so the
+     grid doesn't visibly reflow as each card fills itself in. */
+  min-height: 16px;
+}
+
+.repo-card-meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.repo-card-meta svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* margin-top:auto pins the clone row to the bottom edge. Grid items
+   stretch to the tallest card in their row, so without it a card with no
+   commit line would float its address halfway up. */
+.repo-card-clone {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+  padding: 3px 3px 3px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.repo-card-clone code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.repo-card-clone .icon-button {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+}
+
+.copied {
+  color: var(--success);
 }
 
 /* ---------------------------------------------------------------- tasks */

@@ -13,6 +13,11 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:8080',
       '/healthz': 'http://localhost:8080',
+      // The repo list shows a clone address built from the page's own
+      // origin, which in dev is this server rather than the backend.
+      // Proxying /git keeps that address honest — paste it into a
+      // terminal and the clone actually works.
+      '/git': 'http://localhost:8080',
     },
   },
 })

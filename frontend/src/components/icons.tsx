@@ -190,3 +190,13 @@ export function PlusIcon({ className }: IconProps) {
     </svg>
   )
 }
+
+export function CopyIcon({ className }: IconProps) {
+  // Two offset sheets — the universal copy motif.
+  return (
+    <svg className={className} {...base} aria-hidden="true">
+      <rect x="5.75" y="5.75" width="7.5" height="7.5" rx="1.5" />
+      <path d="M10.25 3.75a1.5 1.5 0 0 0-1.5-1.5h-4.5a2 2 0 0 0-2 2v4.5a1.5 1.5 0 0 0 1.5 1.5" />
+    </svg>
+  )
+}
