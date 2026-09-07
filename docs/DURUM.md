@@ -514,6 +514,50 @@ verildiğinde kişiye haber veren bir şeydi.
     doluyor, bu üç kişi hiç giriş yapmayacak, yoksa her görev atama
     listesinin hiç duymadığı bir isme atanmış olurdu.
 
+- **2026-09-07 güncelleme — inceleme akışı: açıklama, ret bildirimi ve
+  üç ekranın revizyonu.**
+
+  **Ret görünmezdi.** İstek açılınca yöneticilere bildirim gidiyordu ama
+  karar geri yolculuk yapmıyordu: reddedilen kişi, kendisinin tekrar
+  bakmak için hiçbir sebebi olmayan bir sayfada duran kararı beklemeye
+  devam ediyordu. `notifyAuthor` eklendi — onayda da rette de yazara
+  bildirim gidiyor ve **ret notu mesajın içinde** taşınıyor, bir tık
+  ötede değil: insanların üzerine iş yaptığı bir bilgi için bir tık fazla.
+  Kararı veren kişi yazarın kendisiyse bildirim atlanıyor (yönetici kendi
+  isteğini onaylayınca kendine haber vermesi gereksiz).
+
+  **"Başlık" yanlış etiketti.** Branch sayfasındaki tek alan branch adıyla
+  doluyordu ve incelemeye giden şey oydu. Artık iki alan var: tek satırlık
+  "Ne yaptın?" ve asıl mesele olan **Açıklama — inceleyecek kişi bunu
+  okuyacak**. `mergerequest.MergeRequest` bir `Description` alanı kazandı;
+  eski istekler bu anahtarı hiç taşımıyor, boş olarak çözülüyorlar, göç
+  gerekmiyor.
+
+  **Reddedilen istek çıkmaz sokaktı.** Not neyin düzeltileceğini söylüyor
+  ama sayfada düzeltmenin yapılacağı branch'e giden hiçbir şey yoktu.
+  İstek sayfası artık karar sonucunu ayrı bir panelde gösteriyor ve
+  reddedilmişse branch'e dönüş bağlantısı veriyor. Branch sayfasındaki
+  panel de üç durumu ayrı ayrı karşılıyor (bekliyor / geri gönderildi /
+  henüz istenmedi), her biri bir yere çıkıyor.
+
+  **Karar kutusu** düğmeleri yan yana duran sıradan bir karttı. Artık
+  vurgulu bir eylem yüzeyi; Onayla ve Geri gönder karşıt uçlarda duruyor
+  (yanlış tıklama bir piksel ötede olmasın) ve panel, onaylamanın git
+  tarafında bir şey yapmadığını açıkça yazıyor.
+
+  **İstatistikler sayfası:**
+  - Çubuk grafik gitti. 30 günün çoğu sıfır olduğu için boşlukta yüzen
+    birkaç çubuk gibi duruyordu. Yerine **panelin kare ızgarası**
+    (`ContributionGraph`) kondu, 6 ay üzerinden — hafta-sütun bir ızgaranın
+    ızgara olabilmesi için sütuna ihtiyacı var, 30 gün beş sütun ediyor.
+    Özet kutuları aynı cevaptan son 30 günü dilimliyor, yani tek istek.
+    `ActivityChart` ve CSS'i silindi.
+  - Katkıda bulunanlar uzun satırlar yerine **dörtlü kare kartlar**.
+  - "Son commit'ler" 15 yerine 30 çekiyor ama kart içinde **kendi
+    kutusunda kayıyor** (`.scroll-list`): binlerce commit'i olan bir repo
+    aksi hâlde bu sayfayı sonu gelmez bir sayfaya çeviriyordu. Aynı sınır
+    branch sayfasındaki commit listesine de kondu.
+
 ## Sıradaki iş
 
 **2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`

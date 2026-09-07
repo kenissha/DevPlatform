@@ -37,6 +37,9 @@ export interface MergeRequest {
   id: string
   repo: string
   title: string
+  // What the author wants the reviewer to read before the diff. Optional,
+  // and absent on requests opened before the field existed.
+  description?: string
   sourceBranch: string
   targetBranch: string
   author: string

@@ -126,14 +126,21 @@ var demoTasks = []demoTask{
 }
 
 var demoRequests = []struct {
-	Repo   string
-	Title  string
-	Source string
-	Author person
+	Repo        string
+	Title       string
+	Description string
+	Source      string
+	Author      person
 }{
-	{"deneme", "Hakem raporu ekranı bitti", "feature/hakem-raporlari", ahmet},
-	{"oasrapor-frontend", "PDF dışa aktarım hazır", "feature/pdf-disa-aktarim", elif},
-	{"oasrapor-frontend", "Oturum zaman aşımı düzeltmesi", "bugfix/oturum-zaman-asimi", ahmet},
+	{"deneme", "Hakem raporu ekranı bitti",
+		"Rapor ekranının ilk hâli hazır. Tablo ve filtreler çalışıyor, PDF çıktısı henüz yok — onu ayrı branch'te bitiriyorum. Özellikle tarih filtresinin sınır değerlerine bakar mısın?",
+		"feature/hakem-raporlari", ahmet},
+	{"oasrapor-frontend", "PDF dışa aktarım hazır",
+		"Raporu PDF olarak indirme eklendi. Türkçe karakterler için font gömdüm, o kısma ayrıca bakılması iyi olur.",
+		"feature/pdf-disa-aktarim", elif},
+	{"oasrapor-frontend", "Oturum zaman aşımı düzeltmesi",
+		"VPN üzerinden AD sorgusu 22 saniye sürüyordu ve giriş zaman aşımına düşüyordu. Sınırı 60 saniyeye çektim.",
+		"bugfix/oturum-zaman-asimi", ahmet},
 }
 
 func main() {
@@ -216,7 +223,7 @@ func main() {
 	fmt.Printf("  %d görev\n", len(demoTasks))
 
 	for _, r := range demoRequests {
-		if _, err := requests.Create(r.Repo, r.Title, r.Source, "main", r.Author.Subject); err != nil {
+		if _, err := requests.Create(r.Repo, r.Title, r.Description, r.Source, "main", r.Author.Subject); err != nil {
 			log.Fatalf("inceleme isteği oluşturulamadı (%s): %v", r.Title, err)
 		}
 	}

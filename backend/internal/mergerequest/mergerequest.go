@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -62,9 +63,15 @@ const (
 // MergeRequest records a request to merge SourceBranch into TargetBranch in
 // Repo, and its review status.
 type MergeRequest struct {
-	ID           string    `json:"id"`
-	Repo         string    `json:"repo"`
-	Title        string    `json:"title"`
+	ID    string `json:"id"`
+	Repo  string `json:"repo"`
+	Title string `json:"title"`
+	// Description is what the author wants the reviewer to read before
+	// looking at the diff — what was done and what to watch for. Optional,
+	// and absent from requests opened before this field existed, which
+	// decode as empty and render as "no description" rather than needing a
+	// migration.
+	Description  string    `json:"description,omitempty"`
 	SourceBranch string    `json:"sourceBranch"`
 	TargetBranch string    `json:"targetBranch"`
 	Author       string    `json:"author"`
@@ -117,7 +124,7 @@ func (s *Store) nextCreatedAt() time.Time {
 
 // Create persists a new merge request for repo and returns it with its
 // generated ID, Status (always StatusOpen), and CreatedAt populated.
-func (s *Store) Create(repo, title, sourceBranch, targetBranch, author string) (MergeRequest, error) {
+func (s *Store) Create(repo, title, description, sourceBranch, targetBranch, author string) (MergeRequest, error) {
 	if !validRepoName.MatchString(repo) {
 		return MergeRequest{}, ErrInvalidRepo
 	}
@@ -130,6 +137,7 @@ func (s *Store) Create(repo, title, sourceBranch, targetBranch, author string) (
 	mr := MergeRequest{
 		Repo:         repo,
 		Title:        title,
+		Description:  strings.TrimSpace(description),
 		SourceBranch: sourceBranch,
 		TargetBranch: targetBranch,
 		Author:       author,

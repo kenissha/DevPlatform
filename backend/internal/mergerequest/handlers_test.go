@@ -115,7 +115,7 @@ func TestListAll_NarrowsToAllowedReposForARestrictedDeveloper(t *testing.T) {
 	// validates the source/target branches exist via a real git repo, which
 	// this test doesn't need — only that ListAll's Access filtering hides an
 	// item belonging to a repo the caller isn't allowed to see.
-	if _, err := h.Store.Create("other", "unrelated", "feature", "main", "dev-2"); err != nil {
+	if _, err := h.Store.Create("other", "unrelated", "", "feature", "main", "dev-2"); err != nil {
 		t.Fatalf("failed to seed merge request: %v", err)
 	}
 	h.Access = access.NewStore(t.TempDir() + "/access.json")
@@ -247,7 +247,7 @@ func TestGet_ReturnsMergeRequestWithDiff(t *testing.T) {
 	h, _ := newTestHandlers(t)
 	mux := newMux(h)
 
-	created, err := h.Store.Create("sample", "Add line two", "feature-x", "main", "dev-1")
+	created, err := h.Store.Create("sample", "Add line two", "", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -277,7 +277,7 @@ func TestApprove_RejectsNonAdmin(t *testing.T) {
 	h, _ := newTestHandlers(t)
 	mux := newMux(h)
 
-	created, err := h.Store.Create("sample", "Add line two", "feature-x", "main", "dev-1")
+	created, err := h.Store.Create("sample", "Add line two", "", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -311,7 +311,7 @@ func TestApprove_AllowsAdmin(t *testing.T) {
 
 	mainTipBefore := runGit(t, repoPath, "rev-parse", "main")
 
-	created, err := h.Store.Create("sample", "Add line two", "feature-x", "main", "dev-1")
+	created, err := h.Store.Create("sample", "Add line two", "", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestApprove_RejectsAlreadyDecidedRequest(t *testing.T) {
 	h, _ := newTestHandlers(t)
 	mux := newMux(h)
 
-	created, err := h.Store.Create("sample", "Add line two", "feature-x", "main", "dev-1")
+	created, err := h.Store.Create("sample", "Add line two", "", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -371,7 +371,7 @@ func TestReject_AllowsAdmin(t *testing.T) {
 	h, _ := newTestHandlers(t)
 	mux := newMux(h)
 
-	created, err := h.Store.Create("sample", "Add line two", "feature-x", "main", "dev-1")
+	created, err := h.Store.Create("sample", "Add line two", "", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -403,7 +403,7 @@ func TestList_ReturnsCreatedRequests(t *testing.T) {
 	h, _ := newTestHandlers(t)
 	mux := newMux(h)
 
-	if _, err := h.Store.Create("sample", "Add line two", "feature-x", "main", "dev-1"); err != nil {
+	if _, err := h.Store.Create("sample", "Add line two", "", "feature-x", "main", "dev-1"); err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
 
@@ -559,7 +559,7 @@ func TestBranchPreview_ReturnsTheOpenRequestForThisBranch(t *testing.T) {
 	h, _ := newTestHandlers(t)
 	mux := newMux(h)
 
-	created, err := h.Store.Create("sample", "Add line two", "feature-x", "main", "dev-1")
+	created, err := h.Store.Create("sample", "Add line two", "", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -589,7 +589,7 @@ func TestBranchPreview_ReturnsTheMostRecentRejectionWithItsNote(t *testing.T) {
 	h, _ := newTestHandlers(t)
 	mux := newMux(h)
 
-	created, err := h.Store.Create("sample", "Add line two", "feature-x", "main", "dev-1")
+	created, err := h.Store.Create("sample", "Add line two", "", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -615,5 +615,153 @@ func TestBranchPreview_ReturnsTheMostRecentRejectionWithItsNote(t *testing.T) {
 	}
 	if preview.LastRejected == nil || preview.LastRejected.Note != "testler eksik" {
 		t.Errorf("LastRejected = %+v, want the rejected request with its note", preview.LastRejected)
+	}
+}
+
+// -------------------------------------------- decision notifications
+
+// decideAs runs approve/reject through the real router as an admin and
+// returns the recorder, so these tests exercise the same path the panel's
+// buttons take.
+func decideAs(t *testing.T, mux *http.ServeMux, action, id, subject, note string) *httptest.ResponseRecorder {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"note": note})
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/repos/sample/merge-requests/"+id+"/"+action, bytes.NewReader(body))
+	req = addAuth(req, t, subject, "admin")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	return rec
+}
+
+// A rejection nobody is told about is a rejection the author keeps waiting
+// on: the decision lands on a page they have no reason to revisit.
+func TestReject_NotifiesTheAuthorWithTheReason(t *testing.T) {
+	h, _ := newTestHandlers(t)
+	n := notify.NewStore(t.TempDir())
+	h.Notify = n
+	mux := newMux(h)
+
+	created, err := h.Store.Create("sample", "Add line two", "", "feature-x", "main", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	if rec := decideAs(t, mux, "reject", created.ID, "admin-1", "testleri de ekle"); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", rec.Code, rec.Body.String())
+	}
+
+	notifications, err := n.ListForUser("dev-1")
+	if err != nil {
+		t.Fatalf("ListForUser failed: %v", err)
+	}
+	if len(notifications) != 1 {
+		t.Fatalf("got %d notifications, want 1", len(notifications))
+	}
+	got := notifications[0]
+	if got.Kind != "merge_request_decided" {
+		t.Errorf("kind = %q, want %q", got.Kind, "merge_request_decided")
+	}
+	// The reason has to be in the message itself. One more click away is
+	// one click too many for something people act on.
+	if !strings.Contains(got.Message, "testleri de ekle") {
+		t.Errorf("message = %q, want it to carry the rejection note", got.Message)
+	}
+	if !strings.Contains(got.Link, created.ID) {
+		t.Errorf("link = %q, want it to point at the request", got.Link)
+	}
+}
+
+func TestApprove_NotifiesTheAuthor(t *testing.T) {
+	h, _ := newTestHandlers(t)
+	n := notify.NewStore(t.TempDir())
+	h.Notify = n
+	mux := newMux(h)
+
+	created, err := h.Store.Create("sample", "Add line two", "", "feature-x", "main", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	if rec := decideAs(t, mux, "approve", created.ID, "admin-1", ""); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", rec.Code, rec.Body.String())
+	}
+
+	notifications, err := n.ListForUser("dev-1")
+	if err != nil {
+		t.Fatalf("ListForUser failed: %v", err)
+	}
+	if len(notifications) != 1 {
+		t.Fatalf("got %d notifications, want 1", len(notifications))
+	}
+}
+
+// An admin approving their own request does not need to be told about it.
+func TestDecision_DoesNotNotifyTheDeciderAboutTheirOwnRequest(t *testing.T) {
+	h, _ := newTestHandlers(t)
+	n := notify.NewStore(t.TempDir())
+	h.Notify = n
+	mux := newMux(h)
+
+	created, err := h.Store.Create("sample", "Add line two", "", "feature-x", "main", "admin-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	if rec := decideAs(t, mux, "approve", created.ID, "admin-1", ""); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", rec.Code, rec.Body.String())
+	}
+
+	notifications, err := n.ListForUser("admin-1")
+	if err != nil {
+		t.Fatalf("ListForUser failed: %v", err)
+	}
+	if len(notifications) != 0 {
+		t.Errorf("got %d notifications, want none — the decider is the author", len(notifications))
+	}
+}
+
+func TestCreate_StoresTheDescription(t *testing.T) {
+	h, _ := newTestHandlers(t)
+	mux := newMux(h)
+
+	body, _ := json.Marshal(map[string]string{
+		"title":        "Add line two",
+		"description":  "  Tarih filtresinin sınır değerlerine bakar mısın?  ",
+		"sourceBranch": "feature-x",
+		"targetBranch": "main",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/merge-requests", bytes.NewReader(body))
+	req = addAuth(req, t, "dev-1", "developer")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body: %s", rec.Code, rec.Body.String())
+	}
+	var mr MergeRequest
+	if err := json.Unmarshal(rec.Body.Bytes(), &mr); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if mr.Description != "Tarih filtresinin sınır değerlerine bakar mısın?" {
+		t.Errorf("description = %q, want it stored and trimmed", mr.Description)
+	}
+}
+
+// Requests opened before the field existed have no "description" key at
+// all; they must read back as empty rather than needing a migration.
+func TestGet_TreatsAMissingDescriptionAsEmpty(t *testing.T) {
+	h, _ := newTestHandlers(t)
+
+	created, err := h.Store.Create("sample", "Add line two", "", "feature-x", "main", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	reread, err := h.Store.Get("sample", created.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if reread.Description != "" {
+		t.Errorf("description = %q, want empty", reread.Description)
 	}
 }

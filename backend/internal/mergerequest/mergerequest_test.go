@@ -7,7 +7,7 @@ import (
 func TestCreate_PersistsAndReturnsOpenRequest(t *testing.T) {
 	store := NewStore(t.TempDir())
 
-	mr, err := store.Create("intranet-backend", "Fix login bug", "feature-x", "main", "dev-1")
+	mr, err := store.Create("intranet-backend", "Fix login bug", "", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create returned error: %v", err)
 	}
@@ -25,7 +25,7 @@ func TestCreate_PersistsAndReturnsOpenRequest(t *testing.T) {
 func TestCreate_RejectsInvalidRepoName(t *testing.T) {
 	store := NewStore(t.TempDir())
 
-	_, err := store.Create("../escape", "title", "a", "b", "dev-1")
+	_, err := store.Create("../escape", "title", "", "a", "b", "dev-1")
 	if err != ErrInvalidRepo {
 		t.Fatalf("err = %v, want ErrInvalidRepo", err)
 	}
@@ -33,7 +33,7 @@ func TestCreate_RejectsInvalidRepoName(t *testing.T) {
 
 func TestGet_ReturnsCreatedRequest(t *testing.T) {
 	store := NewStore(t.TempDir())
-	created, err := store.Create("intranet-backend", "Fix login bug", "feature-x", "main", "dev-1")
+	created, err := store.Create("intranet-backend", "Fix login bug", "", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -80,11 +80,11 @@ func TestNextCreatedAt_IsStrictlyMonotonicEvenUnderClockTies(t *testing.T) {
 
 func TestList_ReturnsAllRequestsNewestFirst(t *testing.T) {
 	store := NewStore(t.TempDir())
-	first, err := store.Create("intranet-backend", "First", "a", "main", "dev-1")
+	first, err := store.Create("intranet-backend", "First", "", "a", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
-	second, err := store.Create("intranet-backend", "Second", "b", "main", "dev-1")
+	second, err := store.Create("intranet-backend", "Second", "", "b", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestList_ReturnsEmptySliceForRepoWithNoRequests(t *testing.T) {
 
 func TestSetStatus_TransitionsToRejectedWithANote(t *testing.T) {
 	store := NewStore(t.TempDir())
-	created, err := store.Create("intranet-backend", "Fix login bug", "feature-x", "main", "dev-1")
+	created, err := store.Create("intranet-backend", "Fix login bug", "", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestSetStatus_TransitionsToRejectedWithANote(t *testing.T) {
 
 func TestSetStatus_RejectsAlreadyDecidedRequest(t *testing.T) {
 	store := NewStore(t.TempDir())
-	created, err := store.Create("intranet-backend", "Fix login bug", "feature-x", "main", "dev-1")
+	created, err := store.Create("intranet-backend", "Fix login bug", "", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestSetStatus_RejectsAlreadyDecidedRequest(t *testing.T) {
 // Admin's own direct push, per gitserver.WithAdmin).
 func TestSetStatus_TransitionsToApproved(t *testing.T) {
 	store := NewStore(t.TempDir())
-	created, err := store.Create("intranet-backend", "Fix login bug", "feature-x", "main", "dev-1")
+	created, err := store.Create("intranet-backend", "Fix login bug", "", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestSetStatus_TransitionsToApproved(t *testing.T) {
 
 func TestSetStatus_RejectsApprovingAnAlreadyDecidedRequest(t *testing.T) {
 	store := NewStore(t.TempDir())
-	created, err := store.Create("intranet-backend", "Fix login bug", "feature-x", "main", "dev-1")
+	created, err := store.Create("intranet-backend", "Fix login bug", "", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestSetStatus_RejectsApprovingAnAlreadyDecidedRequest(t *testing.T) {
 
 func TestSetStatus_RejectsInvalidTargetStatus(t *testing.T) {
 	store := NewStore(t.TempDir())
-	created, err := store.Create("intranet-backend", "Fix login bug", "feature-x", "main", "dev-1")
+	created, err := store.Create("intranet-backend", "Fix login bug", "", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestSetStatus_RejectsInvalidTargetStatus(t *testing.T) {
 // just opens a fresh request on the same branches.
 func TestCreate_AllowsANewRequestForTheSameBranchPairAfterRejection(t *testing.T) {
 	store := NewStore(t.TempDir())
-	first, err := store.Create("intranet-backend", "Fix login bug", "feature-x", "main", "dev-1")
+	first, err := store.Create("intranet-backend", "Fix login bug", "", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("first Create failed: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestCreate_AllowsANewRequestForTheSameBranchPairAfterRejection(t *testing.T
 		t.Fatalf("SetStatus(rejected) failed: %v", err)
 	}
 
-	second, err := store.Create("intranet-backend", "Fix login bug (v2)", "feature-x", "main", "dev-1")
+	second, err := store.Create("intranet-backend", "Fix login bug (v2)", "", "feature-x", "main", "dev-1")
 	if err != nil {
 		t.Fatalf("second Create failed: %v", err)
 	}

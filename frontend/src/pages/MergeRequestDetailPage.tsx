@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import type { MergeRequestDetail } from '../api/types'
-import { BranchIcon } from '../components/icons'
-import { MR_STATUS_BADGE, MR_STATUS_LABELS, formatDate } from '../labels'
+import { BranchIcon, CheckIcon } from '../components/icons'
+import { MR_STATUS_BADGE, MR_STATUS_LABELS, formatDate, formatRelative } from '../labels'
 import { useAuth } from '../auth/AuthContext'
 
 export function MergeRequestDetailPage() {
@@ -65,6 +65,7 @@ export function MergeRequestDetailPage() {
   }
 
   const canDecide = user?.role === 'admin' && mr.status === 'open'
+  const isAuthor = user?.subject === mr.author
   const totals = mr.diff.stats.reduce(
     (acc, s) => ({ add: acc.add + s.addition, del: acc.del + s.deletion }),
     { add: 0, del: 0 },
@@ -98,38 +99,48 @@ export function MergeRequestDetailPage() {
         </div>
       </div>
 
-      {mr.status !== 'open' && mr.note && (
-        <div className="card">
+      {mr.description && (
+        <div className="card mr-description">
           <div className="card-body">
-            <p className="muted" style={{ fontSize: 13 }}>
-              <strong>Not:</strong> {mr.note}
-            </p>
+            <p className="mr-description-label">{mr.author} yazdı</p>
+            <p className="task-desc">{mr.description}</p>
           </div>
         </div>
       )}
 
+      {mr.status !== 'open' && <DecisionOutcome mr={mr} repo={repo} isAuthor={isAuthor} />}
+
       {canDecide && (
-        <div className="card">
-          <div className="card-body">
-            <div className="field">
-              <label htmlFor="mr-note">Not (opsiyonel)</label>
-              <textarea
-                id="mr-note"
-                rows={2}
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="örn. şunu düzelt, tekrar aç — ya da gerçek merge commit'ine referans"
-              />
-            </div>
-            <div className="form-actions" style={{ marginTop: 0 }}>
-              <button type="button" className="btn-primary" onClick={() => decide('approve')} disabled={acting}>
-                Onayla
-              </button>
-              <button type="button" className="btn-danger" onClick={() => decide('reject')} disabled={acting}>
-                Reddet
-              </button>
-              {actionError && <p className="error">{actionError}</p>}
-            </div>
+        <div className="decision-panel">
+          <div className="decision-head">
+            <h2>Kararın</h2>
+            <p className="decision-sub">
+              Onaylamak git tarafında bir şey yapmaz — birleştirmeyi sen yapıyorsun, bu ekran o
+              kararın kaydı. Reddedersen {mr.author} bildirim alır ve notun ona gider.
+            </p>
+          </div>
+
+          <label className="field">
+            <span className="field-label">
+              Not <span className="field-optional">— reddederken neden olduğunu yaz</span>
+            </span>
+            <textarea
+              rows={3}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="örn. testleri de ekler misin — ya da birleştirdiğin commit'in referansı"
+            />
+          </label>
+
+          {actionError && <p className="error">{actionError}</p>}
+
+          <div className="decision-actions">
+            <button type="button" className="btn-primary" onClick={() => decide('approve')} disabled={acting}>
+              <CheckIcon /> Onayla
+            </button>
+            <button type="button" className="btn-danger" onClick={() => decide('reject')} disabled={acting}>
+              Geri gönder
+            </button>
           </div>
         </div>
       )}
@@ -162,6 +173,52 @@ export function MergeRequestDetailPage() {
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+// DecisionOutcome is what a decided request says to whoever opens it —
+// and, for a rejected one, where its author goes next. Without the way
+// forward a rejection is a dead end: the note explains what to fix but
+// nothing on the page leads back to the branch it has to be fixed on.
+function DecisionOutcome({
+  mr,
+  repo,
+  isAuthor,
+}: {
+  mr: MergeRequestDetail
+  repo: string
+  isAuthor: boolean
+}) {
+  const rejected = mr.status === 'rejected'
+  return (
+    <div className={rejected ? 'outcome-panel is-rejected' : 'outcome-panel is-approved'}>
+      <div className="outcome-head">
+        <span className={`badge ${MR_STATUS_BADGE[mr.status]}`}>{MR_STATUS_LABELS[mr.status]}</span>
+        <span className="outcome-when">{formatRelative(mr.createdAt)} açılmıştı</span>
+      </div>
+
+      {mr.note ? (
+        <p className="outcome-note">“{mr.note}”</p>
+      ) : (
+        <p className="review-panel-sub">Not bırakılmamış.</p>
+      )}
+
+      {rejected && (
+        <div className="outcome-next">
+          <p className="review-panel-sub">
+            {isAuthor
+              ? 'Düzeltip aynı branch üzerinden tekrar gönderebilirsin — yeni bir istek açılır.'
+              : 'Yazarı düzeltip aynı branch üzerinden tekrar gönderebilir.'}
+          </p>
+          <Link
+            to={`/repos/${encodeURIComponent(repo)}/branches/${mr.sourceBranch}`}
+            className="btn-secondary"
+          >
+            {mr.sourceBranch} branch'ine git →
+          </Link>
+        </div>
+      )}
     </div>
   )
 }

@@ -107,10 +107,16 @@ export const api = {
 
   listMergeRequests: (repo: string) =>
     request<MergeRequest[]>(`/api/repos/${encodeURIComponent(repo)}/merge-requests`),
-  createMergeRequest: (repo: string, title: string, sourceBranch: string, targetBranch: string) =>
+  createMergeRequest: (
+    repo: string,
+    title: string,
+    description: string,
+    sourceBranch: string,
+    targetBranch: string,
+  ) =>
     request<MergeRequest>(`/api/repos/${encodeURIComponent(repo)}/merge-requests`, {
       method: 'POST',
-      body: JSON.stringify({ title, sourceBranch, targetBranch }),
+      body: JSON.stringify({ title, description, sourceBranch, targetBranch }),
     }),
   getMergeRequest: (repo: string, id: string) =>
     request<MergeRequestDetail>(`/api/repos/${encodeURIComponent(repo)}/merge-requests/${encodeURIComponent(id)}`),

@@ -82,6 +82,7 @@ export const DEPLOYMENT_STATUS_BADGE: Record<DeploymentStatus, string> = {
 export const NOTIFICATION_KIND_LABELS: Record<string, string> = {
   task_assigned: 'Görev atandı',
   merge_request_opened: 'İnceleme isteği açıldı',
+  merge_request_decided: 'İnceleme sonucu',
   deployment_opened: 'Deploy isteği açıldı',
   deployment_decided: 'Deploy sonucu',
 }
@@ -89,6 +90,7 @@ export const NOTIFICATION_KIND_LABELS: Record<string, string> = {
 export const NOTIFICATION_KIND_BADGE: Record<string, string> = {
   task_assigned: 'badge-accent',
   merge_request_opened: 'badge-accent',
+  merge_request_decided: 'badge-neutral',
   deployment_opened: 'badge-accent',
   deployment_decided: 'badge-neutral',
 }

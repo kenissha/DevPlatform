@@ -41,6 +41,7 @@ type Handlers struct {
 
 type createRequest struct {
 	Title        string `json:"title"`
+	Description  string `json:"description"`
 	SourceBranch string `json:"sourceBranch"`
 	TargetBranch string `json:"targetBranch"`
 }
@@ -94,7 +95,7 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mr, err := h.Store.Create(repo, req.Title, req.SourceBranch, req.TargetBranch, user.Subject)
+	mr, err := h.Store.Create(repo, req.Title, req.Description, req.SourceBranch, req.TargetBranch, user.Subject)
 	if err != nil {
 		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
 		return
@@ -106,6 +107,24 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 	h.notifyAdmins(repo, mr)
 
 	writeJSON(w, http.StatusCreated, mr)
+}
+
+// notifyAuthor tells the person who opened mr what was decided about it.
+//
+// Without this a rejection was invisible: the decision landed on a page
+// nobody had a reason to revisit, so the author kept waiting on a request
+// that had already been sent back. Opening one notifies the admins; the
+// answer has to travel the other way too.
+//
+// Skipped when the decider is the author — an admin approving their own
+// request does not need to be told about it — and a no-op when Notify
+// isn't wired, same as notifyAdmins.
+func (h *Handlers) notifyAuthor(repo string, mr MergeRequest, decidedBy, message string) {
+	if h.Notify == nil || mr.Author == "" || mr.Author == decidedBy {
+		return
+	}
+	link := "/repos/" + repo + "/merge-requests/" + mr.ID
+	_, _ = h.Notify.Create(mr.Author, "merge_request_decided", message, link)
 }
 
 // notifyAdmins tells every Admin that mr was just opened. It is a no-op
@@ -272,6 +291,8 @@ func (h *Handlers) Approve(w http.ResponseWriter, r *http.Request) {
 	if user, ok := auth.UserFromContext(r.Context()); ok {
 		_ = h.Audit.Log(user.Subject, audit.ActionMRApproved, repo, updated.ID,
 			"İnceleme isteği onaylandı: "+updated.Title+" → "+updated.TargetBranch)
+		h.notifyAuthor(repo, updated, user.Subject,
+			"İnceleme isteğin onaylandı: "+updated.Title)
 	}
 
 	writeJSON(w, http.StatusOK, updated)
@@ -306,6 +327,14 @@ func (h *Handlers) Reject(w http.ResponseWriter, r *http.Request) {
 
 	if user, ok := auth.UserFromContext(r.Context()); ok {
 		_ = h.Audit.Log(user.Subject, audit.ActionMRRejected, repo, mr.ID, "İnceleme isteği reddedildi: "+mr.Title)
+		// The note travels in the notification body rather than only
+		// living on the request: a rejection whose reason is one more
+		// click away is a rejection somebody acts on without reading.
+		message := "İnceleme isteğin reddedildi: " + mr.Title
+		if mr.Note != "" {
+			message += " — " + mr.Note
+		}
+		h.notifyAuthor(repo, mr, user.Subject, message)
 	}
 
 	writeJSON(w, http.StatusOK, mr)
