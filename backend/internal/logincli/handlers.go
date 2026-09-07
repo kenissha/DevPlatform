@@ -69,6 +69,13 @@ func (h *Handlers) InstallScript(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, installScriptTemplate, downloadURL)
 }
 
+// installScriptTemplate downloads the exe, wires up the credential
+// helper, and then logs in immediately rather than waiting for the first
+// git operation to trigger it lazily. Logging in here is what makes the
+// one-liner a complete setup: it is where the CLI learns the person's
+// panel address and lines this machine's `git config user.email` up with
+// it, so their commits are attributed correctly from the very first one
+// instead of landing under whatever address the machine already had.
 const installScriptTemplate = `$ErrorActionPreference = 'Stop'
 $dest = Join-Path $env:LOCALAPPDATA 'devplatform\devplatform-login.exe'
 New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
@@ -76,4 +83,6 @@ Write-Host "devplatform-login indiriliyor..."
 Invoke-WebRequest -Uri '%s' -OutFile $dest
 & $dest install
 Write-Host "Kuruldu: $dest"
+Write-Host ""
+& $dest login
 `

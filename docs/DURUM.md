@@ -472,6 +472,58 @@ gözetimli yapılacak birer adım.
   kullanıcıya görünür. Sadece kişinin **kendi** grafiğinde hangi
   commit'lerin sayılacağını genişletiyor. SSO arkasındaki 2 kişilik bir
   ekip için e-posta doğrulama turu gereksiz karmaşıklık.
+- **2026-09-07 güncelleme — asıl çözüm: kimlik girişte bağlanıyor
+  (`cmd/devplatform-login/gitidentity.go`).** Yukarıdaki onay sistemi
+  çalışıyor ama yanlış soruyu çözüyordu: kişiye "bu imza senin mi?"
+  diye sormak yerine, imzanın en baştan doğru olmasını sağlamak
+  gerekiyordu. Sorun zaten `git config user.email`'in panel hesabından
+  habersiz olması; o değeri bilebileceğimiz **tek** an, kişinin
+  makinesinde çalışan ve ikisini de aynı anda bilen bir süreç var
+  demektir — yani `devplatform-login`'in interaktif girişi.
+
+  `login()` artık `/api/me`'yi de çağırıp panel adresini ve görünen
+  adı `session`'a koyuyor; `promptAndLogin` girişten hemen sonra
+  `syncGitIdentity` ile makinenin git kimliğini hizalıyor:
+  - `user.email` **boşsa** → sessizce yazılır (yeni makine/yeni
+    personel senaryosu — kimseden bir şey alınmıyor, sorulacak bir şey
+    de yok). Grafik ilk commit'ten itibaren dolu geliyor, onay
+    sisteminin devreye girmesine gerek kalmıyor.
+  - Adres **zaten doğruysa** → hiçbir şey yapılmaz, hiçbir şey yazılmaz.
+    Sadece büyük/küçük harf farkı da "doğru" sayılır, yoksa kişi her
+    girişte hiçbir işe yaramayacak bir değişiklik için soru görürdü.
+  - **Farklıysa** → tek bir soru, varsayılanı Enter (evet). Sessizce
+    ezilmiyor: makine kişisel işler için de kullanılıyor olabilir ve
+    `git push`'un içinden habersiz çalışan bir aracın kimliğini
+    değiştirmesi tam da güveni bitiren sürprizdir.
+    - **Evet** → `user.email`/`user.name` panel hesabına çevrilir.
+    - **Hayır** → git config'e dokunulmaz, onun yerine mevcut adres
+      `POST /api/me/git-emails` ile panel hesabına bağlanır. Yani
+      "hayır" bir çıkmaz sokak değil; iki cevap da grafiği doldurur.
+
+  `user.name` sadece panelde gerçek bir görünen ad varsa yazılıyor —
+  `/api/me`'nin `displayName`'i tanımsızsa e-postaya düşüyor ve
+  `rifat@x.org <rifat@x.org>` her `git log` satırında hata gibi durur
+  (`shouldWriteName`).
+
+  Yeni `devplatform-login login` komutu bu girişi git'i beklemeden
+  yapıyor, ve tek satırlık kurulum betiği `install`'dan sonra onu
+  çağırıyor. Böylece `irm ... | iex` tek oturumda **her şeyi**
+  bitiriyor: credential helper + önbellekteki token + git kimliği.
+  Eskiden kimlik adımı ilk `git clone`'a kadar bekliyordu.
+
+  **Hiçbir hata girişi düşüremez.** `/api/me` cevap vermezse `Email`
+  boş kalır ve `syncGitIdentity` hiçbir şey yapmadan döner; git config
+  yazımı veya claim çağrısı patlarsa mesaj basılıp geçilir. Bu kod bir
+  `git push`'un ortasında, kimlik bilgisi bekleyen bir git süreci
+  varken çalışıyor — kozmetik bir ek adım kimsenin push'unu bloke
+  edemez.
+
+  Testler gerçek `git config --global`'i çağırıyor
+  (`gitidentity_integration_test.go`), sahte bir `HOME`/`USERPROFILE`
+  altında. `fakeGitHome` önce sahte eve bir deneme anahtarı yazıp
+  `.gitconfig`'in orada oluştuğunu doğruluyor — override tutmazsa test
+  geliştiricinin **kendi** kimliğini ezerdi, o yüzden tutmadığında
+  testi `Fatal` ile durduruyor.
 - **2026-09-04 güncelleme — branch'ten inceleme isteği açma (GitHub
   mantığında):** Eski akış "İnceleme İstekleri" sayfasında kaynak/hedef
   branch seçen bir formdu. Artık `/repos/:repo/branches` sayfasındaki

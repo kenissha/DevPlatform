@@ -40,11 +40,31 @@ var (
 // no way to tell what's wrong.
 var httpClient = &http.Client{Timeout: 30 * time.Second}
 
-// login runs the 3-step exchange (Intranet-B login -> devplatform-sso
-// -> DevPlatform git-token) and returns the resulting subject and git
-// token. The AD password is only ever held in this process's memory —
-// never written to disk.
-func login(username, password string) (subject, token string, err error) {
+// session is everything one successful login produces: the credential
+// git itself asked for, plus the panel identity behind it.
+//
+// Email and DisplayName exist so the login can also settle this
+// machine's git identity (see gitidentity.go). Without them a person
+// logs in successfully and their commits still get stamped with
+// whatever address happened to sit in their global gitconfig, leaving
+// the contribution graph empty for no reason they can see.
+type session struct {
+	Subject     string
+	Token       string
+	Email       string
+	DisplayName string
+	// jwt is the DevPlatform session token. Held in this process's
+	// memory only — never written to the credential cache — so identity
+	// follow-ups (claiming a git address) can act as this person
+	// without a second password prompt.
+	jwt string
+}
+
+// login runs the exchange (Intranet-B login -> devplatform-sso ->
+// DevPlatform git-token -> /api/me) and returns the resulting session.
+// The AD password is only ever held in this process's memory — never
+// written to disk.
+func login(username, password string) (session, error) {
 	// intranetLogin and devplatformSSO's own errors are already
 	// complete, staged Turkish messages (they name which step failed
 	// and why) — wrapping them again here just repeats "giriş"/
@@ -53,24 +73,38 @@ func login(username, password string) (subject, token string, err error) {
 	// those two DO still get a Turkish wrapper naming the stage.
 	intranetJWT, err := intranetLogin(username, password)
 	if err != nil {
-		return "", "", err
+		return session{}, err
 	}
 
 	devplatformJWT, err := devplatformSSO(intranetJWT)
 	if err != nil {
-		return "", "", err
+		return session{}, err
 	}
 
 	_, gitToken, err := mintGitToken(devplatformJWT, hostLabel())
 	if err != nil {
-		return "", "", fmt.Errorf("git anahtarı alınamadı: %w", err)
+		return session{}, fmt.Errorf("git anahtarı alınamadı: %w", err)
 	}
 
-	subject, err = jwtSubject(devplatformJWT)
+	subject, err := jwtSubject(devplatformJWT)
 	if err != nil {
-		return "", "", fmt.Errorf("devplatform oturum bilgisi okunamadı: %w", err)
+		return session{}, fmt.Errorf("devplatform oturum bilgisi okunamadı: %w", err)
 	}
-	return subject, gitToken, nil
+
+	s := session{Subject: subject, Token: gitToken, jwt: devplatformJWT}
+
+	// The identity lookup is the one step in this chain allowed to fail
+	// quietly. Everything above it produces the credential git is
+	// blocking on; this only decides whether we can also tidy up the git
+	// config, and somebody whose push is waiting shouldn't be stopped by
+	// a cosmetic follow-up call.
+	email, displayName, err := fetchMe(devplatformJWT)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "devplatform-login: uyarı: panel kimliği okunamadı: %v\n", err)
+		return s, nil
+	}
+	s.Email, s.DisplayName = email, displayName
+	return s, nil
 }
 
 func intranetLogin(username, password string) (string, error) {
@@ -152,6 +186,60 @@ func mintGitToken(devplatformJWT, label string) (id, token string, err error) {
 		return "", "", err
 	}
 	return parsed.ID, parsed.Token, nil
+}
+
+// fetchMe reads the caller's panel identity from /api/me — the same
+// endpoint the panel header uses, so the address and name written into
+// git config are exactly the ones the person sees on screen.
+func fetchMe(devplatformJWT string) (email, displayName string, err error) {
+	req, err := http.NewRequest(http.MethodGet, devplatformBaseURL+"/api/me", nil)
+	if err != nil {
+		return "", "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+devplatformJWT)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", "", fmt.Errorf("/api/me %d döndü", resp.StatusCode)
+	}
+	var parsed struct {
+		Email       string `json:"email"`
+		DisplayName string `json:"displayName"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return "", "", err
+	}
+	return parsed.Email, parsed.DisplayName, nil
+}
+
+// claimGitEmail binds an address this machine already commits with to
+// the logged-in panel account, so the contribution graph counts those
+// commits. Deliberately the same endpoint the panel's "Hesabım" page
+// posts to — there is no CLI-only path into the store.
+func claimGitEmail(devplatformJWT, email string) error {
+	if devplatformJWT == "" {
+		return fmt.Errorf("oturum bilgisi yok")
+	}
+	body, _ := json.Marshal(map[string]string{"email": email})
+	req, err := http.NewRequest(http.MethodPost, devplatformBaseURL+"/api/me/git-emails", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+devplatformJWT)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("git-emails %d döndü: %s", resp.StatusCode, bytes.TrimSpace(respBody))
+	}
+	return nil
 }
 
 // jwtSubject reads the "sub" claim out of a JWT without verifying its

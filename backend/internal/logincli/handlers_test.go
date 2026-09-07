@@ -85,6 +85,14 @@ func TestInstallScript_PrefersBaseURLOverTheRequestsHost(t *testing.T) {
 	if !strings.Contains(body, "install") {
 		t.Errorf("script body does not run the install command: %s", body)
 	}
+	// The login step is what makes the one-liner a complete setup: it is
+	// where the CLI reads the person's panel address and lines this
+	// machine's git config up with it. Without it, the credential helper
+	// works but commits keep getting stamped with whatever address the
+	// machine already had, and the contribution graph stays empty.
+	if !strings.Contains(body, "$dest login") {
+		t.Errorf("script body does not log in after installing, so git identity is never set up: %s", body)
+	}
 }
 
 func TestInstallScript_FallsBackToTheRequestsHostWhenBaseURLIsUnset(t *testing.T) {

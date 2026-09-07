@@ -14,7 +14,7 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: devplatform-login <get|store|erase|install>")
+		fmt.Fprintln(os.Stderr, "usage: devplatform-login <get|store|erase|install|login>")
 		os.Exit(2)
 	}
 
@@ -27,6 +27,8 @@ func main() {
 		runErase()
 	case "install":
 		runInstall()
+	case "login":
+		runLogin()
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n", os.Args[1])
 		os.Exit(2)
@@ -56,17 +58,54 @@ func runGet() {
 		return
 	}
 
-	subject, token, err := promptAndLogin()
+	s, err := promptAndLogin()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "devplatform-login: giriş başarısız: %v\n", err)
 		os.Exit(1)
 	}
-	if err := saveCache(cachedCredential{Subject: subject, Token: token, CachedAt: time.Now()}); err != nil {
-		// A cache write failure shouldn't block this login from working
-		// right now — it just means the next git operation prompts again.
+	cacheCredential(s)
+	fmt.Printf("username=%s\npassword=%s\n", s.Subject, s.Token)
+}
+
+// runLogin is the "log in now, before git needs anything" entry point —
+// what the installer runs right after `install`, and what somebody types
+// when they want to fix their setup deliberately. It is the same login
+// `get` performs lazily, minus git's credential protocol on stdin: the
+// point of having it is that the whole setup (credential helper, cached
+// token, git identity) is finished in one sitting, rather than the git
+// identity part waiting for whenever the first clone happens to run.
+func runLogin() {
+	s, err := promptAndLogin()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "devplatform-login: giriş başarısız: %v\n", err)
+		os.Exit(1)
+	}
+	cacheCredential(s)
+	fmt.Printf("Giriş yapıldı: %s\n", displayIdentity(s))
+}
+
+// cacheCredential stores the git credential for next time. A cache write
+// failure must not fail the login it belongs to — it only means the next
+// git operation prompts again, which is an inconvenience, not a error
+// worth discarding a working credential over.
+func cacheCredential(s session) {
+	if err := saveCache(cachedCredential{Subject: s.Subject, Token: s.Token, CachedAt: time.Now()}); err != nil {
 		fmt.Fprintf(os.Stderr, "devplatform-login: uyarı: anahtar önbelleğe yazılamadı: %v\n", err)
 	}
-	fmt.Printf("username=%s\npassword=%s\n", subject, token)
+}
+
+// displayIdentity names the person who just logged in, falling back
+// through what the session actually knows — /api/me may not have
+// answered, in which case the subject id is all there is.
+func displayIdentity(s session) string {
+	switch {
+	case s.DisplayName != "" && s.Email != "" && s.DisplayName != s.Email:
+		return s.DisplayName + " <" + s.Email + ">"
+	case s.Email != "":
+		return s.Email
+	default:
+		return s.Subject
+	}
 }
 
 func runStore() {
@@ -131,11 +170,18 @@ func runInstall() {
 
 // promptAndLogin opens the real console directly (not stdin/stdout,
 // which `get` has already reserved for git's own protocol) to ask for
-// credentials interactively, then runs the login chain.
-func promptAndLogin() (subject, token string, err error) {
+// credentials interactively, runs the login chain, and — while a person
+// is still sitting at that console — settles this machine's git identity
+// against the account that just logged in.
+//
+// The identity step lives here rather than in the callers because this
+// is the only function that owns the console: it is the one moment where
+// both identities are known and a human is present to answer if the two
+// disagree.
+func promptAndLogin() (session, error) {
 	in, out, err := openConsole()
 	if err != nil {
-		return "", "", fmt.Errorf("konsol açılamadı (bu araç etkileşimli bir terminalden çalıştırılmalı): %w", err)
+		return session{}, fmt.Errorf("konsol açılamadı (bu araç etkileşimli bir terminalden çalıştırılmalı): %w", err)
 	}
 	defer in.Close()
 	defer out.Close()
@@ -143,16 +189,16 @@ func promptAndLogin() (subject, token string, err error) {
 	fmt.Fprint(out, "STK Atölye (Intranet) kullanıcı adı: ")
 	scanner := bufio.NewScanner(in)
 	if !scanner.Scan() {
-		return "", "", fmt.Errorf("kullanıcı adı okunamadı")
+		return session{}, fmt.Errorf("kullanıcı adı okunamadı")
 	}
 	username := scanner.Text()
 
 	password, err := readPassword(in, out, "Windows şifreniz: ")
 	if err != nil {
-		return "", "", err
+		return session{}, err
 	}
 
-	subject, token, err = login(username, password)
+	s, err := login(username, password)
 	if err != nil && errors.Is(err, ErrBadCredentials) {
 		// One retry for the single most common case — a mistyped
 		// password — before giving up. Anything else login can fail
@@ -162,11 +208,16 @@ func promptAndLogin() (subject, token string, err error) {
 		fmt.Fprintln(out, "Kullanıcı adı veya şifre hatalı, tekrar deneyin.")
 		password, err = readPassword(in, out, "Windows şifreniz: ")
 		if err != nil {
-			return "", "", err
+			return session{}, err
 		}
-		subject, token, err = login(username, password)
+		s, err = login(username, password)
 	}
-	return subject, token, err
+	if err != nil {
+		return session{}, err
+	}
+
+	syncGitIdentity(out, scanner, s)
+	return s, nil
 }
 
 // readPassword prompts on out and reads a password from in without
