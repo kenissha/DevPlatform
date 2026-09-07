@@ -5,14 +5,16 @@ import type { AuditAction, DeploymentStatus, MergeRequestStatus, TaskStatus } fr
 // different screens.
 
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
+  todo: 'Yapılacak',
   in_progress: 'Yapılıyor',
   awaiting_test: 'Test bekliyor',
   done: 'Bitti',
 }
 
-export const TASK_STATUSES: TaskStatus[] = ['in_progress', 'awaiting_test', 'done']
+export const TASK_STATUSES: TaskStatus[] = ['todo', 'in_progress', 'awaiting_test', 'done']
 
 export const TASK_STATUS_BADGE: Record<TaskStatus, string> = {
+  todo: 'badge-neutral',
   in_progress: 'badge-accent',
   awaiting_test: 'badge-warn',
   done: 'badge-success',

@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'rea
 import { useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import type { Person, Task, TaskStatus } from '../api/types'
-import { TASK_STATUS_BADGE, TASK_STATUS_LABELS, TASK_STATUSES, formatDate } from '../labels'
+import { PlusIcon } from '../components/icons'
+import { Modal } from '../components/Modal'
+import { TASK_STATUS_LABELS, TASK_STATUSES, formatDate, formatRelative } from '../labels'
 
 export function RepoTasksPage() {
   const { repo = '' } = useParams<{ repo: string }>()
@@ -11,13 +13,8 @@ export function RepoTasksPage() {
   const [error, setError] = useState<string | null>(null)
   const [dragOverStatus, setDragOverStatus] = useState<TaskStatus | null>(null)
   const [openTask, setOpenTask] = useState<Task | null>(null)
+  const [creatingOpen, setCreatingOpen] = useState(false)
   const draggingRef = useRef(false)
-
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [assignee, setAssignee] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [createError, setCreateError] = useState<string | null>(null)
 
   function reload() {
     api
@@ -42,24 +39,6 @@ export function RepoTasksPage() {
   useEffect(() => {
     api.listPeople().then(setPeople).catch(() => setPeople([]))
   }, [])
-
-  async function handleCreate(e: FormEvent) {
-    e.preventDefault()
-    if (!title.trim()) return
-    setCreating(true)
-    setCreateError(null)
-    try {
-      await api.createTask(repo, title.trim(), description.trim(), assignee.trim())
-      setTitle('')
-      setDescription('')
-      setAssignee('')
-      reload()
-    } catch (err) {
-      setCreateError(err instanceof ApiError ? err.message : 'Görev oluşturulamadı')
-    } finally {
-      setCreating(false)
-    }
-  }
 
   // Optimistic: the board should react the instant a card is dropped
   // rather than waiting a round-trip. If the API call fails, reload()
@@ -88,13 +67,23 @@ export function RepoTasksPage() {
     return person?.email || subject
   }
 
+  const openCount = tasks?.filter((t) => t.status !== 'done').length ?? 0
+  const urgentCount = tasks?.filter((t) => t.urgent && t.status !== 'done').length ?? 0
+
   return (
-    <div className="page">
+    <div className="page board-page">
       <div className="page-header">
         <div className="page-title-group">
           <h1>Görevler</h1>
-          <p className="page-subtitle">{repo} üzerindeki iş takibi</p>
+          <p className="page-subtitle">
+            {tasks === null
+              ? `${repo} üzerindeki iş takibi`
+              : `${openCount} açık görev` + (urgentCount > 0 ? ` · ${urgentCount} acil` : '')}
+          </p>
         </div>
+        <button type="button" className="btn-primary" onClick={() => setCreatingOpen(true)}>
+          <PlusIcon /> Yeni görev
+        </button>
       </div>
 
       {error && <p className="error">{error}</p>}
@@ -116,14 +105,15 @@ export function RepoTasksPage() {
                 onDrop={(e) => handleDrop(e, status)}
               >
                 <div className="kanban-column-header">
-                  <span className={`badge ${TASK_STATUS_BADGE[status]}`}>{TASK_STATUS_LABELS[status]}</span>
-                  <span className="muted">{columnTasks.length}</span>
+                  <span className={`kanban-dot kanban-dot-${status}`} aria-hidden="true" />
+                  <span className="kanban-column-title">{TASK_STATUS_LABELS[status]}</span>
+                  <span className="kanban-column-count">{columnTasks.length}</span>
                 </div>
                 <div className="kanban-column-body">
                   {columnTasks.map((task) => (
                     <div
                       key={task.id}
-                      className="kanban-card"
+                      className={task.urgent ? 'kanban-card kanban-card-urgent' : 'kanban-card'}
                       draggable
                       role="button"
                       tabIndex={0}
@@ -146,12 +136,20 @@ export function RepoTasksPage() {
                     >
                       {task.urgent && <span className="badge badge-danger">Acil</span>}
                       <p className="kanban-card-title">{task.title}</p>
-                      <p className="kanban-card-meta">
-                        {task.assignedTo ? personLabel(task.assignedTo) : 'Atanmamış'}
-                      </p>
+                      <div className="kanban-card-foot">
+                        <Avatar label={task.assignedTo ? personLabel(task.assignedTo) : ''} />
+                        <span className="kanban-card-meta">
+                          {task.assignedTo ? personLabel(task.assignedTo) : 'Atanmamış'}
+                        </span>
+                        <span className="kanban-card-age">{formatRelative(task.createdAt)}</span>
+                      </div>
                     </div>
                   ))}
-                  {columnTasks.length === 0 && <p className="empty-state">Görev yok.</p>}
+                  {columnTasks.length === 0 && (
+                    <p className="kanban-empty">
+                      {status === 'todo' ? 'Buraya sürükle ya da yeni görev aç.' : 'Buraya sürükle.'}
+                    </p>
+                  )}
                 </div>
               </div>
             )
@@ -159,46 +157,17 @@ export function RepoTasksPage() {
         </div>
       )}
 
-      <div className="section-title">
-        <h2>Yeni görev</h2>
-      </div>
-      <div className="card">
-        <div className="card-body">
-          <form onSubmit={handleCreate}>
-            <div className="field">
-              <label htmlFor="task-title">Başlık</label>
-              <input id="task-title" value={title} onChange={(e) => setTitle(e.target.value)} required />
-            </div>
-            <div className="field">
-              <label htmlFor="task-description">Açıklama</label>
-              <textarea
-                id="task-description"
-                rows={3}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="task-assignee">Atanan</label>
-              <select id="task-assignee" value={assignee} onChange={(e) => setAssignee(e.target.value)}>
-                <option value="">Atanmamış</option>
-                {people.map((p) => (
-                  <option key={p.subject} value={p.subject}>
-                    {p.subject}
-                    {p.email ? ` (${p.email})` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="form-actions">
-              <button type="submit" className="btn-primary" disabled={creating || !title.trim()}>
-                {creating ? 'Oluşturuluyor...' : 'Görev oluştur'}
-              </button>
-              {createError && <p className="error">{createError}</p>}
-            </div>
-          </form>
-        </div>
-      </div>
+      {creatingOpen && (
+        <NewTaskModal
+          repo={repo}
+          people={people}
+          onClose={() => setCreatingOpen(false)}
+          onCreated={() => {
+            setCreatingOpen(false)
+            reload()
+          }}
+        />
+      )}
 
       {openTask && (
         <TaskDetailPanel
@@ -210,6 +179,93 @@ export function RepoTasksPage() {
         />
       )}
     </div>
+  )
+}
+
+// Avatar carries the assignee at a glance, so scanning a column doesn't
+// mean reading four email addresses. An unassigned task gets a hollow
+// circle rather than a letter — visibly a gap, not a person.
+function Avatar({ label }: { label: string }) {
+  if (!label) return <span className="kanban-avatar kanban-avatar-empty" aria-hidden="true" />
+  return (
+    <span className="kanban-avatar" aria-hidden="true">
+      {label.charAt(0).toUpperCase()}
+    </span>
+  )
+}
+
+function NewTaskModal({
+  repo,
+  people,
+  onClose,
+  onCreated,
+}: {
+  repo: string
+  people: Person[]
+  onClose: () => void
+  onCreated: () => void
+}) {
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [assignee, setAssignee] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+
+  async function handleCreate(e: FormEvent) {
+    e.preventDefault()
+    if (!title.trim()) return
+    setCreating(true)
+    setCreateError(null)
+    try {
+      await api.createTask(repo, title.trim(), description.trim(), assignee.trim())
+      onCreated()
+    } catch (err) {
+      setCreateError(err instanceof ApiError ? err.message : 'Görev oluşturulamadı')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  return (
+    <Modal title="Yeni görev" onClose={onClose}>
+      <form onSubmit={handleCreate} className="modal-form">
+        <label className="field">
+          <span className="field-label">Başlık</span>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} required autoFocus />
+        </label>
+
+        <label className="field">
+          <span className="field-label">
+            Açıklama <span className="field-optional">— isteğe bağlı</span>
+          </span>
+          <textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} />
+        </label>
+
+        <label className="field">
+          <span className="field-label">Atanan</span>
+          <select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+            <option value="">Atanmamış</option>
+            {people.map((p) => (
+              <option key={p.subject} value={p.subject}>
+                {p.email || p.subject}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {createError && <p className="error">{createError}</p>}
+
+        <div className="modal-actions">
+          <button type="button" className="btn-secondary" onClick={onClose} disabled={creating}>
+            Vazgeç
+          </button>
+          <button type="submit" className="btn-primary" disabled={creating || !title.trim()}>
+            {creating ? 'Oluşturuluyor...' : 'Görev oluştur'}
+          </button>
+        </div>
+        <p className="field-hint">Görev "Yapılacak" sütununda açılır; başlayınca sürükleyip taşırsın.</p>
+      </form>
+    </Modal>
   )
 }
 
@@ -227,7 +283,6 @@ function TaskDetailPanel({
   onChanged: () => void
 }) {
   const [error, setError] = useState<string | null>(null)
-  const closeButtonRef = useRef<HTMLButtonElement>(null)
 
   async function patch(changes: Partial<{ status: TaskStatus; urgent: boolean; assignedTo: string }>) {
     setError(null)
@@ -239,74 +294,60 @@ function TaskDetailPanel({
     }
   }
 
-  useEffect(() => {
-    closeButtonRef.current?.focus()
-  }, [])
-
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
-
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
-          <h3>{task.title}</h3>
-          <button type="button" className="btn-ghost" ref={closeButtonRef} onClick={onClose}>
-            Kapat
-          </button>
+    <Modal title={task.title} onClose={onClose}>
+      {error && <p className="error">{error}</p>}
+
+      {task.description && <p className="task-desc">{task.description}</p>}
+
+      {/* The status is what people change most often here, so it's a row
+          of buttons rather than a dropdown: the current column is visible
+          without opening anything, and moving is one click. */}
+      <div className="field">
+        <span className="field-label">Durum</span>
+        <div className="status-picker">
+          {TASK_STATUSES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className={s === task.status ? 'status-option active' : 'status-option'}
+              aria-pressed={s === task.status}
+              onClick={() => patch({ status: s })}
+            >
+              <span className={`kanban-dot kanban-dot-${s}`} aria-hidden="true" />
+              {TASK_STATUS_LABELS[s]}
+            </button>
+          ))}
         </div>
+      </div>
 
-        {error && <p className="error">{error}</p>}
+      <label className="field">
+        <span className="field-label">Atanan</span>
+        <select value={task.assignedTo} onChange={(e) => patch({ assignedTo: e.target.value })}>
+          <option value="">Atanmamış</option>
+          {people.map((p) => (
+            <option key={p.subject} value={p.subject}>
+              {p.email || p.subject}
+            </option>
+          ))}
+          {task.assignedTo && !people.some((p) => p.subject === task.assignedTo) && (
+            <option value={task.assignedTo}>{task.assignedTo}</option>
+          )}
+        </select>
+      </label>
 
-        {task.description && <p className="task-desc">{task.description}</p>}
-
-        <div className="field">
-          <label htmlFor="detail-status">Durum</label>
-          <select
-            id="detail-status"
-            value={task.status}
-            onChange={(e) => patch({ status: e.target.value as TaskStatus })}
-          >
-            {TASK_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {TASK_STATUS_LABELS[s]}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="field">
-          <label htmlFor="detail-assignee">Atanan</label>
-          <select
-            id="detail-assignee"
-            value={task.assignedTo}
-            onChange={(e) => patch({ assignedTo: e.target.value })}
-          >
-            <option value="">Atanmamış</option>
-            {people.map((p) => (
-              <option key={p.subject} value={p.subject}>
-                {p.subject}
-              </option>
-            ))}
-            {task.assignedTo && !people.some((p) => p.subject === task.assignedTo) && (
-              <option value={task.assignedTo}>{task.assignedTo}</option>
-            )}
-          </select>
-        </div>
-
-        <button type="button" className="btn-secondary btn-sm" onClick={() => patch({ urgent: !task.urgent })}>
+      <div className="modal-actions modal-actions-split">
+        <button
+          type="button"
+          className={task.urgent ? 'btn-danger' : 'btn-secondary'}
+          onClick={() => patch({ urgent: !task.urgent })}
+        >
           {task.urgent ? 'Acili kaldır' : 'Acil işaretle'}
         </button>
-
         <p className="row-meta">
           {task.author} açtı · {formatDate(task.createdAt)}
         </p>
       </div>
-    </div>
+    </Modal>
   )
 }

@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 var (
@@ -151,5 +152,25 @@ func (s *Store) save(registry map[string]string) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, s.path)
+	return renameWithRetry(tmpName, s.path)
+}
+
+// renameWithRetry absorbs a Windows-specific spurious failure: an
+// on-access virus scanner can still hold a just-created file open, and
+// os.Rename onto the target then fails with "Access is denied" though
+// nothing is wrong with either file. The lock clears in milliseconds.
+// Same workaround, and same reasoning, as internal/gitemails' copy — see
+// its comment for the full story.
+//
+// Bounded, and it still returns the last error: a real permission problem
+// must not be retried into a hang, and must still be reported.
+func renameWithRetry(from, to string) error {
+	var err error
+	for attempt := 0; attempt < 8; attempt++ {
+		if err = os.Rename(from, to); err == nil {
+			return nil
+		}
+		time.Sleep(15 * time.Millisecond)
+	}
+	return err
 }

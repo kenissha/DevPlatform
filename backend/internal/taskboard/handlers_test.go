@@ -100,7 +100,7 @@ func TestCreate_ReturnsCreatedTask(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &task); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if task.Author != "dev-1" || task.AssignedTo != "dev-2" || task.Status != StatusInProgress {
+	if task.Author != "dev-1" || task.AssignedTo != "dev-2" || task.Status != StatusTodo {
 		t.Errorf("task = %+v, unexpected fields", task)
 	}
 }

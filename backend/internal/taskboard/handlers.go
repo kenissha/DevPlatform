@@ -228,6 +228,7 @@ func (h *Handlers) Update(w http.ResponseWriter, r *http.Request) {
 // rest of the summary is Turkish prose, so the raw enum value ("awaiting_test")
 // would be the one untranslated token in the sentence.
 var statusLabels = map[Status]string{
+	StatusTodo:         "yapılacak",
 	StatusInProgress:   "yapılıyor",
 	StatusAwaitingTest: "test bekliyor",
 	StatusDone:         "bitti",

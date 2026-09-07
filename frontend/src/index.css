@@ -926,10 +926,28 @@ button:disabled {
 
 /* --------------------------------------------------------- form alanları */
 
+/* margin:0 is load-bearing: a .field is sometimes the <label> element
+   itself (newer forms) and would otherwise pick up the global label rule's
+   margin-bottom on top of its own gap. The older `.field + .field` spacing
+   above still applies wherever fields are plain siblings in a block. */
 .field {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin: 0;
+}
+
+/* Older forms put a real <label> inside .field; the global label rule's
+   margin-bottom would stack on top of the flex gap. */
+.field > label {
+  margin-bottom: 0;
+}
+
+/* Containers that space their own children must not also inherit the
+   sibling margin, or every gap is 12px larger than it declares. */
+.modal-form .field + .field,
+.create-repo-form .field + .field {
+  margin-top: 0;
 }
 
 .field-label {
@@ -1901,19 +1919,41 @@ li.unread {
   font-size: 12px;
 }
 
-.kanban-board {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  margin-bottom: 24px;
+/* Wider than the 940px reading column: four columns of cards need the
+ * room, and a board that scrolls sideways stops being a board. */
+.board-page {
+  max-width: 1180px;
 }
 
+.kanban-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+  margin-bottom: 24px;
+}
+@media (max-width: 1000px) {
+  .kanban-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 620px) {
+  .kanban-board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The column is a drop target, so it reads as a recessed tray rather than
+ * a raised card — the cards inside are the raised things. */
 .kanban-column {
-  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-chrome);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px;
-  min-height: 120px;
+  border-radius: var(--radius);
+  padding: 10px;
+  min-height: 160px;
+  transition: border-color 0.12s ease, background 0.12s ease;
 }
 
 .kanban-column.drag-over {
@@ -1924,73 +1964,248 @@ li.unread {
 .kanban-column-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
+  gap: 7px;
+  padding: 2px 4px 10px;
+}
+
+.kanban-column-title {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--text-strong);
+}
+
+.kanban-column-count {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 20px;
+  background: var(--surface-hover);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* One dot per status, so a column and the card detail's status picker
+ * carry the same colour code. Cheaper to scan than four text labels. */
+.kanban-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+.kanban-dot-todo {
+  background: var(--text-muted);
+}
+.kanban-dot-in_progress {
+  background: var(--accent);
+}
+.kanban-dot-awaiting_test {
+  background: var(--warn);
+}
+.kanban-dot-done {
+  background: var(--success);
 }
 
 .kanban-column-body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1;
 }
 
 .kanban-card {
-  background: var(--surface-raised);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px;
+  border-radius: var(--radius-sm);
+  padding: 10px 11px;
   cursor: grab;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: border-color 0.12s ease, transform 0.08s ease;
 }
-
+.kanban-card:hover {
+  border-color: var(--border-strong);
+}
 .kanban-card:active {
   cursor: grabbing;
+  transform: scale(0.99);
 }
-
 .kanban-card:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
+/* Urgency has to survive a glance across four columns, so it gets an edge
+ * stripe as well as the badge — the badge alone disappears in a crowd. */
+.kanban-card-urgent {
+  border-left: 3px solid var(--danger);
+}
+
 .kanban-card-title {
-  margin: 6px 0 4px;
+  margin: 0;
+  font-size: 13.5px;
   font-weight: 500;
+  line-height: 1.4;
   color: var(--text-strong);
+  /* Cards stay uniform-ish: a long title is clipped at three lines rather
+   * than pushing everything below it down the column. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.kanban-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
 }
 
 .kanban-card-meta {
   margin: 0;
-  font-size: 0.85rem;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.kanban-card-age {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.kanban-avatar {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.kanban-avatar-empty {
+  background: none;
+  border: 1px dashed var(--border-strong);
+}
+
+/* Empty columns still have to look like drop targets — a blank tray gives
+ * no hint that dragging a card here is the thing to do. */
+.kanban-empty {
+  margin: 0;
+  padding: 18px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  font-size: 11.5px;
   color: var(--text-muted);
 }
 
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(4, 6, 12, 0.55);
+  backdrop-filter: blur(2px);
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 20px;
   z-index: 100;
 }
 
 .modal {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
   padding: 20px;
-  width: 420px;
-  max-width: 90vw;
+  width: 460px;
+  max-width: 100%;
   max-height: 85vh;
   overflow-y: auto;
 }
 
 .modal-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 12px;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
 }
 
 .modal-header h3 {
   margin: 0;
+  font-size: 15.5px;
+  line-height: 1.4;
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.modal-actions-split {
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* Status is the most-changed field on a task, so it's a row of targets
+ * rather than a dropdown: the current column is readable without opening
+ * anything, and moving is one click instead of three. */
+.status-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.status-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.status-option:hover {
+  color: var(--text-strong);
+  border-color: var(--border-strong);
+}
+.status-option.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--text-strong);
+  font-weight: 600;
 }

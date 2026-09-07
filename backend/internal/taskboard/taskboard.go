@@ -34,19 +34,27 @@ var validRepoName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 // ever joined into a filesystem path.
 var idPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
 
-// Status is a task's place in the board, exactly the three states named
-// in the design doc — there is no "backlog"/"todo" state before this: a
-// task starts life already StatusInProgress.
+// Status is a task's place in the board, in board order.
+//
+// StatusTodo was added after the original three (2026-09-07): a task
+// starting life as StatusInProgress claimed work had begun the moment
+// somebody wrote it down, which made "yapılıyor" mean nothing — every
+// task ever created sat there. Written-down and started are different
+// facts, and the board is only useful when it can tell them apart.
+//
+// Existing tasks keep whatever status they were saved with; nothing needs
+// migrating, because the set of valid values only grew.
 type Status string
 
 const (
+	StatusTodo         Status = "todo"
 	StatusInProgress   Status = "in_progress"
 	StatusAwaitingTest Status = "awaiting_test"
 	StatusDone         Status = "done"
 )
 
 func (s Status) valid() bool {
-	return s == StatusInProgress || s == StatusAwaitingTest || s == StatusDone
+	return s == StatusTodo || s == StatusInProgress || s == StatusAwaitingTest || s == StatusDone
 }
 
 // Task is a unit of work tracked on one repository's board.
@@ -75,8 +83,9 @@ func NewStore(rootDir string) *Store {
 	return &Store{rootDir: rootDir}
 }
 
-// Create persists a new task for repo, always starting StatusInProgress,
-// and returns it with its generated ID and CreatedAt populated.
+// Create persists a new task for repo, always starting StatusTodo, and
+// returns it with its generated ID and CreatedAt populated. Moving it on
+// from there is a deliberate act — see Status.
 func (s *Store) Create(repo, title, description, assignedTo, author string) (Task, error) {
 	if !validRepoName.MatchString(repo) {
 		return Task{}, ErrInvalidRepo
@@ -93,7 +102,7 @@ func (s *Store) Create(repo, title, description, assignedTo, author string) (Tas
 		Description: description,
 		AssignedTo:  assignedTo,
 		Author:      author,
-		Status:      StatusInProgress,
+		Status:      StatusTodo,
 		CreatedAt:   time.Now().UTC(),
 	}
 

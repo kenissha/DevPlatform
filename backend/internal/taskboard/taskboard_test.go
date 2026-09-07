@@ -12,8 +12,8 @@ func TestCreate_PersistsAndReturnsInProgressTask(t *testing.T) {
 	if task.ID == "" {
 		t.Fatal("expected a generated ID")
 	}
-	if task.Status != StatusInProgress {
-		t.Errorf("Status = %q, want %q", task.Status, StatusInProgress)
+	if task.Status != StatusTodo {
+		t.Errorf("Status = %q, want %q — a task starts written-down, not started", task.Status, StatusTodo)
 	}
 	if task.Urgent {
 		t.Error("expected Urgent to default to false")
@@ -157,5 +157,39 @@ func TestUpdate_RejectsInvalidStatus(t *testing.T) {
 	_, err = store.Update("intranet-backend", created.ID, &bogus, nil, nil)
 	if err != ErrInvalidStatus {
 		t.Fatalf("err = %v, want ErrInvalidStatus", err)
+	}
+}
+
+// Every status the API accepts has to be storable, or a board column
+// exists that nothing can ever be dragged into.
+func TestUpdate_AcceptsEveryValidStatus(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("sample", "Görev", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	for _, status := range []Status{StatusTodo, StatusInProgress, StatusAwaitingTest, StatusDone} {
+		s := status
+		updated, err := store.Update("sample", task.ID, &s, nil, nil)
+		if err != nil {
+			t.Fatalf("Update to %q failed: %v", status, err)
+		}
+		if updated.Status != status {
+			t.Errorf("Status = %q, want %q", updated.Status, status)
+		}
+	}
+}
+
+func TestUpdate_RejectsAnUnknownStatus(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("sample", "Görev", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	bogus := Status("backlog")
+	if _, err := store.Update("sample", task.ID, &bogus, nil, nil); err == nil {
+		t.Error("Update accepted an unknown status")
 	}
 }

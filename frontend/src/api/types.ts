@@ -146,7 +146,10 @@ export interface GitEmails {
   suggestions: string[]
 }
 
-export type TaskStatus = 'in_progress' | 'awaiting_test' | 'done'
+// In board order. 'todo' is where every new task lands — see
+// backend/internal/taskboard.Status for why written-down and started
+// are deliberately different states.
+export type TaskStatus = 'todo' | 'in_progress' | 'awaiting_test' | 'done'
 
 export interface Task {
   id: string

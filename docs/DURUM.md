@@ -417,6 +417,36 @@ verildiğinde kişiye haber veren bir şeydi.
   artık `/git`'i proxy'liyor, yoksa yerelde gösterilen adres çalışmayan
   bir adres olurdu.
 
+- **2026-09-07 güncelleme — görev panosuna "Yapılacak" sütunu ve modal
+  form:** Pano üç sütundu ve yeni görev doğrudan `in_progress` olarak
+  doğuyordu — yani "yapılıyor" hiçbir şey ifade etmiyordu, açılan her
+  görev oraya düşüyordu. Yazılmış olmak ile başlanmış olmak farklı iki
+  olgu; pano ancak ikisini ayırabildiğinde işe yarıyor.
+  `taskboard.StatusTodo` eklendi ve `Create` artık oradan başlatıyor.
+  Göç gerekmiyor: geçerli değer kümesi sadece büyüdü, eski görevler
+  kaydedildikleri durumla kalıyor.
+
+  "Yeni görev" formu sayfanın altındaki kalıcı bölümden çıkıp sağ üstteki
+  düğmeden açılan modal'a taşındı. Modal kabuğu (`components/Modal.tsx`)
+  görev detay panelinden çıkarıldı — iki kopya Escape/odak/dışına tıklama
+  davranışı, tam olarak birinin sessizce eksik kaldığı yer.
+
+  Pano tasarımı: sütun artık yüzen bir kart değil çukur bir tepsi (içine
+  bırakılan kartlar yükseltilmiş olan), her durumun kendi nokta rengi var
+  ve aynı renk kod detay modal'ındaki durum seçicide tekrar ediyor. Kartta
+  atanan kişinin baş harfi (dört sütun tararken e-posta okumamak için),
+  yaşı, ve acil olanlarda kenar şeridi — rozet tek başına kalabalıkta
+  kayboluyor. Boş sütun kesik çizgili "buraya sürükle" alanı: bomboş bir
+  tepsi sürükleyip bırakmanın yapılacak şey olduğunu hiç sezdirmiyordu.
+
+  Detay modal'ında durum artık açılır liste değil düğme sırası — en sık
+  değişen alan, mevcut sütun bir şey açmadan okunuyor ve taşımak üç
+  tıklama yerine bir tıklama.
+
+  `repodesc` de `gitemails`'teki `renameWithRetry` korumasını aldı: aynı
+  makinede on-access virüs tarayıcısı yeni yazılan dosyayı tutuyor ve
+  `os.Rename` "Access is denied" veriyor (testte yakalandı).
+
 ## Sıradaki iş
 
 **2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`
