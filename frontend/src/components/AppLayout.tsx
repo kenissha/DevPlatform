@@ -112,7 +112,7 @@ export function AppLayout() {
                 <li>
                   <NavLink end to="/access" className={navClass}>
                     <LockIcon />
-                    <span className="nav-label">Proje erişimi</span>
+                    <span className="nav-label">Kişiler</span>
                   </NavLink>
                 </li>
               )}

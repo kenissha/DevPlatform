@@ -145,3 +145,43 @@ export function greeting(now = new Date()): string {
 export function formatDayHeading(now = new Date()): string {
   return now.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' })
 }
+
+// Groups timestamped records under a day heading, newest day first,
+// preserving the order within each day. Both the notification list and
+// the audit log are long streams of rows where the only structure a
+// reader brings is "when" — without day breaks they read as one
+// undifferentiated column.
+export function groupByDay<T>(items: T[], at: (item: T) => string): [string, T[]][] {
+  const groups: [string, T[]][] = []
+  for (const item of items) {
+    const key = dayKey(at(item))
+    const last = groups[groups.length - 1]
+    if (last && last[0] === key) last[1].push(item)
+    else groups.push([key, [item]])
+  }
+  return groups
+}
+
+// "Bugün" / "Dün" / "3 Eylül Çarşamba". Relative for the two days people
+// actually think of by name; the date itself past that.
+export function dayHeading(iso: string): string {
+  const d = new Date(iso)
+  const today = dayKey(new Date().toISOString())
+  const yesterday = dayKey(new Date(Date.now() - 86400000).toISOString())
+  const key = dayKey(iso)
+  if (key === today) return 'Bugün'
+  if (key === yesterday) return 'Dün'
+  return d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', weekday: 'long' })
+}
+
+// Local calendar day, not the UTC one: a record made at 01:00 local time
+// belongs under today's heading for the person reading it.
+function dayKey(iso: string): string {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+}
+
+// Just the clock time — the day is already in the group heading above.
+export function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError, type AccessRegistry, type DisplayNameRegistry, type Person } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { KeyIcon, LockIcon } from '../components/icons'
+import { Modal } from '../components/Modal'
 import { useRepos } from '../repos/ReposContext'
 
 // AccessPage is the design doc's Faz 3 "proje bazlı yetkilendirme" admin
@@ -9,10 +10,11 @@ import { useRepos } from '../repos/ReposContext'
 // every repo) — see backend/internal/access's doc comment for why that is
 // the default rather than the other way around.
 //
-// One card per person, not two lists. The page used to iterate the same
-// people twice — once for access, once for display names — so changing
-// both for one colleague meant working in two places, and two people who
-// happened to share an email address were indistinguishable in either.
+// A table, not a stack of cards. This is a roster: the questions it
+// answers are comparative ("who is restricted", "who has no display name
+// set"), and comparison needs columns that line up. Everything editable
+// about one person lives in a dialog opened from their row, so the table
+// stays one line per person no matter how many repositories exist.
 export function AccessPage() {
   const { user } = useAuth()
   const { repos } = useRepos()
@@ -20,7 +22,7 @@ export function AccessPage() {
   const [registry, setRegistry] = useState<AccessRegistry | null>(null)
   const [displayNames, setDisplayNames] = useState<DisplayNameRegistry | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [openSubject, setOpenSubject] = useState<string | null>(null)
+  const [editing, setEditing] = useState<Person | null>(null)
 
   function reload() {
     Promise.all([api.listPeople(), api.listAccess(), api.listDisplayNames()])
@@ -53,54 +55,108 @@ export function AccessPage() {
           <p className="page-subtitle">
             {people === null
               ? 'Erişim ve görünen adlar'
-              : `${people.length} kişi` +
-                (restrictedCount > 0 ? ` · ${restrictedCount} tanesi kısıtlı` : ' · hepsi tüm repolara erişiyor')}
+              : `${people.length} kişi · ` +
+                (restrictedCount > 0
+                  ? `${restrictedCount} tanesi belirli repolarla sınırlı`
+                  : 'hepsi tüm repolara erişiyor')}
           </p>
         </div>
       </div>
 
       {error && <p className="error">{error}</p>}
 
-      {people === null && (
-        <div className="card">
-          <p className="empty-state">Yükleniyor...</p>
-        </div>
-      )}
-      {people?.length === 0 && (
-        <div className="card">
-          <p className="empty-state">Henüz kimse giriş yapmadı.</p>
-        </div>
-      )}
+      <div className="card table-card">
+        {people === null && <p className="empty-state">Yükleniyor...</p>}
+        {people?.length === 0 && <p className="empty-state">Henüz kimse giriş yapmadı.</p>}
+        {people && people.length > 0 && registry && repos && (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Kişi</th>
+                <th scope="col">Rol</th>
+                <th scope="col">Repo erişimi</th>
+                <th scope="col" className="col-actions">
+                  <span className="visually-hidden">İşlemler</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {people.map((person) => {
+                const restricted = person.subject in registry
+                const allowed = registry[person.subject] ?? repos
+                const name = displayNames?.[person.subject]
+                const label = name || person.email || person.subject
+                return (
+                  <tr key={person.subject}>
+                    <td>
+                      <div className="cell-person">
+                        <span className="person-avatar">{initials(label)}</span>
+                        <div className="cell-person-text">
+                          <span className="cell-primary">{label}</span>
+                          {/* The subject id is always shown: two accounts
+                              can carry the same address, and without it
+                              they render as one person listed twice. */}
+                          <span className="cell-secondary">
+                            {person.email && person.email !== label ? `${person.email} · ` : ''}
+                            <span className="mono">{person.subject}</span>
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`badge ${person.role === 'admin' ? 'badge-accent' : 'badge-neutral'}`}>
+                        {person.role === 'admin' ? 'Yönetici' : 'Geliştirici'}
+                      </span>
+                    </td>
+                    <td>
+                      {restricted ? (
+                        <span className="access-summary" title={allowed.join(', ')}>
+                          <LockIcon />
+                          {allowed.length} repo
+                        </span>
+                      ) : (
+                        <span className="access-summary is-open">Tüm repolar</span>
+                      )}
+                    </td>
+                    <td className="col-actions">
+                      <button
+                        type="button"
+                        className="btn-secondary btn-sm"
+                        onClick={() => setEditing(person)}
+                      >
+                        Düzenle
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
 
-      {people && people.length > 0 && registry && repos && (
-        <div className="person-list">
-          {people.map((person) => (
-            <PersonCard
-              key={person.subject}
-              person={person}
-              displayName={displayNames?.[person.subject]}
-              restricted={person.subject in registry}
-              allowed={registry[person.subject] ?? repos}
-              allRepos={repos}
-              isOpen={openSubject === person.subject}
-              onToggle={() => setOpenSubject(openSubject === person.subject ? null : person.subject)}
-              onChange={reload}
-            />
-          ))}
-        </div>
+      {editing && repos && registry && (
+        <PersonModal
+          person={editing}
+          displayName={displayNames?.[editing.subject]}
+          restricted={editing.subject in registry}
+          allowed={registry[editing.subject] ?? repos}
+          allRepos={repos}
+          onClose={() => setEditing(null)}
+          onChange={reload}
+        />
       )}
     </div>
   )
 }
 
-function PersonCard({
+function PersonModal({
   person,
   displayName,
   restricted,
   allowed,
   allRepos,
-  isOpen,
-  onToggle,
+  onClose,
   onChange,
 }: {
   person: Person
@@ -108,224 +164,133 @@ function PersonCard({
   restricted: boolean
   allowed: string[]
   allRepos: string[]
-  isOpen: boolean
-  onToggle: () => void
+  onClose: () => void
   onChange: () => void
 }) {
-  const label = displayName || person.email || person.subject
-
-  return (
-    <div className="person-card">
-      <div className="person-head">
-        <span className="person-avatar">{initials(label)}</span>
-        <div className="person-identity">
-          <p className="person-name">{label}</p>
-          {/* The subject id is shown, not just the email: two accounts can
-              carry the same address, and without the id they render as one
-              person twice. */}
-          <p className="person-sub">
-            {person.email && person.email !== label ? `${person.email} · ` : ''}
-            <span className="mono">{person.subject}</span>
-          </p>
-        </div>
-        <span className={`badge ${restricted ? 'badge-accent' : 'badge-neutral'}`}>
-          {restricted ? `${allowed.length} repo` : 'Tüm repolar'}
-        </span>
-      </div>
-
-      <DisplayNameField
-        subject={person.subject}
-        fallback={person.email || person.subject}
-        current={displayName}
-        onChange={onChange}
-      />
-
-      <div className="person-actions">
-        <button type="button" className="btn-secondary btn-sm" onClick={onToggle}>
-          <LockIcon /> {isOpen ? 'Erişimi kapat' : 'Erişimi düzenle'}
-        </button>
-        <div className="spacer" />
-        <RevokeKeysButton subject={person.subject} />
-      </div>
-
-      {isOpen && (
-        <AccessEditor
-          subject={person.subject}
-          allRepos={allRepos}
-          allowed={allowed}
-          restricted={restricted}
-          onChange={onChange}
-        />
-      )}
-    </div>
-  )
-}
-
-function DisplayNameField({
-  subject,
-  fallback,
-  current,
-  onChange,
-}: {
-  subject: string
-  fallback: string
-  current: string | undefined
-  onChange: () => void
-}) {
-  const [name, setName] = useState(current ?? '')
+  const [name, setName] = useState(displayName ?? '')
   const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  // Reset when the row's data is refreshed from the server, or an edit
-  // made elsewhere would leave a stale value sitting in this input.
-  useEffect(() => {
-    setName(current ?? '')
-  }, [current])
+  const fallback = person.email || person.subject
 
-  const dirty = name.trim() !== (current ?? '')
-
-  async function save() {
+  async function run(action: () => Promise<unknown>, failure: string) {
     setSaving(true)
-    setSaveError(null)
+    setError(null)
     try {
-      if (name.trim()) await api.setDisplayName(subject, name.trim())
-      else await api.clearDisplayName(subject)
+      await action()
       onChange()
     } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : 'Kaydedilemedi')
+      setError(err instanceof ApiError ? err.message : failure)
     } finally {
       setSaving(false)
     }
   }
 
-  return (
-    <label className="person-name-field">
-      <span className="field-label">Görünen ad</span>
-      <span className="person-name-input">
-        <input
-          type="text"
-          value={name}
-          placeholder={fallback}
-          disabled={saving}
-          onChange={(e) => setName(e.target.value)}
-        />
-        {/* The button appears only once there is something to save —
-            a row of idle Kaydet buttons reads as work waiting to be done. */}
-        {dirty && (
-          <button type="button" className="btn-primary btn-sm" disabled={saving} onClick={save}>
-            {saving ? '...' : 'Kaydet'}
-          </button>
-        )}
-      </span>
-      {saveError && <span className="error">{saveError}</span>}
-    </label>
-  )
-}
+  async function saveName() {
+    await run(
+      () => (name.trim() ? api.setDisplayName(person.subject, name.trim()) : api.clearDisplayName(person.subject)),
+      'Kaydedilemedi',
+    )
+  }
 
-function RevokeKeysButton({ subject }: { subject: string }) {
-  const [revoking, setRevoking] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
+  async function toggleRepo(repo: string, checked: boolean) {
+    const next = checked ? [...allowed, repo] : allowed.filter((r) => r !== repo)
+    await run(() => api.setAccess(person.subject, next), 'Kaydedilemedi')
+  }
 
-  async function revoke() {
+  async function revokeKeys() {
     if (
       !window.confirm(
-        `${subject} kişisinin TÜM git anahtarları iptal edilecek ve bütün makinelerinde git erişimi kesilecek. Emin misiniz?`,
+        `${fallback} kişisinin TÜM git anahtarları iptal edilecek ve bütün makinelerinde git erişimi kesilecek. Emin misiniz?`,
       )
     ) {
       return
     }
-    setRevoking(true)
-    setMessage(null)
-    try {
-      await api.revokeGitToken(subject)
-      setMessage('İptal edildi')
-    } catch (err) {
-      setMessage(err instanceof ApiError ? err.message : 'İptal edilemedi')
-    } finally {
-      setRevoking(false)
-    }
+    await run(() => api.revokeGitToken(person.subject), 'İptal edilemedi')
   }
+
+  const nameDirty = name.trim() !== (displayName ?? '')
 
   return (
-    <>
-      {message && <span className="row-meta-inline">{message}</span>}
-      <button type="button" className="link-button danger" disabled={revoking} onClick={revoke}>
-        <KeyIcon /> Git anahtarlarını iptal et
-      </button>
-    </>
-  )
-}
-
-function AccessEditor({
-  subject,
-  allRepos,
-  allowed,
-  restricted,
-  onChange,
-}: {
-  subject: string
-  allRepos: string[]
-  allowed: string[]
-  restricted: boolean
-  onChange: () => void
-}) {
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
-
-  async function toggle(repo: string, checked: boolean) {
-    const next = checked ? [...allowed, repo] : allowed.filter((r) => r !== repo)
-    setSaving(true)
-    setSaveError(null)
-    try {
-      await api.setAccess(subject, next)
-      onChange()
-    } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : 'Kaydedilemedi')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function clear() {
-    setSaving(true)
-    setSaveError(null)
-    try {
-      await api.clearAccess(subject)
-      onChange()
-    } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : 'Kaldırılamadı')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="access-editor">
-      <p className="field-hint">
-        {restricted
-          ? 'Sadece işaretli repoları görebilir.'
-          : 'Şu an tüm repolara erişiyor. Bir repo işaretlediğin an sadece işaretlediklerine iner.'}
-      </p>
-      <div className="checkbox-grid">
-        {allRepos.map((repo) => (
-          <label key={repo} className="checkbox-item">
-            <input
-              type="checkbox"
-              checked={allowed.includes(repo)}
-              disabled={saving}
-              onChange={(e) => toggle(repo, e.target.checked)}
-            />
-            {repo}
+    <Modal
+      variant="panel"
+      icon={<LockIcon />}
+      title={displayName || fallback}
+      subtitle={person.subject}
+      onClose={onClose}
+    >
+      <div className="modal-sections">
+        <section>
+          <label className="field">
+            <span className="field-label">Görünen ad</span>
+            <span className="person-name-input">
+              <input
+                type="text"
+                value={name}
+                placeholder={fallback}
+                disabled={saving}
+                onChange={(e) => setName(e.target.value)}
+              />
+              {/* Only offered once there is something to save — an idle
+                  Kaydet button reads as work waiting to be done. */}
+              {nameDirty && (
+                <button type="button" className="btn-primary btn-sm" disabled={saving} onClick={saveName}>
+                  Kaydet
+                </button>
+              )}
+            </span>
+            <span className="field-hint">Boş bırakılırsa e-posta adresi gösterilir.</span>
           </label>
-        ))}
+        </section>
+
+        <section>
+          <p className="field-label">Repo erişimi</p>
+          <p className="field-hint">
+            {restricted
+              ? 'Sadece işaretli repoları görebilir.'
+              : 'Şu an tüm repolara erişiyor. Bir repo işaretlediğin an sadece işaretlediklerine iner.'}
+          </p>
+          <div className="repo-checks">
+            {allRepos.map((repo) => (
+              <label key={repo} className="repo-check">
+                <input
+                  type="checkbox"
+                  checked={allowed.includes(repo)}
+                  disabled={saving}
+                  onChange={(e) => toggleRepo(repo, e.target.checked)}
+                />
+                <span>{repo}</span>
+              </label>
+            ))}
+          </div>
+          {restricted && (
+            <button
+              type="button"
+              className="link-button"
+              disabled={saving}
+              onClick={() => run(() => api.clearAccess(person.subject), 'Kaldırılamadı')}
+            >
+              Kısıtlamayı kaldır — tüm repolara erişsin
+            </button>
+          )}
+        </section>
+
+        <section className="danger-section">
+          <div>
+            <p className="field-label">Git anahtarları</p>
+            <p className="field-hint">
+              Bu kişinin bağlı olduğu bütün makinelerde git erişimini keser. Yeniden kurulum
+              gerektirir.
+            </p>
+          </div>
+          <button type="button" className="btn-danger btn-sm" disabled={saving} onClick={revokeKeys}>
+            <KeyIcon /> Hepsini iptal et
+          </button>
+        </section>
+
+        {error && <p className="error">{error}</p>}
       </div>
-      {restricted && (
-        <button type="button" className="link-button" disabled={saving} onClick={clear}>
-          Kısıtlamayı kaldır — tüm repolara erişsin
-        </button>
-      )}
-      {saveError && <p className="error">{saveError}</p>}
-    </div>
+    </Modal>
   )
 }
 

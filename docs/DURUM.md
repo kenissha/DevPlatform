@@ -712,6 +712,45 @@ verildiğinde kişiye haber veren bir şeydi.
   içinde yatay kayıyor ve sayfa koordinatları tooltip'i geride
   bırakırdı.
 
+- **2026-09-07 güncelleme — Kişiler tabloya, Bildirimler ve Denetim
+  kaydı güne göre gruplu akışa çevrildi.**
+
+  **Kişiler artık bir tablo.** Kart yığını yanlış şekildi: bu bir kadro
+  listesi ve sorduğu sorular karşılaştırmalı ("kim kısıtlı", "kimin adı
+  ayarlanmamış") — karşılaştırma hizalanan sütun ister. Sütunlar: kişi
+  (avatar + ad + subject), rol, repo erişimi, işlem. Bir kişi hakkında
+  değiştirilebilen her şey satırından açılan **panel modal**'ında: görünen
+  ad, repo onay kutuları ve git anahtarlarını iptal. Böylece kaç repo
+  olursa olsun tablo kişi başına tek satır kalıyor.
+
+  Anahtar iptali modal içinde kendi kırmızı çerçevesinde duruyor —
+  zararsız iki işlemin akışında oturmuyor.
+
+  Sol menüdeki "Proje erişimi" etiketi de "Kişiler" oldu; sayfanın başlığı
+  değişmişti ama menü eski adıyla kalmıştı.
+
+  **Bildirimler ve Denetim kaydı** uçsuz satır listeleriydi. İkisi de
+  artık **güne göre gruplu**: "Bugün / Dün / 3 Eylül Çarşamba" başlıkları
+  altında, satırda sadece saat. `labels.ts`'e ortak `groupByDay` /
+  `dayHeading` / `formatTime` eklendi. Gün anahtarı **yerel** takvim
+  gününe göre — 01:00'de yazılan bir kayıt, onu okuyan kişi için bugüne
+  ait.
+
+  - **Bildirimler**: türe göre ikon ve renk, okunmamışlar renkli zeminde
+    ve noktalı (kalın yazı tek başına uzun listede fark edilmiyor), üstte
+    "Tümünü okundu işaretle". Boş durum artık ne zaman bildirim
+    geleceğini anlatıyor.
+  - **Denetim kaydı**: zaman çizelgesi — noktaların arkasında sürekli bir
+    ray, çünkü bunlar sıradaki olaylar, satırları ayıran bir tablo değil.
+    Renk **sonucu** taşıyor (oldu / reddedildi / bekliyor), kategoriyi
+    değil: uzun bir kayıtta "ne ters gitti" taranırken okumak
+    gerekmesin. Üstte tür filtresi (Görevler / İncelemeler / Deploy /
+    Repolar) — kimse `deployment.rolled_back` diye aramıyor, "deploy'da
+    ne oldu" diye arıyor.
+
+  Her iki sayfa da 820px'e daraldı: bunlar okunan sayfalar, tek cümleyi
+  ekran boyunca germek satırı okunmaz yapıyor.
+
 ## Sıradaki iş
 
 **2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`

@@ -557,20 +557,6 @@ code,
   overflow: hidden;
 }
 
-.checkbox-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 20px;
-  margin-top: 10px;
-}
-
-.checkbox-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--text-strong);
-}
 
 .badge {
   display: inline-flex;
@@ -1863,103 +1849,6 @@ button:disabled {
   color: var(--danger);
 }
 
-/* ---------------------------------------------------------------- kişiler */
-
-.person-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.person-card {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 16px 18px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.person-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.person-avatar {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-border);
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.person-identity {
-  min-width: 0;
-  flex: 1;
-}
-
-.person-name {
-  margin: 0;
-  font-size: 14.5px;
-  font-weight: 650;
-  color: var(--text-strong);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.person-sub {
-  margin: 1px 0 0;
-  font-size: 11.5px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.person-name-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.person-name-input {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.person-name-input input {
-  flex: 1;
-  min-width: 0;
-}
-
-.person-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-
-.access-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-}
-
 /* -------------------------------------------------------- panel eklemeleri */
 
 /* The rail's feed: one line per entry, clipped rather than wrapped, so a
@@ -2027,6 +1916,419 @@ button:disabled {
 .contrib-cell:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* ------------------------------------------------------------- tablolar */
+
+/* A card whose whole body is a table: the card's own padding would put a
+   gutter outside the header row's background and break the banding. */
+.table-card {
+  overflow: hidden;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table th {
+  padding: 10px 16px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  background: var(--bg-chrome);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tbody tr:hover {
+  background: var(--surface-hover);
+}
+
+.col-actions {
+  text-align: right;
+  width: 1%;
+  white-space: nowrap;
+}
+
+.cell-person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.cell-person-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cell-primary {
+  font-weight: 600;
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-secondary {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.person-avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.access-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+}
+.access-summary svg {
+  width: 13px;
+  height: 13px;
+  color: var(--text-muted);
+}
+.access-summary.is-open {
+  color: var(--text-muted);
+}
+
+.person-name-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.person-name-input input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Sections inside the panel modal, separated by rules rather than by gaps
+   alone — three unrelated jobs (rename, access, revoke keys) sharing one
+   dialog need visible seams. */
+.modal-sections {
+  display: flex;
+  flex-direction: column;
+}
+.modal-sections > section {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
+}
+.modal-sections > section:first-child {
+  padding-top: 0;
+}
+.modal-sections > section:last-of-type {
+  border-bottom: none;
+}
+
+.modal-sections .field-hint {
+  margin-bottom: 10px;
+}
+
+.repo-checks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.repo-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.repo-check:hover {
+  border-color: var(--border-strong);
+}
+.repo-check span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.repo-check input {
+  flex-shrink: 0;
+  width: auto;
+  margin: 0;
+}
+
+/* The destructive action is fenced off rather than sitting in the flow
+   with the two harmless ones above it. */
+.danger-section {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px !important;
+  margin-top: 4px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger) !important;
+  border-radius: var(--radius-sm);
+}
+.danger-section > div {
+  flex: 1;
+  min-width: 0;
+}
+.danger-section .field-hint {
+  margin-bottom: 0;
+}
+
+/* --------------------------------------------------- akış sayfaları */
+
+/* Notifications and the audit log are read, not operated: a narrower
+   column keeps a line at a readable length instead of stretching one
+   sentence across the whole screen. */
+.feed-page {
+  max-width: 820px;
+}
+
+.day-group + .day-group {
+  margin-top: 26px;
+}
+
+/* The day label sits above its own group rather than inside it, so the
+   stream reads as "today: these; yesterday: those" instead of one
+   undifferentiated column. */
+.day-heading {
+  margin: 0 0 10px 2px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.notice-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.notice-list > li + li {
+  border-top: 1px solid var(--border);
+}
+
+/* Unread carries a tinted ground and a dot; read entries are plain. The
+   distinction has to survive a glance down a long list, which a bolder
+   font weight alone does not. */
+.notice-list > li.is-unread {
+  background: var(--accent-soft);
+}
+
+.notice-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 13px 16px;
+  color: inherit;
+}
+.notice-row:hover {
+  text-decoration: none;
+  background: var(--surface-hover);
+}
+
+.notice-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.notice-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-strong);
+}
+
+.notice-meta {
+  margin: 3px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.notice-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-top: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ------------------------------------------------------------ timeline */
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 22px;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.filter-chip:hover {
+  color: var(--text-strong);
+  border-color: var(--border-strong);
+}
+.filter-chip.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.filter-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: relative;
+}
+
+/* The rail: a hairline behind the dots, inset to their centre. Drawn on
+   the list rather than per item so it is continuous through the gaps. */
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 13px;
+  top: 14px;
+  bottom: 14px;
+  width: 1px;
+  background: var(--border);
+}
+
+.timeline > li {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 7px 0;
+}
+
+.timeline-dot {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.timeline-dot svg {
+  width: 13px;
+  height: 13px;
+}
+.timeline-dot.tone-accent {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+.timeline-dot.tone-success {
+  color: var(--success);
+  border-color: var(--success);
+  background: var(--success-soft);
+}
+.timeline-dot.tone-danger {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.timeline-dot.tone-warn {
+  color: var(--warn);
+  border-color: var(--warn);
+  background: var(--warn-soft);
+}
+.timeline-dot.tone-neutral {
+  color: var(--text-muted);
+}
+
+.timeline-body {
+  flex: 1;
+  min-width: 0;
+  padding-top: 3px;
+}
+
+.timeline-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-strong);
+}
+
+.timeline-meta {
+  margin: 2px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.timeline-meta strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.timeline-time {
+  flex-shrink: 0;
+  padding-top: 5px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------------------------------------------------------------- tasks */
@@ -2389,6 +2691,13 @@ li.unread {
   color: var(--danger);
   border-color: var(--danger);
   background: var(--danger-soft);
+}
+/* Used by the notification list for "waiting on somebody" kinds; without
+   it those icons silently fell back to the neutral grey. */
+.feed-icon.tone-warn {
+  color: var(--warn);
+  border-color: var(--warn);
+  background: var(--warn-soft);
 }
 
 .feed-body {
