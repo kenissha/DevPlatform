@@ -22,7 +22,10 @@ const Prefix = "/git"
 
 type contextKey int
 
-const adminContextKey contextKey = iota
+const (
+	adminContextKey contextKey = iota
+	subjectContextKey
+)
 
 // WithAdmin returns a copy of ctx recording whether the caller has Admin
 // privileges. gittoken.RequireTokenAndAccess calls this (it already
@@ -49,30 +52,53 @@ func IsAdmin(ctx context.Context) bool {
 	return admin
 }
 
+// WithSubject returns a copy of ctx recording who authenticated this
+// request. gittoken.RequireTokenAndAccess sets it alongside WithAdmin;
+// NewHandler reads it back to attribute the commit signatures arriving
+// in a push (see AuthorRecorder).
+func WithSubject(ctx context.Context, subject string) context.Context {
+	return context.WithValue(ctx, subjectContextKey, subject)
+}
+
+// SubjectFromContext returns who WithSubject recorded, or "" when the
+// request never went through authentication — in which case there is
+// nobody to attribute a signature to, and none is recorded.
+func SubjectFromContext(ctx context.Context) string {
+	subject, _ := ctx.Value(subjectContextKey).(string)
+	return subject
+}
+
 // NewHandler returns an http.Handler serving every bare repository under
 // dataDir via the git smart-HTTP protocol. Repository names are resolved
 // the same way repostore.Store names them (e.g. "foo" on disk as
 // "foo.git"); callers must request "/foo.git/...", not "/foo/...".
 //
+// authors, if non-nil, is told the author signature on each commit an
+// authenticated push delivers — the only point at which the platform can
+// observe which git address belongs to whom (see AuthorRecorder). Pass
+// nil to disable; pushing is otherwise unaffected either way.
+//
 // The loader/backend chain is built fresh for every request (rather than
-// once at startup) so protection can depend on that request's own caller
-// (IsAdmin) — none of transport.NewFilesystemLoader,
-// newProtectingLoader, newScanningLoader, or backend.New do any I/O of
-// their own at construction time, so this costs no more per request than
-// the git operation itself already does.
+// once at startup) so both protection and attribution can depend on that
+// request's own caller (IsAdmin, SubjectFromContext) — none of
+// transport.NewFilesystemLoader, newProtectingLoader, newScanningLoader,
+// newAuthorLoader, or backend.New do any I/O of their own at
+// construction time, so this costs no more per request than the git
+// operation itself already does.
 //
 // The returned handler is wrapped with withReceivePackAuthShim, a
 // permanent go-git v6-alpha workaround (see that function's doc comment)
 // — it stays regardless of DevPlatform's own auth, since this constructor
 // has no guarantee callers wrap it with gittoken.RequireTokenAndAccess
 // (this package's own tests call it directly, unwrapped).
-func NewHandler(dataDir string) http.Handler {
+func NewHandler(dataDir string, authors AuthorRecorder) http.Handler {
 	return withReceivePackAuthShim(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		admin := IsAdmin(r.Context())
 		loader := transport.NewFilesystemLoader(osfs.New(dataDir), false)
 		protected := newProtectingLoader(loader, admin)
 		scanned := newScanningLoader(protected)
-		b := backend.New(scanned)
+		observed := newAuthorLoader(scanned, authors, SubjectFromContext(r.Context()))
+		b := backend.New(observed)
 		b.Prefix = Prefix
 		b.ServeHTTP(w, r)
 	}))

@@ -163,7 +163,7 @@ func (h *Handlers) Contributions(w http.ResponseWriter, r *http.Request) {
 	// registered — it's the one address the platform actually knows is
 	// theirs, and requiring people to re-enter it would be busywork.
 	emails := []string{user.Email}
-	registered, err := h.GitEmails.List(user.Subject)
+	registered, err := h.GitEmails.Claimed(user.Subject)
 	if err != nil {
 		// Degrade to the platform email rather than failing: a graph
 		// missing some commits still beats an error where a graph

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { api, ApiError, type GitTokenInfo } from '../api/client'
+import { api, ApiError, type GitEmails, type GitTokenInfo } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { formatDate } from '../labels'
 
@@ -168,15 +168,21 @@ export function HesabimPage() {
   )
 }
 
-// Lets a person claim the git author addresses their commits actually
-// carry. A commit records whatever `git config user.email` was set to,
-// which is very often not the address the platform knows someone by —
-// without this, the panel's contribution graph silently shows nothing
-// for them (see backend/internal/gitemails).
+
+// Lets a person confirm which git author addresses are theirs.
+//
+// A commit records whatever `git config user.email` was set to on the
+// machine that made it — usually not the address the platform knows
+// someone by — and nothing in the commit links the two. So the git
+// server reports what it saw on each of this person's pushes
+// (`suggestions`) and they answer with one click. Nobody has to look up
+// or type an address; the manual field below is only a fallback for
+// commits pushed some other way (straight to GitHub, say).
 function GitEmailsSection({ platformEmail }: { platformEmail: string }) {
-  const [emails, setEmails] = useState<string[] | null>(null)
+  const [emails, setEmails] = useState<GitEmails | null>(null)
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const [showManual, setShowManual] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -186,28 +192,25 @@ function GitEmailsSection({ platformEmail }: { platformEmail: string }) {
       .catch((err) => setError(err instanceof ApiError ? err.message : 'E-postalar yüklenemedi'))
   }, [])
 
-  async function add(e: FormEvent) {
-    e.preventDefault()
-    if (!input.trim()) return
+  // Every mutating call returns the full updated lists, so each of these
+  // just swaps state in rather than re-fetching.
+  async function run(action: () => Promise<GitEmails>, failure: string) {
     setBusy(true)
     setError(null)
     try {
-      setEmails(await api.addMyGitEmail(input.trim()))
-      setInput('')
+      setEmails(await action())
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'E-posta eklenemedi')
+      setError(err instanceof ApiError ? err.message : failure)
     } finally {
       setBusy(false)
     }
   }
 
-  async function remove(email: string) {
-    setError(null)
-    try {
-      setEmails(await api.removeMyGitEmail(email))
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'E-posta kaldırılamadı')
-    }
+  async function addManually(e: FormEvent) {
+    e.preventDefault()
+    if (!input.trim()) return
+    await run(() => api.claimMyGitEmail(input.trim()), 'E-posta eklenemedi')
+    setInput('')
   }
 
   return (
@@ -218,11 +221,39 @@ function GitEmailsSection({ platformEmail }: { platformEmail: string }) {
       <div className="card">
         <div className="card-body">
           <p className="muted" style={{ fontSize: 13, marginTop: 0 }}>
-            Panelin katkı grafiği, commit'lerini e-posta adresine bakarak buluyor. Bir commit'in içinde
-            bundan başka kimlik bilgisi yok — git, commit atarken kendi bilgisayarındaki{' '}
-            <code>git config user.email</code> ne yazıyorsa onu damgalıyor. Bu adres panel hesabındakinden
-            farklıysa, o commit'ler grafikte görünmez. Kullandığın diğer adresleri buraya ekle.
+            Katkı grafiğin, commit'lerini üzerlerindeki e-posta imzasına bakarak buluyor. Git, commit
+            atarken kendi bilgisayarındaki <code>git config user.email</code> ne yazıyorsa onu damgalıyor
+            — bu adres panel hesabındakinden farklı olabilir. Push attığında platform gördüğü imzaları
+            burada sana sorar; sadece onaylaman yeterli.
           </p>
+
+          {emails && emails.suggestions.length > 0 && (
+            <div className="suggest-box">
+              <p className="suggest-lead">Push'larında şu imzayı gördük — bu sen misin?</p>
+              {emails.suggestions.map((email) => (
+                <div key={email} className="suggest-row">
+                  <span className="mono">{email}</span>
+                  <div className="spacer" />
+                  <button
+                    type="button"
+                    className="btn-primary btn-sm"
+                    disabled={busy}
+                    onClick={() => run(() => api.claimMyGitEmail(email), 'Onaylanamadı')}
+                  >
+                    Evet, benim
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    disabled={busy}
+                    onClick={() => run(() => api.dismissMyGitEmail(email), 'İşlenemedi')}
+                  >
+                    Ben değilim
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
           <ul className="row-list">
             <li>
@@ -232,12 +263,17 @@ function GitEmailsSection({ platformEmail }: { platformEmail: string }) {
                 <span className="badge badge-neutral">Panel hesabın</span>
               </div>
             </li>
-            {emails?.map((email) => (
+            {emails?.claimed.map((email) => (
               <li key={email}>
                 <div className="row-main">
                   <span className="row-title mono">{email}</span>
                   <div className="spacer" />
-                  <button type="button" className="btn-ghost" onClick={() => remove(email)}>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    disabled={busy}
+                    onClick={() => run(() => api.removeMyGitEmail(email), 'Kaldırılamadı')}
+                  >
                     Kaldır
                   </button>
                 </div>
@@ -245,30 +281,33 @@ function GitEmailsSection({ platformEmail }: { platformEmail: string }) {
             ))}
           </ul>
 
-          <form onSubmit={add} className="stacked-form">
-            <div className="field">
-              <label htmlFor="git-email">Başka bir adres ekle</label>
-              <input
-                id="git-email"
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="ornek@gmail.com"
-                spellCheck={false}
-              />
-            </div>
-            <div className="form-actions">
-              <button type="submit" className="btn-primary" disabled={busy || !input.trim()}>
-                {busy ? 'Ekleniyor...' : 'Ekle'}
-              </button>
-              {error && <p className="error">{error}</p>}
-            </div>
-          </form>
+          {error && <p className="error">{error}</p>}
 
-          <p className="muted" style={{ fontSize: 12 }}>
-            Kendi <code>git config user.email</code> değerini öğrenmek için terminalde{' '}
-            <code>git config user.email</code> çalıştırabilirsin.
-          </p>
+          {!showManual && (
+            <button type="button" className="btn-ghost" onClick={() => setShowManual(true)}>
+              Elle adres ekle
+            </button>
+          )}
+          {showManual && (
+            <form onSubmit={addManually} className="stacked-form">
+              <div className="field">
+                <label htmlFor="git-email">E-posta adresi</label>
+                <input
+                  id="git-email"
+                  type="text"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="ornek@gmail.com"
+                  spellCheck={false}
+                />
+              </div>
+              <div className="form-actions">
+                <button type="submit" className="btn-primary" disabled={busy || !input.trim()}>
+                  {busy ? 'Ekleniyor...' : 'Ekle'}
+                </button>
+              </div>
+            </form>
+          )}
         </div>
       </div>
     </>

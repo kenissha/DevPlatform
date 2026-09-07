@@ -22,6 +22,16 @@ func contextRecordingGitHandler(sawAdmin *bool) http.Handler {
 	})
 }
 
+// subjectRecordingGitHandler captures who the middleware attributed the
+// request to — what gitserver's push path uses to decide whose git
+// signature a commit carries.
+func subjectRecordingGitHandler(sawSubject *string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*sawSubject = gitserver.SubjectFromContext(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+}
+
 func stubGitHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -217,6 +227,35 @@ func TestRequireTokenAndAccess_DoesNotCarryAdminIntoContextForDevelopers(t *test
 	}
 	if sawAdmin {
 		t.Error("gitserver.IsAdmin(ctx) = true for a non-Admin subject, want false")
+	}
+}
+
+// The git server can only learn which commit signature belongs to whom
+// by pairing the signature with the authenticated pusher — so the
+// middleware must hand that identity down, and it must be the verified
+// subject rather than anything the request could have claimed for
+// itself.
+func TestRequireTokenAndAccess_CarriesTheAuthenticatedSubjectIntoContext(t *testing.T) {
+	tokens := NewStore(t.TempDir() + "/git-tokens.json")
+	_, token, err := tokens.Generate("dev-1", "test")
+	if err != nil {
+		t.Fatalf("Generate returned error: %v", err)
+	}
+	accessStore := access.NewStore(t.TempDir() + "/access.json")
+	usersStore := users.NewStore(t.TempDir() + "/users.json")
+
+	var sawSubject string
+	handler := RequireTokenAndAccess(tokens, accessStore, usersStore, subjectRecordingGitHandler(&sawSubject))
+
+	req := newTestRequest("some-repo", "dev-1", token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if sawSubject != "dev-1" {
+		t.Errorf("gitserver.SubjectFromContext(ctx) = %q, want %q", sawSubject, "dev-1")
 	}
 }
 

@@ -1310,6 +1310,31 @@ li.unread {
   gap: 7px;
 }
 
+/* A "we noticed this — is it you?" prompt. Uses the accent tint rather
+ * than a warning colour: nothing is wrong, there is just a question
+ * waiting for one click. */
+.suggest-box {
+  margin: 14px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+}
+.suggest-lead {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--text-strong);
+}
+.suggest-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.suggest-row + .suggest-row {
+  margin-top: 8px;
+}
+
 /* --------------------------------------------- contribution heatmap */
 
 /* Sized so a full year (53 columns) fits beside the 300px rail without

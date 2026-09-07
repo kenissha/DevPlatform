@@ -46,7 +46,13 @@ func main() {
 	}
 	log.Printf("repository store ready at %s (%d repos)", cfg.DataDir, len(repos))
 
-	gitHandler := gitserver.NewHandler(cfg.DataDir)
+	// Declared before the git handler because the handler reports commit
+	// author signatures into it during a push — that push-time
+	// observation is the only place the platform can learn which git
+	// address belongs to whom (see internal/gitemails).
+	gitEmailStore := gitemails.NewStore(filepath.Join(cfg.DataDir, "git-emails.json"))
+
+	gitHandler := gitserver.NewHandler(cfg.DataDir, gitEmailStore)
 	jwtSecret := []byte(cfg.JWTSecret)
 	authMiddleware := func(next http.Handler) http.Handler {
 		return auth.RequireAuth(jwtSecret, next)
@@ -97,11 +103,6 @@ func main() {
 	}
 	repoHandlers := &repoapi.Handlers{Repos: store, Audit: auditLogger, Access: accessStore}
 	gitTokenHandlers := &gittoken.Handlers{Store: gitTokenStore}
-	// The extra git author addresses a person commits under, so the
-	// panel's contribution graph can match commits whose author email
-	// isn't the one their platform account carries (see
-	// internal/gitemails).
-	gitEmailStore := gitemails.NewStore(filepath.Join(cfg.DataDir, "git-emails.json"))
 	gitEmailHandlers := &gitemails.Handlers{Store: gitEmailStore}
 	taskHandlers := &taskboard.Handlers{
 		Store:  taskboard.NewStore(filepath.Join(cfg.DataDir, "tasks")),

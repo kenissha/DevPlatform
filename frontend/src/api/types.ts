@@ -129,6 +129,15 @@ export interface Contributions {
   total: number
 }
 
+// A person's git author addresses — mirrors backend/internal/gitemails.
+// claimed: confirmed as theirs, counted in their contribution graph.
+// suggestions: signatures the git server saw on their own pushes,
+// waiting for a one-click yes/no. Nobody has to type an address.
+export interface GitEmails {
+  claimed: string[]
+  suggestions: string[]
+}
+
 export type TaskStatus = 'in_progress' | 'awaiting_test' | 'done'
 
 export interface Task {

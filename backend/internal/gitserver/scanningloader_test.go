@@ -19,7 +19,7 @@ func TestPush_ContainingSecret_IsRejected(t *testing.T) {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 
-	srv := httptest.NewServer(NewHandler(dataDir))
+	srv := httptest.NewServer(NewHandler(dataDir, nil))
 	defer srv.Close()
 
 	work := t.TempDir()
@@ -67,7 +67,7 @@ func TestPush_WithoutSecret_StillSucceeds(t *testing.T) {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 
-	srv := httptest.NewServer(NewHandler(dataDir))
+	srv := httptest.NewServer(NewHandler(dataDir, nil))
 	defer srv.Close()
 
 	work := t.TempDir()

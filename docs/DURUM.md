@@ -441,10 +441,31 @@ gözetimli yapılacak birer adım.
   tanımla" çözümünün aynısı eklendi: Hesabım sayfasında kişi kendi
   commit adreslerini ekliyor, `Contributions` panel e-postası **artı**
   bu listeyle eşleştiriyor (`gitstats.ActivityByAuthors`).
-  Uçlar: `GET/POST /api/me/git-emails`, `DELETE /api/me/git-emails?email=`
-  — üçü de sadece çağıranın kendi listesini görüyor/değiştiriyor, URL'de
+  Uçlar: `GET/POST /api/me/git-emails`,
+  `POST /api/me/git-emails/dismiss`, `DELETE /api/me/git-emails?email=`
+  — hepsi sadece çağıranın kendi listesini görüyor/değiştiriyor, URL'de
   subject taşınmıyor, bu yüzden admin yetkisi de gerekmiyor (kişisel
   ayar, yönetimsel değil).
+
+  **Kimse elle adres yazmıyor — platform soruyor, kişi onaylıyor.**
+  Push anında iki bilgi aynı anda elimizde: push'u kimin yaptığı (git
+  token'ıyla doğrulanmış) ve gelen commit'lerin üstündeki imza. Bağ
+  ancak burada kurulabilir. `internal/gitserver`'daki `authorLoader`
+  (secret taramasıyla aynı `RawObjectWriter` kancası) gelen commit
+  nesnelerinin `author` satırını okuyup `gitemails.RecordSeen` ile
+  "öneri" olarak kaydediyor; kişi panelde ya da Hesabım'da **tek tıkla**
+  "Evet, benim" / "Ben değilim" diyor. Depoda üç liste var:
+  `claimed` (onaylanmış, grafikte sayılır), `seen` (soruldu, bekliyor),
+  `dismissed` ("ben değilim" — bir daha sorulmuyor, aksi halde sonraki
+  push aynı adresi tekrar önerirdi).
+  **Neden otomatik değil:** bir push rutin olarak başkasının
+  commit'lerini de taşır — Ahmet'in branch'ini main'e merge edip push
+  etmek burada istisna değil, normal durum. Otomatik olsa Ahmet'in
+  imzası senin üstüne yazılır ve onun commit'leri senin grafiğinde
+  görünürdü. Push'un kendisi kimin imzasının kime ait olduğunu
+  ayırt edemez; sadece kişi ayırt edebilir.
+  Kayıt tamamen yan etki: `authorLoader` hiçbir koşulda push'u
+  reddetmez/değiştirmez, hatalar loglanıp yutulur.
   **Doğrulama gerekmiyor, bilinçli:** buraya yazılan adres kimseye
   erişim vermiyor ve yeni bir bilgi de açmıyor — kimin ne zaman commit
   attığı zaten katkıda bulunanlar ve denetim kaydı üzerinden her

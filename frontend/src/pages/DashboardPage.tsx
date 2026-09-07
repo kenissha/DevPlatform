@@ -6,6 +6,7 @@ import type {
   AuditEvent,
   Contributions,
   DeploymentRequest,
+  GitEmails,
   MergeRequest,
   Person,
   Task,
@@ -43,6 +44,8 @@ export function DashboardPage() {
   const [events, setEvents] = useState<AuditEvent[] | null>(null)
   const [people, setPeople] = useState<Person[] | null>(null)
   const [contributions, setContributions] = useState<Contributions | null>(null)
+  const [gitEmails, setGitEmails] = useState<GitEmails | null>(null)
+  const [answering, setAnswering] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -74,6 +77,30 @@ export function DashboardPage() {
       .then(setContributions)
       .catch(() => setContributions({ days: [], total: 0 }))
   }, [])
+
+  useEffect(() => {
+    api
+      .listMyGitEmails()
+      .then(setGitEmails)
+      .catch(() => setGitEmails(null))
+  }, [])
+
+  // Answering a suggestion changes which commits count as this person's,
+  // so the graph is refetched alongside the updated lists.
+  async function answerSuggestion(email: string, mine: boolean) {
+    setAnswering(true)
+    try {
+      setGitEmails(mine ? await api.claimMyGitEmail(email) : await api.dismissMyGitEmail(email))
+      if (mine) {
+        setContributions(await api.myContributions())
+      }
+    } catch {
+      // Leaving the prompt in place is the right failure mode: nothing
+      // was lost, and the next click can try again.
+    } finally {
+      setAnswering(false)
+    }
+  }
 
   // subject -> readable name. Falls back to the subject itself so an
   // actor who somehow isn't in the registry still renders as something,
@@ -197,6 +224,36 @@ export function DashboardPage() {
           </div>
           <div className="card">
             <div className="card-body">
+              {/* Asked right here rather than only on Hesabım: this is
+                  where an empty graph is noticed, so this is where the
+                  one thing that fixes it belongs. */}
+              {gitEmails && gitEmails.suggestions.length > 0 && (
+                <div className="suggest-box">
+                  <p className="suggest-lead">Push'larında şu imzayı gördük — bu sen misin?</p>
+                  {gitEmails.suggestions.map((email) => (
+                    <div key={email} className="suggest-row">
+                      <span className="mono">{email}</span>
+                      <div className="spacer" />
+                      <button
+                        type="button"
+                        className="btn-primary btn-sm"
+                        disabled={answering}
+                        onClick={() => answerSuggestion(email, true)}
+                      >
+                        Evet, benim
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        disabled={answering}
+                        onClick={() => answerSuggestion(email, false)}
+                      >
+                        Ben değilim
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
               {contributions === null && <p className="empty-state">Yükleniyor...</p>}
               {contributions && contributions.days.length === 0 && (
                 <p className="empty-state">Katkı geçmişi okunamadı.</p>

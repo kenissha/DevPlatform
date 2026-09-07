@@ -276,7 +276,8 @@ func NewRouter(deps Deps) *http.ServeMux {
 		gitEmails = &gitemails.Handlers{}
 	}
 	mux.Handle("GET /api/me/git-emails", authMiddleware(http.HandlerFunc(gitEmails.ListMine)))
-	mux.Handle("POST /api/me/git-emails", authMiddleware(http.HandlerFunc(gitEmails.AddMine)))
+	mux.Handle("POST /api/me/git-emails", authMiddleware(http.HandlerFunc(gitEmails.ClaimMine)))
+	mux.Handle("POST /api/me/git-emails/dismiss", authMiddleware(http.HandlerFunc(gitEmails.DismissMine)))
 	mux.Handle("DELETE /api/me/git-emails", authMiddleware(http.HandlerFunc(gitEmails.RemoveMine)))
 
 	return mux
