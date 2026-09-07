@@ -1233,13 +1233,6 @@ button:disabled {
   outline: none;
 }
 
-.task-desc {
-  margin-top: 5px;
-  font-size: 13px;
-  color: var(--text-muted);
-  white-space: pre-wrap;
-}
-
 li.urgent {
   box-shadow: inset 3px 0 0 var(--danger);
 }
@@ -2181,6 +2174,42 @@ li.unread {
 /* Status is the most-changed field on a task, so it's a row of targets
  * rather than a dropdown: the current column is readable without opening
  * anything, and moving is one click instead of three. */
+.task-desc {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.task-desc-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Edit / urgent on the left, the destructive one pushed to the far right
+   so it is never the button next to the one you meant to press. */
+.task-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.confirm-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.link-button.danger {
+  color: var(--danger);
+}
+
 .status-picker {
   display: flex;
   flex-wrap: wrap;

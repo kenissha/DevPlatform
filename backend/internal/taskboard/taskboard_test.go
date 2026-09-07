@@ -1,8 +1,11 @@
 package taskboard
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
-func TestCreate_PersistsAndReturnsInProgressTask(t *testing.T) {
+func TestCreate_PersistsAndReturnsATodoTask(t *testing.T) {
 	store := NewStore(t.TempDir())
 
 	task, err := store.Create("intranet-backend", "Fix login bug", "Repro steps...", "dev-1", "dev-1")
@@ -110,7 +113,7 @@ func TestUpdate_ChangesOnlyProvidedFields(t *testing.T) {
 	}
 
 	awaitingTest := StatusAwaitingTest
-	updated, err := store.Update("intranet-backend", created.ID, &awaitingTest, nil, nil)
+	updated, err := store.Update("intranet-backend", created.ID, Changes{Status: &awaitingTest})
 	if err != nil {
 		t.Fatalf("Update returned error: %v", err)
 	}
@@ -123,7 +126,7 @@ func TestUpdate_ChangesOnlyProvidedFields(t *testing.T) {
 
 	urgent := true
 	newAssignee := "dev-2"
-	updated2, err := store.Update("intranet-backend", created.ID, nil, &urgent, &newAssignee)
+	updated2, err := store.Update("intranet-backend", created.ID, Changes{Urgent: &urgent, AssignedTo: &newAssignee})
 	if err != nil {
 		t.Fatalf("second Update returned error: %v", err)
 	}
@@ -154,7 +157,7 @@ func TestUpdate_RejectsInvalidStatus(t *testing.T) {
 	}
 
 	bogus := Status("bogus")
-	_, err = store.Update("intranet-backend", created.ID, &bogus, nil, nil)
+	_, err = store.Update("intranet-backend", created.ID, Changes{Status: &bogus})
 	if err != ErrInvalidStatus {
 		t.Fatalf("err = %v, want ErrInvalidStatus", err)
 	}
@@ -171,7 +174,7 @@ func TestUpdate_AcceptsEveryValidStatus(t *testing.T) {
 
 	for _, status := range []Status{StatusTodo, StatusInProgress, StatusAwaitingTest, StatusDone} {
 		s := status
-		updated, err := store.Update("sample", task.ID, &s, nil, nil)
+		updated, err := store.Update("sample", task.ID, Changes{Status: &s})
 		if err != nil {
 			t.Fatalf("Update to %q failed: %v", status, err)
 		}
@@ -189,7 +192,148 @@ func TestUpdate_RejectsAnUnknownStatus(t *testing.T) {
 	}
 
 	bogus := Status("backlog")
-	if _, err := store.Update("sample", task.ID, &bogus, nil, nil); err == nil {
+	if _, err := store.Update("sample", task.ID, Changes{Status: &bogus}); err == nil {
 		t.Error("Update accepted an unknown status")
+	}
+}
+
+func TestUpdate_EditsTitleAndDescription(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("sample", "Eski başlık", "eski açıklama", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	title, description := "Yeni başlık", "yeni açıklama"
+	updated, err := store.Update("sample", task.ID, Changes{Title: &title, Description: &description})
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+	if updated.Title != "Yeni başlık" || updated.Description != "yeni açıklama" {
+		t.Errorf("got %q / %q, want the new title and description", updated.Title, updated.Description)
+	}
+
+	// The edit has to survive the round trip to disk, not just the return
+	// value — that is the difference between an edit and a mirage.
+	reread, err := store.Get("sample", task.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if reread.Title != "Yeni başlık" {
+		t.Errorf("re-read title = %q, want the new one", reread.Title)
+	}
+}
+
+func TestUpdate_TrimsEditedText(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("sample", "Başlık", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	title := "  boşluklu başlık  "
+	updated, err := store.Update("sample", task.ID, Changes{Title: &title})
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+	if updated.Title != "boşluklu başlık" {
+		t.Errorf("title = %q, want it trimmed", updated.Title)
+	}
+}
+
+// The title is the only thing a board card renders, so a blank one is a
+// card nobody can identify.
+func TestUpdate_RejectsAnEmptyTitle(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("sample", "Başlık", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	for _, blank := range []string{"", "   "} {
+		title := blank
+		if _, err := store.Update("sample", task.ID, Changes{Title: &title}); !errors.Is(err, ErrEmptyTitle) {
+			t.Errorf("Update with title %q = %v, want ErrEmptyTitle", blank, err)
+		}
+	}
+
+	// And the stored task must be untouched by the rejected attempt.
+	reread, err := store.Get("sample", task.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if reread.Title != "Başlık" {
+		t.Errorf("title = %q, want the original after a rejected edit", reread.Title)
+	}
+}
+
+// An omitted field must be left alone, or a UI that only meant to rename
+// something would blank out its description.
+func TestUpdate_LeavesOmittedFieldsAlone(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("sample", "Başlık", "açıklama", "dev-2", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	title := "Yeni başlık"
+	updated, err := store.Update("sample", task.ID, Changes{Title: &title})
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+	if updated.Description != "açıklama" {
+		t.Errorf("description = %q, want it untouched", updated.Description)
+	}
+	if updated.AssignedTo != "dev-2" {
+		t.Errorf("assignedTo = %q, want it untouched", updated.AssignedTo)
+	}
+	if updated.Status != StatusTodo {
+		t.Errorf("status = %q, want it untouched", updated.Status)
+	}
+}
+
+func TestDelete_RemovesTheTask(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("sample", "Silinecek", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	if err := store.Delete("sample", task.ID); err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+	if _, err := store.Get("sample", task.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Get after Delete = %v, want ErrNotFound", err)
+	}
+
+	tasks, err := store.List("sample")
+	if err != nil {
+		t.Fatalf("List failed: %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Errorf("List = %v, want empty after the only task was deleted", tasks)
+	}
+}
+
+// Deleting something already gone reports it rather than succeeding, so a
+// caller working from a stale board learns their view is out of date.
+func TestDelete_ReportsAMissingTask(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if _, err := store.Create("sample", "Var olan", "", "", "dev-1"); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	if err := store.Delete("sample", "0123456789abcdef"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Delete of a missing task = %v, want ErrNotFound", err)
+	}
+}
+
+func TestDelete_RejectsPathTraversalAttempts(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if err := store.Delete("sample", "../../etc/passwd"); !errors.Is(err, ErrInvalidID) {
+		t.Errorf("Delete with a traversal id = %v, want ErrInvalidID", err)
+	}
+	if err := store.Delete("../escape", "0123456789abcdef"); !errors.Is(err, ErrInvalidRepo) {
+		t.Errorf("Delete with a traversal repo = %v, want ErrInvalidRepo", err)
 	}
 }

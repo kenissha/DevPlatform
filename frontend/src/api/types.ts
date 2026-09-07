@@ -90,6 +90,7 @@ export type AuditAction =
   | 'repo.created'
   | 'task.created'
   | 'task.updated'
+  | 'task.deleted'
   | 'merge_request.opened'
   | 'merge_request.approved'
   | 'merge_request.rejected'

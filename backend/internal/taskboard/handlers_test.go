@@ -74,6 +74,7 @@ func newMux(h *Handlers) *http.ServeMux {
 	mux.Handle("GET /api/repos/{repo}/tasks", authMW(http.HandlerFunc(h.List)))
 	mux.Handle("GET /api/repos/{repo}/tasks/{id}", authMW(http.HandlerFunc(h.Get)))
 	mux.Handle("PATCH /api/repos/{repo}/tasks/{id}", authMW(http.HandlerFunc(h.Update)))
+	mux.Handle("DELETE /api/repos/{repo}/tasks/{id}", authMW(http.HandlerFunc(h.Delete)))
 	mux.Handle("GET /api/tasks", authMW(http.HandlerFunc(h.ListAll)))
 	return mux
 }
@@ -424,5 +425,121 @@ func TestUpdate_DoesNotNotifyOnSameAssigneeResend(t *testing.T) {
 	}
 	if len(notifications) != 0 {
 		t.Errorf("got %d notifications for dev-1 on a same-value resend, want 0", len(notifications))
+	}
+}
+
+// ------------------------------------------------------------- delete
+
+// createTaskAs opens a task through the API as subject, so the stored
+// Author is what the delete permission check will actually see.
+func createTaskAs(t *testing.T, mux *http.ServeMux, subject, title string) Task {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"title": title})
+	req := addAuth(httptest.NewRequest(http.MethodPost, "/api/repos/sample/tasks", bytes.NewReader(body)), t, subject, "developer")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want 201, body: %s", rec.Code, rec.Body.String())
+	}
+	var task Task
+	if err := json.Unmarshal(rec.Body.Bytes(), &task); err != nil {
+		t.Fatalf("failed to decode created task: %v", err)
+	}
+	return task
+}
+
+func deleteTaskAs(t *testing.T, mux *http.ServeMux, subject, role, id string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := addAuth(httptest.NewRequest(http.MethodDelete, "/api/repos/sample/tasks/"+id, nil), t, subject, role)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestDelete_AuthorCanDeleteTheirOwnTask(t *testing.T) {
+	h := newTestHandlers(t)
+	mux := newMux(h)
+	task := createTaskAs(t, mux, "dev-1", "Benim görevim")
+
+	if rec := deleteTaskAs(t, mux, "dev-1", "developer", task.ID); rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204, body: %s", rec.Code, rec.Body.String())
+	}
+	if _, err := h.Store.Get("sample", task.ID); err == nil {
+		t.Error("task still readable after a successful delete")
+	}
+}
+
+func TestDelete_AdminCanDeleteSomeoneElsesTask(t *testing.T) {
+	h := newTestHandlers(t)
+	mux := newMux(h)
+	task := createTaskAs(t, mux, "dev-1", "Başkasının görevi")
+
+	if rec := deleteTaskAs(t, mux, "admin-1", "admin", task.ID); rec.Code != http.StatusNoContent {
+		t.Errorf("status = %d, want 204, body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// This is the actual permission boundary: deletion destroys information,
+// so a colleague who merely has access to the repo must not be able to
+// remove work somebody else wrote down.
+func TestDelete_OtherDeveloperIsRefusedAndTheTaskSurvives(t *testing.T) {
+	h := newTestHandlers(t)
+	mux := newMux(h)
+	task := createTaskAs(t, mux, "dev-1", "Dokunma")
+
+	rec := deleteTaskAs(t, mux, "dev-2", "developer", task.ID)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403, body: %s", rec.Code, rec.Body.String())
+	}
+	if _, err := h.Store.Get("sample", task.ID); err != nil {
+		t.Errorf("task was removed despite the 403: %v", err)
+	}
+}
+
+func TestDelete_UnknownTaskIsNotFound(t *testing.T) {
+	h := newTestHandlers(t)
+	mux := newMux(h)
+
+	if rec := deleteTaskAs(t, mux, "dev-1", "admin", "0123456789abcdef"); rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404, body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// ------------------------------------------------------------- editing
+
+func TestUpdate_EditsTitleAndDescriptionThroughTheAPI(t *testing.T) {
+	h := newTestHandlers(t)
+	mux := newMux(h)
+	task := createTaskAs(t, mux, "dev-1", "Eski başlık")
+
+	body, _ := json.Marshal(map[string]string{"title": "Yeni başlık", "description": "yeni açıklama"})
+	req := addAuth(httptest.NewRequest(http.MethodPatch, "/api/repos/sample/tasks/"+task.ID, bytes.NewReader(body)), t, "dev-2", "developer")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body: %s", rec.Code, rec.Body.String())
+	}
+	var updated Task
+	if err := json.Unmarshal(rec.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if updated.Title != "Yeni başlık" || updated.Description != "yeni açıklama" {
+		t.Errorf("got %q / %q, want the edited values", updated.Title, updated.Description)
+	}
+}
+
+func TestUpdate_RejectsAnEmptyTitleThroughTheAPI(t *testing.T) {
+	h := newTestHandlers(t)
+	mux := newMux(h)
+	task := createTaskAs(t, mux, "dev-1", "Başlık")
+
+	body, _ := json.Marshal(map[string]string{"title": "   "})
+	req := addAuth(httptest.NewRequest(http.MethodPatch, "/api/repos/sample/tasks/"+task.ID, bytes.NewReader(body)), t, "dev-1", "developer")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400, body: %s", rec.Code, rec.Body.String())
 	}
 }

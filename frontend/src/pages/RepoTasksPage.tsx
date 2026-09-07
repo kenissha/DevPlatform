@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
+import { useAuth } from '../auth/AuthContext'
 import type { Person, Task, TaskStatus } from '../api/types'
 import { PlusIcon } from '../components/icons'
 import { Modal } from '../components/Modal'
@@ -8,6 +9,7 @@ import { TASK_STATUS_LABELS, TASK_STATUSES, formatDate, formatRelative } from '.
 
 export function RepoTasksPage() {
   const { repo = '' } = useParams<{ repo: string }>()
+  const { user } = useAuth()
   const [tasks, setTasks] = useState<Task[] | null>(null)
   const [people, setPeople] = useState<Person[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -174,8 +176,13 @@ export function RepoTasksPage() {
           task={openTask}
           people={people}
           repo={repo}
+          canDelete={user?.role === 'admin' || openTask.author === user?.subject}
           onClose={() => setOpenTask(null)}
           onChanged={reload}
+          onDeleted={() => {
+            setOpenTask(null)
+            reload()
+          }}
         />
       )}
     </div>
@@ -273,16 +280,23 @@ function TaskDetailPanel({
   task,
   people,
   repo,
+  canDelete,
   onClose,
   onChanged,
+  onDeleted,
 }: {
   task: Task
   people: Person[]
   repo: string
+  canDelete: boolean
   onClose: () => void
   onChanged: () => void
+  onDeleted: () => void
 }) {
   const [error, setError] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   async function patch(changes: Partial<{ status: TaskStatus; urgent: boolean; assignedTo: string }>) {
     setError(null)
@@ -294,15 +308,47 @@ function TaskDetailPanel({
     }
   }
 
+  async function handleDelete() {
+    setBusy(true)
+    setError(null)
+    try {
+      await api.deleteTask(repo, task.id)
+      onDeleted()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Görev silinemedi')
+      setBusy(false)
+    }
+  }
+
+  if (editing) {
+    return (
+      <Modal title="Görevi düzenle" onClose={() => setEditing(false)}>
+        <TaskEditForm
+          repo={repo}
+          task={task}
+          onCancel={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false)
+            onChanged()
+          }}
+        />
+      </Modal>
+    )
+  }
+
   return (
     <Modal title={task.title} onClose={onClose}>
       {error && <p className="error">{error}</p>}
 
-      {task.description && <p className="task-desc">{task.description}</p>}
+      {task.description ? (
+        <p className="task-desc">{task.description}</p>
+      ) : (
+        <p className="task-desc task-desc-empty">Açıklama yok.</p>
+      )}
 
-      {/* The status is what people change most often here, so it's a row
-          of buttons rather than a dropdown: the current column is visible
-          without opening anything, and moving is one click. */}
+      {/* Status is the most-changed field here, so it is a row of targets
+          rather than a dropdown: the current column reads without opening
+          anything, and moving is one click. */}
       <div className="field">
         <span className="field-label">Durum</span>
         <div className="status-picker">
@@ -336,7 +382,10 @@ function TaskDetailPanel({
         </select>
       </label>
 
-      <div className="modal-actions modal-actions-split">
+      <div className="task-actions">
+        <button type="button" className="btn-secondary" onClick={() => setEditing(true)}>
+          Düzenle
+        </button>
         <button
           type="button"
           className={task.urgent ? 'btn-danger' : 'btn-secondary'}
@@ -344,10 +393,101 @@ function TaskDetailPanel({
         >
           {task.urgent ? 'Acili kaldır' : 'Acil işaretle'}
         </button>
-        <p className="row-meta">
-          {task.author} açtı · {formatDate(task.createdAt)}
-        </p>
+        <div className="spacer" />
+        {canDelete &&
+          (confirmingDelete ? (
+            /* Confirmed inline rather than through window.confirm: the task
+               stays on screen behind the question, and the buttons name what
+               they do instead of asking about "this item". */
+            <div className="confirm-inline">
+              <span>Kalıcı olarak silinsin mi?</span>
+              <button type="button" className="btn-danger btn-sm" onClick={handleDelete} disabled={busy}>
+                {busy ? 'Siliniyor...' : 'Evet, sil'}
+              </button>
+              <button
+                type="button"
+                className="btn-secondary btn-sm"
+                onClick={() => setConfirmingDelete(false)}
+                disabled={busy}
+              >
+                Vazgeç
+              </button>
+            </div>
+          ) : (
+            <button type="button" className="link-button danger" onClick={() => setConfirmingDelete(true)}>
+              Sil
+            </button>
+          ))}
       </div>
+
+      <p className="row-meta">
+        {task.author} açtı · {formatDate(task.createdAt)}
+      </p>
     </Modal>
+  )
+}
+
+function TaskEditForm({
+  repo,
+  task,
+  onCancel,
+  onSaved,
+}: {
+  repo: string
+  task: Task
+  onCancel: () => void
+  onSaved: () => void
+}) {
+  const [title, setTitle] = useState(task.title)
+  const [description, setDescription] = useState(task.description)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function save(e: FormEvent) {
+    e.preventDefault()
+    if (!title.trim()) return
+    setSaving(true)
+    setError(null)
+    try {
+      // Only what actually changed is sent. An omitted field is left alone
+      // server-side, so this cannot clobber an edit somebody else made to
+      // the other field while this form sat open.
+      const changes: Partial<{ title: string; description: string }> = {}
+      if (title.trim() !== task.title) changes.title = title.trim()
+      if (description.trim() !== task.description) changes.description = description.trim()
+      if (Object.keys(changes).length > 0) {
+        await api.updateTask(repo, task.id, changes)
+      }
+      onSaved()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Görev kaydedilemedi')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <form onSubmit={save} className="modal-form">
+      <label className="field">
+        <span className="field-label">Başlık</span>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} required autoFocus />
+      </label>
+
+      <label className="field">
+        <span className="field-label">Açıklama</span>
+        <textarea rows={5} value={description} onChange={(e) => setDescription(e.target.value)} />
+      </label>
+
+      {error && <p className="error">{error}</p>}
+
+      <div className="modal-actions">
+        <button type="button" className="btn-secondary" onClick={onCancel} disabled={saving}>
+          Vazgeç
+        </button>
+        <button type="submit" className="btn-primary" disabled={saving || !title.trim()}>
+          {saving ? 'Kaydediliyor...' : 'Kaydet'}
+        </button>
+      </div>
+    </form>
   )
 }

@@ -447,6 +447,36 @@ verildiğinde kişiye haber veren bir şeydi.
   makinede on-access virüs tarayıcısı yeni yazılan dosyayı tutuyor ve
   `os.Rename` "Access is denied" veriyor (testte yakalandı).
 
+- **2026-09-07 güncelleme — görev düzenleme ve silme:** Pano açılalı beri
+  başlık ve açıklama hiç değiştirilemiyordu (`PATCH` sadece durum, acil ve
+  atanan alıyordu) ve silme hiç yoktu — yanlış yazılmış bir görev sonsuza
+  kadar panoda kalıyordu.
+  - `Store.Update` artık `Changes` struct'ı alıyor: beş konumsal pointer
+    kimsenin okuyamayacağı bir çağrı, ve altıncı alan her çağrı yerini
+    tekrar düzenlemek demekti. `nil` alan dokunulmadan bırakılıyor, yani
+    sadece başlığı değiştiren bir istemci açıklamayı silmiyor.
+  - Boş başlık `ErrEmptyTitle` ile reddediliyor ve bu depo katmanında:
+    başlık bir kartta görünen tek şey, boş olursa kimsenin tanıyamayacağı
+    bir kart oluyor. Handler'da değil ki API'nin etrafından dolaşan bir
+    çağrı da yazamasın.
+  - `Store.Delete` gerçek silme, arşiv bayrağı değil. Bu pano bir avuç
+    kişinin akan işini takip ediyor; kimsenin asla temizlemeyeceği bir
+    soft-delete yığını bakım borcu. Kaydın kalması gereken kısmı denetim
+    kaydı tutuyor (`audit.ActionTaskDeleted`, başlık dahil — dosya
+    gittikten sonra var olduğunun tek kanıtı o satır).
+  - **Silme bu paketteki tek yetki sınırı:** `DELETE
+    /api/repos/{repo}/tasks/{id}` sadece görevi açan kişiye ve
+    yöneticiye açık, başkasına 403. Bilgiyi yok eden tek işlem bu;
+    ekibin geri kalanı biten işi "Bitti"ye taşıyor. Router'da
+    admin-gated değil, handler kendi kontrolünü yapıyor çünkü kararı
+    vermek için görevin yazarını okuması gerekiyor.
+  - Panelde: detay modal'ında "Düzenle" (başlık + açıklama ayrı bir
+    modal'da) ve sağ uçta "Sil" — yıkıcı olan, yanlışlıkla basılabilecek
+    düğmenin yanında değil. Onay `window.confirm` değil satır içi:
+    silinecek görev arkada ekranda duruyor ve düğmeler "bu öğe" demek
+    yerine ne yaptıklarını söylüyor. Düzenleme formu sadece gerçekten
+    değişen alanı gönderiyor.
+
 ## Sıradaki iş
 
 **2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`

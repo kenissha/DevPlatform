@@ -175,6 +175,9 @@ func NewRouter(deps Deps) *http.ServeMux {
 	mux.Handle("GET /api/repos/{repo}/tasks", repoScoped(http.HandlerFunc(tasks.List)))
 	mux.Handle("GET /api/repos/{repo}/tasks/{id}", repoScoped(http.HandlerFunc(tasks.Get)))
 	mux.Handle("PATCH /api/repos/{repo}/tasks/{id}", repoScoped(http.HandlerFunc(tasks.Update)))
+	// Not admin-gated at the router: Delete does its own narrower check
+	// (author or admin) because it needs the task's author to make it.
+	mux.Handle("DELETE /api/repos/{repo}/tasks/{id}", repoScoped(http.HandlerFunc(tasks.Delete)))
 
 	// Cross-repo views. These back the dashboard, which answers "who is
 	// working on what" and "what is waiting on me" across every repository

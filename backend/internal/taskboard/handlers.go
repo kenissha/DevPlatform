@@ -164,9 +164,21 @@ func (h *Handlers) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateRequest struct {
-	Status     *Status `json:"status"`
-	Urgent     *bool   `json:"urgent"`
-	AssignedTo *string `json:"assignedTo"`
+	Title       *string `json:"title"`
+	Description *string `json:"description"`
+	Status      *Status `json:"status"`
+	Urgent      *bool   `json:"urgent"`
+	AssignedTo  *string `json:"assignedTo"`
+}
+
+func (r updateRequest) changes() Changes {
+	return Changes{
+		Title:       r.Title,
+		Description: r.Description,
+		Status:      r.Status,
+		Urgent:      r.Urgent,
+		AssignedTo:  r.AssignedTo,
+	}
 }
 
 // Update handles PATCH /api/repos/{repo}/tasks/{id}. Any field omitted
@@ -203,7 +215,7 @@ func (h *Handlers) Update(w http.ResponseWriter, r *http.Request) {
 		previousAssignedTo = previous.AssignedTo
 	}
 
-	task, err := h.Store.Update(repo, id, req.Status, req.Urgent, req.AssignedTo)
+	task, err := h.Store.Update(repo, id, req.changes())
 	if err != nil {
 		h.writeStoreError(w, err)
 		return
@@ -224,6 +236,51 @@ func (h *Handlers) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, task)
 }
 
+// Delete handles DELETE /api/repos/{repo}/tasks/{id}.
+//
+// Unlike every other endpoint in this package it is not open to all
+// comers: deletion is the one action here that destroys information, so
+// it is limited to the person who opened the task and to admins. Anyone
+// else gets 403 — moving a task to "Bitti" is what the rest of the team
+// does with work that is over.
+func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
+	repo := r.PathValue("repo")
+	id := r.PathValue("id")
+	if !h.repoExists(repo) {
+		http.Error(w, "404 repository not found", http.StatusNotFound)
+		return
+	}
+
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		http.Error(w, "401 Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Read it first: the permission check needs the author, and the audit
+	// line needs the title, neither of which survives the delete.
+	task, err := h.Store.Get(repo, id)
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	if user.Role != auth.RoleAdmin && task.Author != user.Subject {
+		http.Error(w, "403 bu görevi sadece açan kişi veya yönetici silebilir", http.StatusForbidden)
+		return
+	}
+
+	if err := h.Store.Delete(repo, id); err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+
+	// The task is gone from disk, so this log line is the only remaining
+	// record that it ever existed — worth keeping the title in it.
+	_ = h.Audit.Log(user.Subject, audit.ActionTaskDeleted, repo, id, "Görev silindi: "+task.Title)
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // statusLabels renders a Status the way the audit log reads it out. The
 // rest of the summary is Turkish prose, so the raw enum value ("awaiting_test")
 // would be the one untranslated token in the sentence.
@@ -238,6 +295,15 @@ var statusLabels = map[Status]string{
 // audit line says what happened rather than just "updated".
 func describeUpdate(req updateRequest) string {
 	parts := []string{}
+	// Titles and descriptions are free text and can be long; the audit line
+	// records that they changed, not what to. The task itself carries the
+	// current value.
+	if req.Title != nil {
+		parts = append(parts, "başlık değişti")
+	}
+	if req.Description != nil {
+		parts = append(parts, "açıklama değişti")
+	}
 	if req.Status != nil {
 		label, ok := statusLabels[*req.Status]
 		if !ok {
@@ -277,6 +343,11 @@ func (h *Handlers) writeStoreError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		http.Error(w, "404 task not found", http.StatusNotFound)
+	case errors.Is(err, ErrEmptyTitle):
+		// Named rather than folded into the generic 400 below: this is the
+		// one store rejection a person can hit by typing, so the panel has
+		// something to show them instead of "Bad Request".
+		http.Error(w, "400 görev başlığı boş olamaz", http.StatusBadRequest)
 	case errors.Is(err, ErrInvalidRepo), errors.Is(err, ErrInvalidID), errors.Is(err, ErrInvalidStatus):
 		http.Error(w, "400 Bad Request", http.StatusBadRequest)
 	default:

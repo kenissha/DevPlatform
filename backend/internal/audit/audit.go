@@ -30,6 +30,7 @@ const (
 	ActionRepoCreated        Action = "repo.created"
 	ActionTaskCreated        Action = "task.created"
 	ActionTaskUpdated        Action = "task.updated"
+	ActionTaskDeleted        Action = "task.deleted"
 	ActionMROpened           Action = "merge_request.opened"
 	ActionMRApproved         Action = "merge_request.approved"
 	ActionMRRejected         Action = "merge_request.rejected"

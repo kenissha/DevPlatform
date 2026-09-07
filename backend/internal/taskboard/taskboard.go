@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -22,6 +23,7 @@ var (
 	ErrInvalidID     = errors.New("taskboard: invalid task id")
 	ErrNotFound      = errors.New("taskboard: not found")
 	ErrInvalidStatus = errors.New("taskboard: invalid status")
+	ErrEmptyTitle    = errors.New("taskboard: title must not be empty")
 )
 
 // validRepoName mirrors repostore's and mergerequest's own name
@@ -201,23 +203,48 @@ func (s *Store) List(repo string) ([]Task, error) {
 // may update any task) — deliberately simpler than merge requests'
 // Admin-gated approve/reject, matching the design doc's lighter-weight
 // framing of the task board versus the review-gated merge flow.
-func (s *Store) Update(repo, id string, status *Status, urgent *bool, assignedTo *string) (Task, error) {
-	if status != nil && !status.valid() {
+// Changes is a partial update: every field is a pointer, and a nil one
+// leaves that part of the task alone. A struct rather than a parameter per
+// field — five positional pointers is a call nobody can read, and adding a
+// sixth would mean touching every caller again.
+type Changes struct {
+	Title       *string
+	Description *string
+	Status      *Status
+	Urgent      *bool
+	AssignedTo  *string
+}
+
+func (s *Store) Update(repo, id string, c Changes) (Task, error) {
+	if c.Status != nil && !c.Status.valid() {
 		return Task{}, ErrInvalidStatus
+	}
+	// A task with no title is unusable: it is the only thing rendered on a
+	// board card, so an empty one becomes a card nobody can identify or
+	// search for. Rejected here rather than in the handler so no caller can
+	// write one by going around the API.
+	if c.Title != nil && strings.TrimSpace(*c.Title) == "" {
+		return Task{}, ErrEmptyTitle
 	}
 
 	task, err := s.Get(repo, id)
 	if err != nil {
 		return Task{}, err
 	}
-	if status != nil {
-		task.Status = *status
+	if c.Title != nil {
+		task.Title = strings.TrimSpace(*c.Title)
 	}
-	if urgent != nil {
-		task.Urgent = *urgent
+	if c.Description != nil {
+		task.Description = strings.TrimSpace(*c.Description)
 	}
-	if assignedTo != nil {
-		task.AssignedTo = *assignedTo
+	if c.Status != nil {
+		task.Status = *c.Status
+	}
+	if c.Urgent != nil {
+		task.Urgent = *c.Urgent
+	}
+	if c.AssignedTo != nil {
+		task.AssignedTo = *c.AssignedTo
 	}
 
 	path, err := s.path(repo, id)
@@ -237,6 +264,29 @@ func (s *Store) Update(repo, id string, status *Status, urgent *bool, assignedTo
 		return Task{}, closeErr
 	}
 	return task, nil
+}
+
+// Delete removes a task for good. Deliberately a real delete rather than
+// an archive flag: this board tracks in-flight work for a handful of
+// people, and a hidden pile of soft-deleted rows is a maintenance cost
+// nobody here would ever collect on. The audit log keeps the record that
+// it happened, which is the part that has to survive.
+//
+// Deleting a task that isn't there returns ErrNotFound rather than
+// succeeding quietly, so a caller working from a stale board learns their
+// view is out of date instead of seeing a phantom success.
+func (s *Store) Delete(repo, id string) error {
+	path, err := s.path(repo, id)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return ErrNotFound
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *Store) path(repo, id string) (string, error) {

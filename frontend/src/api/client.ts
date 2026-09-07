@@ -131,14 +131,28 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ title, description, assignedTo }),
     }),
+  // Every field is optional and an omitted one is left alone server-side,
+  // so a caller that only means to move a card doesn't have to echo the
+  // whole task back and risk clobbering a field it never read.
   updateTask: (
     repo: string,
     id: string,
-    changes: Partial<{ status: TaskStatus; urgent: boolean; assignedTo: string }>,
+    changes: Partial<{
+      title: string
+      description: string
+      status: TaskStatus
+      urgent: boolean
+      assignedTo: string
+    }>,
   ) =>
     request<Task>(`/api/repos/${encodeURIComponent(repo)}/tasks/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body: JSON.stringify(changes),
+    }),
+  // Only the task's author or an admin may delete; anyone else gets 403.
+  deleteTask: (repo: string, id: string) =>
+    request<void>(`/api/repos/${encodeURIComponent(repo)}/tasks/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
     }),
 
   // Cross-repo views, for the dashboard.
