@@ -32,7 +32,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
+
+	"github.com/kenissha/DevPlatform/backend/internal/atomicfile"
 )
 
 var (
@@ -322,29 +323,5 @@ func (s *Store) save(reg registry) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return renameWithRetry(tmpName, s.path)
-}
-
-// renameWithRetry works around a Windows-specific failure this project
-// hits in practice: a file that was just created can still be held open
-// briefly by another process — an on-access virus scanner is the usual
-// culprit, and this machine runs one that was already caught quarantining
-// freshly built binaries (see docs/DURUM.md's 2026-09-03 entry). While it
-// holds the handle, os.Rename onto the target fails with "Access is
-// denied" even though nothing is wrong with either file. The lock clears
-// in milliseconds, so a few short retries turn a spurious failure into a
-// slight delay.
-//
-// Deliberately bounded and still returning the last error: a genuine
-// permission problem must not be retried into an infinite hang, and must
-// still be reported.
-func renameWithRetry(from, to string) error {
-	var err error
-	for attempt := 0; attempt < 8; attempt++ {
-		if err = os.Rename(from, to); err == nil {
-			return nil
-		}
-		time.Sleep(15 * time.Millisecond)
-	}
-	return err
+	return atomicfile.Rename(tmpName, s.path)
 }

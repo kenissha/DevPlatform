@@ -319,10 +319,13 @@ func handleMe(registry *users.Store, displayNames *displaynames.Store) http.Hand
 		}
 
 		resp := meResponse{
-			Subject:     user.Subject,
-			Email:       user.Email,
-			Role:        user.Role,
-			DisplayName: displayNames.Get(user.Subject, user.Email),
+			Subject: user.Subject,
+			Email:   user.Email,
+			Role:    user.Role,
+			// Precedence: an admin override, then whatever the SSO token
+			// carried, then the email. The override wins because it is the
+			// only one a human here deliberately set.
+			DisplayName: displayNames.Get(user.Subject, nameOrEmail(user)),
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -348,6 +351,16 @@ func handleMe(registry *users.Store, displayNames *displaynames.Store) http.Hand
 type userResponse struct {
 	users.User
 	DisplayName string `json:"displayName"`
+}
+
+// nameOrEmail is the fallback shown when no display-name override is
+// set: the name from the SSO token if it sent one, otherwise the address
+// people were always shown before.
+func nameOrEmail(user *auth.User) string {
+	if user.Name != "" {
+		return user.Name
+	}
+	return user.Email
 }
 
 func handleUsers(registry *users.Store, displayNames *displaynames.Store) http.Handler {

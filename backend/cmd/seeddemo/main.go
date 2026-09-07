@@ -31,6 +31,7 @@ import (
 
 	"github.com/kenissha/DevPlatform/backend/internal/deploy"
 	"github.com/kenissha/DevPlatform/backend/internal/deployment"
+	"github.com/kenissha/DevPlatform/backend/internal/displaynames"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/repodesc"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
@@ -209,6 +210,7 @@ func main() {
 	tasks := taskboard.NewStore(filepath.Join(*dataDir, "tasks"))
 	requests := mergerequest.NewStore(filepath.Join(*dataDir, "merge-requests"))
 	registry := users.NewStore(filepath.Join(*dataDir, "users.json"))
+	displayNames := displaynames.NewStore(filepath.Join(*dataDir, "display-names.json"))
 
 	// The assignee picker reads this registry, and it is normally filled
 	// just-in-time as people log in. Nobody is going to log in as these
@@ -221,6 +223,13 @@ func main() {
 		}
 		if _, err := registry.Upsert(p.Subject, p.Email, role); err != nil {
 			log.Fatalf("%s kaydedilemedi: %v", p.Subject, err)
+		}
+		// Without this the panel falls back to the email address for
+		// everyone, and every screen that names a person reads as a list
+		// of mail addresses — which is exactly the thing a display name
+		// exists to avoid.
+		if err := displayNames.Set(p.Subject, p.Name); err != nil {
+			log.Fatalf("%s görünen adı yazılamadı: %v", p.Subject, err)
 		}
 	}
 

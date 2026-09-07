@@ -751,6 +751,35 @@ verildiğinde kişiye haber veren bir şeydi.
   Her iki sayfa da 820px'e daraldı: bunlar okunan sayfalar, tek cümleyi
   ekran boyunca germek satırı okunmaz yapıyor.
 
+- **2026-09-07 güncelleme — isim/logo: "STK Atölye" → `git.tahkim`, ve
+  atomik dosya yazımı tek yerde.**
+
+  Panelin adı `git.tahkim` oldu (topbar, giriş ekranı, sekme başlığı) ve
+  logo, diğer kurum uygulamalarının (OASRapor, MükerrerKontrol) zaten
+  kullandığı **Sigorta Tahkim şimşeği** — `public/favicon.svg`'deki mark.
+  `currentColor` ile çiziliyor, sabit mor yerine: iki temada da doğru
+  okunuyor. `logostk.ico` de yedek favicon olarak eklendi. CLI'ın
+  "STK Atölye (Intranet) kullanıcı adı" istemi de sadeleşti.
+
+  **Sağ üstte artık e-posta değil ad yazıyor.** SSO token'ı sadece
+  subject ve e-posta taşıyordu — `internal/displaynames` zaten bu yüzden
+  vardı. `auth.claims` artık isteğe bağlı bir **`name`** (ve `fullName`)
+  claim'i de okuyor: Intranet-B bir gün ad göndermeye başlarsa panel o
+  gün e-posta göstermeyi bırakıyor, göç de ikinci bir ayar yeri de
+  gerekmeden. Öncelik: yönetici ayarı → token'daki ad → e-posta.
+  `seeddemo` artık görünen adları da yazıyor, yoksa yerelde her ekran bir
+  e-posta listesi gibi duruyordu.
+
+  **`internal/atomicfile`.** JSON depoları geçici dosya yazıp hedefin
+  üstüne rename ediyor; bu makinede on-access virüs tarayıcısı taze
+  dosyayı tuttuğu için rename aralıklı olarak "Access is denied"
+  veriyordu. Önce `gitemails`, sonra `repodesc` kendi özel kopyasını
+  taşıyordu; bugün `displaynames` ve `gittoken` de aynı hataya düşünce
+  paket hâline getirildi. Artık **altı depo da** (gitemails, repodesc,
+  displaynames, gittoken, access, users) `atomicfile.Rename` çağırıyor.
+  Yeniden deneme sınırlı ve son hatayı döndürüyor — gerçek bir izin
+  sorunu hâlâ raporlanıyor, sessizce başarı sayılmıyor.
+
 ## Sıradaki iş
 
 **2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`

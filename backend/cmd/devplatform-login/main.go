@@ -186,7 +186,7 @@ func promptAndLogin() (session, error) {
 	defer in.Close()
 	defer out.Close()
 
-	fmt.Fprint(out, "STK Atölye (Intranet) kullanıcı adı: ")
+	fmt.Fprint(out, "Intranet kullanıcı adın: ")
 	scanner := bufio.NewScanner(in)
 	if !scanner.Scan() {
 		return session{}, fmt.Errorf("kullanıcı adı okunamadı")

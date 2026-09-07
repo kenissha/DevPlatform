@@ -45,12 +45,24 @@ type User struct {
 	Subject string `json:"subject"`
 	Email   string `json:"email"`
 	Role    Role   `json:"role"`
+	// Name is the person's real name, if the issuing system sends one.
+	// Optional: the SSO handoff carried only subject/email when this was
+	// written, which is why internal/displaynames exists at all. Reading
+	// it costs nothing and means the panel stops showing email addresses
+	// the day Intranet-B starts including a name claim — no migration, no
+	// second place to configure.
+	Name string `json:"name,omitempty"`
 }
 
 // claims is the expected shape of the external system's JWT payload.
 type claims struct {
 	Email string `json:"email"`
 	Role  string `json:"role"`
+	// Both spellings are accepted: "name" is the OpenID Connect standard
+	// claim, "fullName" is what some in-house issuers emit. Whichever
+	// arrives, the panel uses it.
+	Name     string `json:"name"`
+	FullName string `json:"fullName"`
 	jwt.RegisteredClaims
 }
 
@@ -146,9 +158,15 @@ func parseAndValidate(tokenString string, secret []byte) (*User, error) {
 		return nil, fmt.Errorf("unknown role claim %q", c.Role)
 	}
 
+	name := strings.TrimSpace(c.Name)
+	if name == "" {
+		name = strings.TrimSpace(c.FullName)
+	}
+
 	return &User{
 		Subject: c.Subject,
 		Email:   c.Email,
 		Role:    role,
+		Name:    name,
 	}, nil
 }

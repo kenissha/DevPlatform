@@ -16,6 +16,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/kenissha/DevPlatform/backend/internal/atomicfile"
 )
 
 var ErrInvalidSubject = errors.New("displaynames: subject must not be empty")
@@ -146,5 +148,6 @@ func (s *Store) save(registry map[string]string) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, s.path)
+	// See internal/atomicfile for why this is not os.Rename.
+	return atomicfile.Rename(tmpName, s.path)
 }

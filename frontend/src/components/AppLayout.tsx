@@ -43,7 +43,9 @@ export function AppLayout() {
       <header className="topbar">
         <Link to="/" className="brand">
           <LogoMark className="brand-mark" />
-          STK Atölye
+          <span className="brand-word">
+            git<span className="brand-dot">.</span>tahkim
+          </span>
         </Link>
         <div className="topbar-spacer" />
         <button

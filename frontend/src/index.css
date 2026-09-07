@@ -228,9 +228,23 @@ code,
 }
 
 .brand-mark {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 21px;
   flex: none;
+  color: var(--accent);
+}
+
+/* Set as a domain, because that is what it is: the platform lives at
+   git.sigortatahkim.org and people type it. The dot carries the accent so
+   the two halves read as one address rather than two words. */
+.brand-word {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.brand-dot {
   color: var(--accent);
 }
 
