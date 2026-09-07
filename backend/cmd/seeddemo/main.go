@@ -20,6 +20,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -28,6 +29,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/kenissha/DevPlatform/backend/internal/deploy"
+	"github.com/kenissha/DevPlatform/backend/internal/deployment"
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/repodesc"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
@@ -143,6 +146,31 @@ var demoRequests = []struct {
 		"bugfix/oturum-zaman-asimi", ahmet},
 }
 
+// Deploy targets, and the IIS site allow-list they have to name.
+//
+// The allow-list is normally an ops-edited file outside the platform, and
+// TargetStore refuses any site that isn't in it — that check is the whole
+// security boundary of the deploy feature, so seeding writes a real file
+// and points the targets at it rather than working around the rule.
+//
+// Nothing here can actually deploy: these sites do not exist on this
+// machine. That is the point — the screens become reviewable without
+// anything becoming runnable.
+var demoSites = []string{
+	"OASRapor - Production",
+	"OASRapor - Test",
+	"Intranet Servis",
+}
+
+var demoTargets = []deployment.Target{
+	{Repo: "oasrapor-frontend", Environment: "production", Recipe: deploy.RecipeNpm,
+		SiteName: "OASRapor - Production", KeepVersions: 5},
+	{Repo: "oasrapor-frontend", Environment: "test", Recipe: deploy.RecipeNpm,
+		SiteName: "OASRapor - Test", KeepVersions: 3},
+	{Repo: "intranet-servis", Environment: "production", Recipe: deploy.RecipeDotnet,
+		SiteName: "Intranet Servis", SecretsTarget: "appsettings.Production.json", KeepVersions: 5},
+}
+
 func main() {
 	dataDir := flag.String("data", "./data", "development data directory to fill")
 	force := flag.Bool("force", false, "seed even if the data directory already holds repositories")
@@ -229,7 +257,35 @@ func main() {
 	}
 	fmt.Printf("  %d inceleme isteği\n", len(demoRequests))
 
-	fmt.Println("\nBitti. Sunucuyu başlatıp panele bakabilirsin.")
+	sitesPath := filepath.Join(*dataDir, "allowed-sites.json")
+	if err := writeJSONFile(sitesPath, demoSites); err != nil {
+		log.Fatalf("izinli site listesi yazılamadı: %v", err)
+	}
+	allowed := map[string]bool{}
+	for _, name := range demoSites {
+		allowed[name] = true
+	}
+	deployTargets := deployment.NewTargetStore(filepath.Join(*dataDir, "deploy-targets.json"))
+	for _, t := range demoTargets {
+		if err := deployTargets.Set(t, allowed); err != nil {
+			log.Fatalf("deploy hedefi yazılamadı (%s/%s): %v", t.Repo, t.Environment, err)
+		}
+	}
+	fmt.Printf("  %d deploy hedefi (+ %d izinli site)\n", len(demoTargets), len(demoSites))
+
+	fmt.Println("\nBitti. Deploy ekranlarının dolu görünmesi için sunucuyu")
+	fmt.Printf("DEVPLATFORM_ALLOWED_SITES_FILE=%s ile başlat.\n", sitesPath)
+}
+
+func writeJSONFile(path string, v any) error {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o640)
 }
 
 // seedHistory builds real commit history in a scratch worktree and pushes

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api, ApiError, type DeployRecipe, type DeployTarget, type ReleaseInfo } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { DeployIcon } from '../components/icons'
@@ -27,6 +28,12 @@ function formatReleaseName(name: string): string {
 export function DeployTargetsPage() {
   const { user } = useAuth()
   const { repos } = useRepos()
+  // ?repo= is how a repo's Deploy page hands its own name over when it
+  // has no target yet. Without it, setting one up meant arriving here,
+  // finding that repo in the dropdown, and remembering which one you came
+  // from — three steps that carry no decision.
+  const [searchParams] = useSearchParams()
+  const presetRepo = searchParams.get('repo') ?? ''
   const [targets, setTargets] = useState<DeployTarget[] | null>(null)
   const [allowedSites, setAllowedSites] = useState<string[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -63,18 +70,39 @@ export function DeployTargetsPage() {
 
       {error && <p className="error">{error}</p>}
 
-      <div className="card">
-        {targets === null && <p className="empty-state">Yükleniyor...</p>}
-        {targets?.length === 0 && <p className="empty-state">Henüz deploy hedefi yok.</p>}
-        {targets && targets.length > 0 && (
+      {targets === null && (
+        <div className="card">
+          <p className="empty-state">Yükleniyor...</p>
+        </div>
+      )}
+      {targets?.length === 0 && (
+        <div className="card">
+          <p className="empty-state">
+            Henüz deploy hedefi yok. Aşağıdan bir repo ve ortam seçerek ilkini tanımlayabilirsin.
+          </p>
+        </div>
+      )}
+
+      {/* Grouped by repository, because that is the unit a person holds in
+          their head ("bu projenin ortamları"), not the flat (repo,
+          environment) pairs the store keys on. */}
+      {targets &&
+        targets.length > 0 &&
+        groupByRepo(targets).map(([repoName, repoTargets]) => (
+          <section key={repoName} className="target-group">
+            <div className="section-title">
+              <h2>{repoName}</h2>
+              <span className="badge badge-neutral">{repoTargets.length} ortam</span>
+              <div className="spacer" />
+              <Link to={`/repos/${encodeURIComponent(repoName)}/deployments`}>Deploy sayfası →</Link>
+            </div>
+            <div className="card">
           <ul className="row-list">
-            {targets.map((t) => (
+            {repoTargets.map((t) => (
               <li key={`${t.repo}/${t.environment}`}>
                 <div className="row-main">
                   <DeployIcon className="muted" />
-                  <span className="row-title">
-                    {t.repo} → {t.environment}
-                  </span>
+                  <span className="row-title">{t.environment}</span>
                   <span className="spacer" />
                   <span className="badge badge-neutral">{t.recipe}</span>
                   <span className="badge badge-neutral">{t.siteName}</span>
@@ -106,8 +134,9 @@ export function DeployTargetsPage() {
               </li>
             ))}
           </ul>
-        )}
-      </div>
+            </div>
+          </section>
+        ))}
 
       <div className="section-title">
         <h2>{editingTarget ? 'Deploy hedefini düzenle' : 'Yeni deploy hedefi'}</h2>
@@ -118,6 +147,7 @@ export function DeployTargetsPage() {
             repos={repos ?? []}
             allowedSites={allowedSites ?? []}
             editingTarget={editingTarget}
+            presetRepo={presetRepo}
             onDone={() => {
               setEditingTarget(null)
               reload()
@@ -128,6 +158,19 @@ export function DeployTargetsPage() {
       </div>
     </div>
   )
+}
+
+// groupByRepo keeps the store's ordering within each repository and
+// orders the repositories themselves alphabetically, so the page does not
+// reshuffle between visits.
+function groupByRepo(targets: DeployTarget[]): [string, DeployTarget[]][] {
+  const byRepo = new Map<string, DeployTarget[]>()
+  for (const t of targets) {
+    const list = byRepo.get(t.repo)
+    if (list) list.push(t)
+    else byRepo.set(t.repo, [t])
+  }
+  return [...byRepo.entries()].sort(([a], [b]) => a.localeCompare(b, 'tr'))
 }
 
 // ReleasesPanel is a per-target, collapsed-by-default section listing the
@@ -291,12 +334,14 @@ function TargetForm({
   repos,
   allowedSites,
   editingTarget,
+  presetRepo,
   onDone,
   onCancel,
 }: {
   repos: string[]
   allowedSites: string[]
   editingTarget?: DeployTarget | null
+  presetRepo?: string
   onDone: () => void
   onCancel?: () => void
 }) {
@@ -318,7 +363,7 @@ function TargetForm({
       setSecretsTarget(editingTarget.secretsTarget ?? '')
       setKeepVersions(editingTarget.keepVersions)
     } else {
-      setRepo('')
+      setRepo(presetRepo ?? '')
       setEnvironment('')
       setRecipe('dotnet')
       setSiteName('')
@@ -326,7 +371,7 @@ function TargetForm({
       setKeepVersions(5)
     }
     setFormError(null)
-  }, [editingTarget])
+  }, [editingTarget, presetRepo])
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()

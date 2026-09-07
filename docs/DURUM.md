@@ -558,6 +558,54 @@ verildiğinde kişiye haber veren bir şeydi.
     aksi hâlde bu sayfayı sonu gelmez bir sayfaya çeviriyordu. Aynı sınır
     branch sayfasındaki commit listesine de kondu.
 
+- **2026-09-07 güncelleme — deploy ekranları ve hedeflerle bağlantısı.**
+
+  **Kimin neyi görebildiği (değişmedi, kayda geçiyor):** deploy *hedefleri*
+  (`/api/deploy-targets`) sadece yönetici — IIS site adlarını da orada
+  gösteriyoruz. Deploy *isteği açmak* ise repoya erişimi olan herkese
+  açık; **onaylamak** yine sadece yönetici. Yani geliştirici "şunu
+  yayınlayalım" diyebiliyor, canlıyı değiştiren tıklamayı yönetici
+  yapıyor.
+
+  **Hedef repo başına bir tane değil, `(repo, ortam)` başına bir tane.**
+  Bir repo aynı anda `production` ve `test` hedefine sahip olabilir; her
+  biri kendi IIS site'ına ve kendi build tarifine gidiyor.
+
+  **İki sayfa birbirini tanımıyordu.** Hedefi olmayan bir repoda deploy
+  sayfası "bir yönetici Deploy Hedefleri sayfasından eklemeli" diyip
+  bırakıyordu: sayfanın adını söylüyor ama oraya götürmüyordu, yönetici
+  çıkıp sayfayı bulup açılır listeden repoyu seçip geri dönüyordu — karar
+  içermeyen üç adım. Artık boş durum doğrudan
+  `/deploy-targets?repo=<repo>` bağlantısı veriyor ve form o repoyla açık
+  geliyor. Hedefler sayfası da repoya göre gruplanıp her grubun başında o
+  reponun deploy sayfasına dönüyor.
+
+  **Deploy sayfası ortam kartlarına dönüştü.** İnsanlar "production'a
+  çıkalım" diye düşünüyor, "form aç, açılır listeden ortam seç" diye
+  değil — sayfa artık ortamdan kuruluyor. Her kartta o ortamın build
+  tarifi, IIS site'ı, saklanan sürüm sayısı, son deploy'un durumu ve
+  "Deploy isteği aç" düğmesi var. Hedef detayları sadece yöneticiye
+  geliyor (uç zaten 403 veriyor), geliştiricide o satırlar hiç
+  çizilmiyor.
+
+  Alttaki kalıcı form modal'a taşındı ve modal **hedefi adıyla yazıyor**:
+  canlı bir siteye giden son ekran, "production hangi site'tı" sorusunun
+  hafızadan cevaplanacağı yer değil. Onay bekleyenler kendi bölümünde
+  ayrı duruyor, geçmiş kendi kutusunda kayıyor.
+
+  **`seeddemo` artık deploy hedefi de yazıyor** — 3 hedef ve bunların
+  gerektirdiği izinli site listesi. İzin listesi normalde platformun
+  dışında, ops'un elindeki bir dosya ve `TargetStore` listede olmayan bir
+  site'ı reddediyor; bu kontrol deploy özelliğinin tüm güvenlik sınırı,
+  o yüzden seed kuralı atlatmak yerine gerçek bir dosya yazıp hedefleri
+  ona bağlıyor. Bu makinede o siteler yok, yani ekranlar
+  incelenebilir hâle geliyor ama hiçbir şey çalıştırılabilir hâle
+  gelmiyor. Sunucuyu şununla başlat:
+
+  ```bash
+  DEVPLATFORM_ALLOWED_SITES_FILE=./data/allowed-sites.json
+  ```
+
 ## Sıradaki iş
 
 **2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`
