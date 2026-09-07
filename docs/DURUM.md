@@ -477,6 +477,43 @@ verildiğinde kişiye haber veren bir şeydi.
     yerine ne yaptıklarını söylüyor. Düzenleme formu sadece gerçekten
     değişen alanı gönderiyor.
 
+- **2026-09-07 güncelleme — `cmd/seeddemo`, yerel demo verisi:** Boş bir
+  platform her ekranı en az bilgi veren hâliyle gösteriyor ve tam da o hâle
+  karşı tasarım yapılamıyor — sıfır branch, sıfır commit, tek kart. Bu araç
+  yerel veri klasörünü inandırıcı içerikle dolduruyor: 3 repo (açıklamalı),
+  gerçek git geçmişi (14/22/9 commit, üçer branch), 3 inceleme isteği,
+  panonun dört sütununa yayılmış 14 görev.
+
+  Sunucunun parçası değil, `cmd/devplatform` onu hiç import etmiyor ve
+  sadece kendisine gösterilen veri klasörüne yazıyor. **İçinde repo olan
+  bir klasöre `-force` olmadan dokunmuyor:** yanlışlıkla gerçek bir
+  kuruluma yöneltilmesi, üretimi uydurma projelerle doldurmak demek olurdu
+  ve bu koruma bir bayrağa mal oluyor.
+
+  ```bash
+  cd backend && go run ./cmd/seeddemo -data ./data
+  ```
+
+  Detaylar, hepsi bilinçli:
+  - Commit geçmişi gerçek `git` ile, geçici bir çalışma klasöründe
+    oluşturulup bare repoya **dosya yolu üzerinden** push'lanıyor — HTTP
+    değil, yani credential helper devrede değil ve main'in branch koruması
+    da atlanıyor. O koruma insan push'unu denetlemek için var, branch'i
+    ilk kez yaratan fikstürü değil.
+  - Commit tarihleri ~9 haftaya yayılıyor ve **her reponun kendi adım
+    kayması** var. İlk denemede üç repo aynı günlere düştü, her dolu gün
+    tam olarak 3 commit aldı ve katkı grafiği tek düz tonda çizildi —
+    grafiğin asıl gösterdiği şey (yoğunluk farkı) hiç görünmüyordu.
+    Şimdi 24 farklı günde 1/2/3 commit var, üç ton birden çıkıyor.
+  - Yazar üç kişi arasında dönüyor, yoksa "kim ne yaptı" panelleri ve
+    katkıda bulunanlar listesi tek isimden ibaret kalıyor.
+  - Görev dağılımı bilinçli olarak dengesiz: bekleyen bitenden fazla, biri
+    atanmamış, ikisi acil. Sütun başına bir kart "kullanılmış" değil
+    "tasarlanmış" görünüyor ve pano dolunca nasıl durduğunu göstermiyor.
+  - Kişiler `users.json`'a yazılıyor: o kayıt normalde giriş anında
+    doluyor, bu üç kişi hiç giriş yapmayacak, yoksa her görev atama
+    listesinin hiç duymadığı bir isme atanmış olurdu.
+
 ## Sıradaki iş
 
 **2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`
