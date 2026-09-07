@@ -306,6 +306,20 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ label }),
     }),
+  // Deliberately outside request(): the install script is served
+  // unauthenticated (the binary carries no secrets — see
+  // backend/internal/logincli), and it 404s until an operator configures
+  // DEVPLATFORM_LOGIN_CLI_PATH. Hesabım only offers the one-line setup
+  // when there is actually something behind it, rather than handing out a
+  // command that would fail.
+  loginCliAvailable: async (): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/devplatform-login/install.ps1')
+      return res.ok
+    } catch {
+      return false
+    }
+  },
   listGitTokens: () => request<GitTokenInfo[]>('/api/me/git-tokens'),
   revokeMyGitToken: (id: string) =>
     request<void>(`/api/me/git-tokens/${encodeURIComponent(id)}`, { method: 'DELETE' }),

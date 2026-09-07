@@ -191,6 +191,15 @@ export function PlusIcon({ className }: IconProps) {
   )
 }
 
+export function TerminalIcon({ className }: IconProps) {
+  return (
+    <svg className={className} {...base} aria-hidden="true">
+      <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" />
+      <path d="M4.5 6.5 6.5 8l-2 1.5M8.5 10h3" />
+    </svg>
+  )
+}
+
 export function CopyIcon({ className }: IconProps) {
   // Two offset sheets — the universal copy motif.
   return (

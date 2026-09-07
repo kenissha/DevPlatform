@@ -645,6 +645,36 @@ verildiğinde kişiye haber veren bir şeydi.
   `?repo=` ile gelindiğinde form doğrudan açık geliyor: niyet zaten belli,
   o tıklamayı kimsenin harcamasına gerek yok.
 
+- **2026-09-07 güncelleme — Hesabım sayfası, kurulum komutu etrafında
+  yeniden yazıldı.**
+
+  Sayfa hâlâ "Yeni anahtar oluştur" formuyla açılıyordu — CLI girişinden
+  (2026-09-07) beri kimsenin basmadığı bir düğme: `devplatform-login`
+  anahtarı kendi üretiyor, önbelleğe alıyor ve aynı anda
+  `git config user.email` ayarını da hizalıyor. Buna karşılık sayfa,
+  insanların gerçekten ihtiyaç duyduğu tek satırlık kurulum komutunu
+  **hiç göstermiyordu**.
+
+  Artık sayfa o komutla açılıyor (kopyalama düğmesiyle) ve ne yaptığını üç
+  maddede söylüyor. Komut sadece `DEVPLATFORM_LOGIN_CLI_PATH` ayarlıysa
+  görünüyor — `api.loginCliAvailable()` install betiğini yoklayıp
+  bakıyor, çünkü ayarlı değilken uç 404 veriyor ve çalışmayacak bir komut
+  göstermek göstermemekten kötü.
+
+  **Kalan şey, insanın üzerinde işlem yaptığı şey:** "Bağlı makineler"
+  listesi ve bir tanesini kesme imkânı. Bu gerçek bir güvenlik kontrolü
+  (kaybolan dizüstü, işten ayrılan kişi), o yüzden duruyor — sadece adı
+  artık ne olduğunu söylüyor.
+
+  Elle anahtar oluşturma bir tık aşağı indi: CLI'ın çalışamayacağı bir
+  makine (build sunucusu) için lazım, ama onunla başlamak olağan yolu
+  istisna gibi gösteriyordu. Aynı şekilde "Elle adres ekle" de.
+
+  "Git e-postaların" bölümü **"Commit imzaların"** oldu ve uzun açıklama
+  metni kalktı: CLI artık iki kimliği kurulumda hizaladığı için bu bölüm
+  bir adım değil, bir yedek — CLI'dan önce atılmış ya da başka yerden
+  push'lanmış commit'ler için.
+
 ## Sıradaki iş
 
 **2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`
