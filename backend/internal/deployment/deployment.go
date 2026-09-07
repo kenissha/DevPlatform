@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -69,9 +70,18 @@ type Request struct {
 	// repoints IIS at a release an earlier deploy already built), so it is
 	// left empty there — the frontend tells the two apart via Kind, not by
 	// SourceBranch being blank.
-	Kind          Kind      `json:"kind,omitempty"`
-	SourceBranch  string    `json:"sourceBranch,omitempty"`
-	Author        string    `json:"author"`
+	Kind         Kind   `json:"kind,omitempty"`
+	SourceBranch string `json:"sourceBranch,omitempty"`
+	Author       string `json:"author"`
+	// Description is why this deploy is being asked for, written by whoever
+	// opened it. Optional. Approving a deploy is the one action here that
+	// changes a live site, and the person approving is often not the person
+	// who knows what changed — "what am I about to publish, and why" should
+	// not have to be reconstructed from a branch name.
+	Description string `json:"description,omitempty"`
+	// DecisionNote is the admin's reason, recorded when a request is
+	// rejected. Empty on approval and on requests still waiting.
+	DecisionNote  string    `json:"decisionNote,omitempty"`
 	Status        Status    `json:"status"`
 	ReleaseDir    string    `json:"releaseDir,omitempty"`
 	FailureReason string    `json:"failureReason,omitempty"`
@@ -107,7 +117,7 @@ func NewStore(rootDir string) *Store {
 }
 
 // Create persists a new, StatusPending request.
-func (s *Store) Create(repo, environment, sourceBranch, author string) (Request, error) {
+func (s *Store) Create(repo, environment, sourceBranch, description, author string) (Request, error) {
 	if !validRepoName.MatchString(repo) {
 		return Request{}, ErrInvalidRepo
 	}
@@ -115,6 +125,7 @@ func (s *Store) Create(repo, environment, sourceBranch, author string) (Request,
 		Repo:         repo,
 		Environment:  environment,
 		SourceBranch: sourceBranch,
+		Description:  strings.TrimSpace(description),
 		Author:       author,
 		Status:       StatusPending,
 		CreatedAt:    time.Now().UTC(),
@@ -281,6 +292,41 @@ func (s *Store) Claim(repo, id string) error {
 // mergerequest's own "approved/rejected exactly once" invariant (there,
 // ErrNotOpen). It shares Claim's lock, so the claim-then-decide pair a
 // deploy performs can't interleave with another caller's.
+// Reject marks a pending request rejected and records the admin's
+// optional reason.
+//
+// A sibling of Decide rather than a sixth parameter on it: Decide is also
+// the path a running deploy takes to record its own outcome, where a
+// reviewer's note has no meaning. Keeping them apart stops "why was this
+// rejected" and "why did the build fail" from sharing one field.
+//
+// Only a still-pending request can be rejected. Decide deliberately also
+// accepts StatusInProgress — that is how a running deploy writes its
+// result — but rejecting a build that is already running would record a
+// decision the deploy is about to overwrite.
+func (s *Store) Reject(repo, id, note string) (Request, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	req, err := s.get(repo, id)
+	if err != nil {
+		return Request{}, err
+	}
+	if req.Status != StatusPending {
+		return Request{}, ErrNotPending
+	}
+
+	req.Status = StatusRejected
+	req.DecisionNote = strings.TrimSpace(note)
+	decidedAt := time.Now().UTC()
+	req.DecidedAt = &decidedAt
+
+	if err := s.write(req); err != nil {
+		return Request{}, err
+	}
+	return req, nil
+}
+
 func (s *Store) Decide(repo, id string, status Status, releaseDir, failureReason string) (Request, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -209,10 +209,10 @@ export const api = {
     request<string[]>(`/api/repos/${encodeURIComponent(repo)}/deploy-targets`),
   listDeployments: (repo: string) =>
     request<DeploymentRequest[]>(`/api/repos/${encodeURIComponent(repo)}/deployments`),
-  createDeployment: (repo: string, environment: string, sourceBranch: string) =>
+  createDeployment: (repo: string, environment: string, sourceBranch: string, description = '') =>
     request<DeploymentRequest>(`/api/repos/${encodeURIComponent(repo)}/deployments`, {
       method: 'POST',
-      body: JSON.stringify({ environment, sourceBranch }),
+      body: JSON.stringify({ environment, sourceBranch, description }),
     }),
   getDeployment: (repo: string, id: string) =>
     request<DeploymentRequest>(`/api/repos/${encodeURIComponent(repo)}/deployments/${encodeURIComponent(id)}`),
@@ -221,10 +221,12 @@ export const api = {
       `/api/repos/${encodeURIComponent(repo)}/deployments/${encodeURIComponent(id)}/approve`,
       { method: 'POST' },
     ),
-  rejectDeployment: (repo: string, id: string) =>
+  // note is optional but travels to the author in their notification, so a
+  // rejection without one is a deploy that gets reopened unchanged.
+  rejectDeployment: (repo: string, id: string, note = '') =>
     request<DeploymentRequest>(
       `/api/repos/${encodeURIComponent(repo)}/deployments/${encodeURIComponent(id)}/reject`,
-      { method: 'POST' },
+      { method: 'POST', body: JSON.stringify({ note }) },
     ),
   listAllDeployments: (status?: DeploymentStatus) =>
     request<DeploymentRequest[]>(`/api/deployments${status ? `?status=${status}` : ''}`),

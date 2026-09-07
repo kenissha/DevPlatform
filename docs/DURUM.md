@@ -606,6 +606,45 @@ verildiğinde kişiye haber veren bir şeydi.
   DEVPLATFORM_ALLOWED_SITES_FILE=./data/allowed-sites.json
   ```
 
+- **2026-09-07 güncelleme — deploy isteğine açıklama, ret gerekçesi ve
+  hedef formunun modal'a taşınması.**
+
+  **Çift görünme hatası.** Onay bekleyen bir istek hem "Onay bekleyenler"
+  hem "Geçmiş" bölümünde çıkıyordu — aynı ekranda iki kez. Geçmiş artık
+  bekleyenleri hariç tutuyor.
+
+  **Deploy isteğinin açıklaması yoktu.** Onaylamak bu platformda canlı bir
+  siteyi değiştiren tek eylem, ve onaylayan kişi çoğu zaman neyin
+  değiştiğini bilen kişi değil; "ne yayınlıyorum ve neden" sorusunun
+  branch adından yeniden kurulması gerekiyordu. `Request.Description`
+  eklendi, isteği açan yazıyor, onay ekranında görünüyor.
+
+  **Ret gerekçesi de yoktu** — inceleme isteklerinde çözdüğümüz sorunun
+  aynısı. `Request.DecisionNote` eklendi ve bildirimin **mesaj gövdesinde**
+  gidiyor. `Store.Reject`, `Decide`'a altıncı parametre olmak yerine ayrı
+  bir metot: `Decide` aynı zamanda çalışan bir deploy'un kendi sonucunu
+  yazdığı yol ve orada inceleyen notunun anlamı yok — ikisi ayrı kalınca
+  "neden reddedildi" ile "build neden patladı" tek alanı paylaşmıyor.
+  `Reject` sadece `StatusPending` kabul ediyor: çalışmakta olan bir
+  build'i reddetmek, deploy'un birazdan üzerine yazacağı bir karar
+  kaydetmek olurdu.
+
+  Gerekçe alanı düğmelerin **üstünde**, "Reddet"e bastıktan sonra açılan
+  bir kutuda değil: karardan önce yazılan not, gerçekten yazılan nottur.
+
+  **Hedef listesi** aynı renkte rozetlerden oluşan bir sıraydı — build
+  tarifi, IIS site adı ve sürüm sayısı yan yana aynı hapların içindeydi,
+  hangisinin ne olduğu içeriğinden tahmin ediliyordu. Artık etiketli
+  değerler.
+
+  **Hedef formu modal'a taşındı ve `Modal` ikinci bir varyant kazandı.**
+  `variant="panel"`: daha geniş, ikonlu ve alt başlıklı renkli bir başlık
+  bandı olan, içinde bir süre oturulan formlar için. Davranış birebir aynı
+  (Escape, dışına tıklama, odak) — sadece çerçeve değişiyor, yani bir
+  diyalog daha güzel olmak için daha az kullanışlı hâle gelemiyor.
+  `?repo=` ile gelindiğinde form doğrudan açık geliyor: niyet zaten belli,
+  o tıklamayı kimsenin harcamasına gerek yok.
+
 ## Sıradaki iş
 
 **2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`

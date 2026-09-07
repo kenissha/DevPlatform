@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, ApiError, type DeployRecipe, type DeployTarget, type ReleaseInfo } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
-import { DeployIcon } from '../components/icons'
+import { DeployIcon, PlusIcon } from '../components/icons'
+import { Modal } from '../components/Modal'
 import { formatDate } from '../labels'
 import { useRepos } from '../repos/ReposContext'
 
@@ -38,6 +39,9 @@ export function DeployTargetsPage() {
   const [allowedSites, setAllowedSites] = useState<string[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [editingTarget, setEditingTarget] = useState<DeployTarget | null>(null)
+  // One flag for both jobs: the form is the same either way, and
+  // editingTarget decides which of the two it is showing.
+  const [formOpen, setFormOpen] = useState(false)
 
   function reload() {
     Promise.all([api.listDeployTargets(), api.listAllowedSites()])
@@ -50,6 +54,12 @@ export function DeployTargetsPage() {
   }
 
   useEffect(reload, [])
+
+  // Arriving from a repo's Deploy page means the intent is already
+  // decided; opening the form is one click nobody needs to spend.
+  useEffect(() => {
+    if (presetRepo) setFormOpen(true)
+  }, [presetRepo])
 
   if (user?.role !== 'admin') {
     return (
@@ -66,6 +76,16 @@ export function DeployTargetsPage() {
           <h1>Deploy hedefleri</h1>
           <p className="page-subtitle">Hangi repo hangi ortama, hangi IIS site'ına deploy olur</p>
         </div>
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={() => {
+            setEditingTarget(null)
+            setFormOpen(true)
+          }}
+        >
+          <PlusIcon /> Yeni hedef
+        </button>
       </div>
 
       {error && <p className="error">{error}</p>}
@@ -100,21 +120,27 @@ export function DeployTargetsPage() {
           <ul className="row-list">
             {repoTargets.map((t) => (
               <li key={`${t.repo}/${t.environment}`}>
-                <div className="row-main">
-                  <DeployIcon className="muted" />
-                  <span className="row-title">{t.environment}</span>
-                  <span className="spacer" />
-                  <span className="badge badge-neutral">{t.recipe}</span>
-                  <span className="badge badge-neutral">{t.siteName}</span>
-                  {t.secretsTarget && <span className="badge badge-neutral">{t.secretsTarget}</span>}
-                  <span className="badge badge-neutral">{t.keepVersions} sürüm</span>
-                  <button type="button" className="btn-ghost" onClick={() => setEditingTarget(t)}>
+                <div className="target-head">
+                  <DeployIcon className="target-icon" />
+                  <span className="target-env">{t.environment}</span>
+                  <div className="spacer" />
+                  <button type="button" className="btn-secondary btn-sm" onClick={() => {
+                      setEditingTarget(t)
+                      setFormOpen(true)
+                    }}>
                     Düzenle
                   </button>
                   <button
                     type="button"
-                    className="btn-ghost"
+                    className="link-button danger"
                     onClick={async () => {
+                      if (
+                        !confirm(
+                          `${t.repo} → ${t.environment} hedefi silinsin mi? Bu ortama artık deploy isteği açılamaz.`,
+                        )
+                      ) {
+                        return
+                      }
                       try {
                         await api.deleteDeployTarget(t.repo, t.environment)
                         if (editingTarget?.repo === t.repo && editingTarget?.environment === t.environment) {
@@ -129,8 +155,34 @@ export function DeployTargetsPage() {
                     Sil
                   </button>
                 </div>
-                <ReleasesPanel target={t} />
-                <SecretsPanel target={t} />
+
+                {/* Labelled values, not a row of same-coloured badges: the
+                    old layout put the build recipe, an IIS site name and a
+                    version count side by side in identical pills, so which
+                    one was which had to be inferred from the content. */}
+                <dl className="env-card-facts target-facts">
+                  <div>
+                    <dt>Build</dt>
+                    <dd>{t.recipe}</dd>
+                  </div>
+                  <div>
+                    <dt>IIS site'ı</dt>
+                    <dd title={t.siteName}>{t.siteName}</dd>
+                  </div>
+                  <div>
+                    <dt>Saklanan sürüm</dt>
+                    <dd>{t.keepVersions}</dd>
+                  </div>
+                  <div>
+                    <dt>Secrets dosyası</dt>
+                    <dd title={t.secretsTarget}>{t.secretsTarget || '—'}</dd>
+                  </div>
+                </dl>
+
+                <div className="target-panels">
+                  <ReleasesPanel target={t} />
+                  <SecretsPanel target={t} />
+                </div>
               </li>
             ))}
           </ul>
@@ -138,24 +190,38 @@ export function DeployTargetsPage() {
           </section>
         ))}
 
-      <div className="section-title">
-        <h2>{editingTarget ? 'Deploy hedefini düzenle' : 'Yeni deploy hedefi'}</h2>
-      </div>
-      <div className="card">
-        <div className="card-body">
+      {formOpen && (
+        <Modal
+          variant="panel"
+          icon={<DeployIcon />}
+          title={editingTarget ? 'Deploy hedefini düzenle' : 'Yeni deploy hedefi'}
+          subtitle={
+            editingTarget
+              ? `${editingTarget.repo} → ${editingTarget.environment}`
+              : 'Bir ortamın hangi IIS site\'ına, hangi build tarifiyle çıkacağını tanımlar.'
+          }
+          onClose={() => {
+            setFormOpen(false)
+            setEditingTarget(null)
+          }}
+        >
           <TargetForm
             repos={repos ?? []}
             allowedSites={allowedSites ?? []}
             editingTarget={editingTarget}
             presetRepo={presetRepo}
             onDone={() => {
+              setFormOpen(false)
               setEditingTarget(null)
               reload()
             }}
-            onCancel={() => setEditingTarget(null)}
+            onCancel={() => {
+              setFormOpen(false)
+              setEditingTarget(null)
+            }}
           />
-        </div>
-      </div>
+        </Modal>
+      )}
     </div>
   )
 }
@@ -343,7 +409,7 @@ function TargetForm({
   editingTarget?: DeployTarget | null
   presetRepo?: string
   onDone: () => void
-  onCancel?: () => void
+  onCancel: () => void
 }) {
   const [repo, setRepo] = useState('')
   const [environment, setEnvironment] = useState('')
@@ -394,7 +460,7 @@ function TargetForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="stacked-form">
+    <form onSubmit={handleSubmit} className="modal-form">
       {editingTarget ? (
         <div className="field">
           <label>Repo → Ortam</label>
@@ -475,17 +541,16 @@ function TargetForm({
         />
       </div>
 
-      <div className="form-actions">
+      {formError && <p className="error">{formError}</p>}
+
+      <div className="modal-actions">
+        <button type="button" className="btn-secondary" onClick={onCancel} disabled={saving}>
+          Vazgeç
+        </button>
         <button type="submit" className="btn-primary" disabled={saving || !repo || !environment.trim() || !siteName}>
           {saving ? 'Kaydediliyor...' : editingTarget ? 'Güncelle' : 'Kaydet'}
         </button>
-        {editingTarget && (
-          <button type="button" className="btn-ghost" onClick={onCancel}>
-            Vazgeç
-          </button>
-        )}
       </div>
-      {formError && <p className="error">{formError}</p>}
     </form>
   )
 }

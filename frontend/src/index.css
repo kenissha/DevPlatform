@@ -1671,6 +1671,70 @@ button:disabled {
   text-decoration: none;
 }
 
+/* ------------------------------------------------------- deploy hedefleri */
+
+.target-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.target-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.target-env {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.target-facts {
+  margin-top: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.target-panels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.target-panels > * {
+  flex: 1 1 100%;
+}
+
+.deploy-note {
+  width: 100%;
+}
+
+.deploy-decide-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.deploy-decide {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.deploy-desc {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.deploy-desc.is-decision {
+  color: var(--danger);
+  font-style: italic;
+}
+
 /* ---------------------------------------------------------------- tasks */
 
 .task-row {
@@ -2527,34 +2591,92 @@ li.unread {
   z-index: 100;
 }
 
+/* The compact dialog: a decision, or a field or two. */
 .modal {
   display: flex;
   flex-direction: column;
-  gap: 16px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 20px;
   width: 460px;
   max-width: 100%;
   max-height: 85vh;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .modal-header {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   gap: 12px;
-  padding-bottom: 14px;
+  padding: 18px 20px 14px;
   border-bottom: 1px solid var(--border);
+}
+
+.modal-heading {
+  min-width: 0;
+  flex: 1;
 }
 
 .modal-header h3 {
   margin: 0;
   font-size: 15.5px;
   line-height: 1.4;
+}
+
+.modal-body {
+  padding: 18px 20px 20px;
+  overflow-y: auto;
+}
+
+/* The plain dialog carries its own gaps through .modal-form; the panel
+   variant spaces its sections itself. */
+.modal-body.is-plain {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---- panel variant: a form somebody sits inside for a while ---- */
+
+.modal-panel {
+  width: 580px;
+}
+
+/* A tinted header band, so the thing being configured stays named while
+   the form scrolls underneath it. */
+.modal-panel .modal-header {
+  align-items: center;
+  padding: 18px 22px;
+  background: var(--accent-soft);
+  border-bottom-color: var(--accent-border);
+}
+
+.modal-panel .modal-header h3 {
+  font-size: 16px;
+}
+
+.modal-subtitle {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.modal-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+}
+
+.modal-panel .modal-body {
+  padding: 22px;
 }
 
 .modal-form {

@@ -30,8 +30,8 @@ import (
 // deploy request is the one action in this package that actually changes
 // what's running).
 type Handlers struct {
-	Store   *Store
-	Repos   *repostore.Store
+	Store *Store
+	Repos *repostore.Store
 	// Targets is the panel-writable deploy-target store (see
 	// internal/deployment/store.go). Find/Environments below are the same
 	// methods it always had; Set/Delete/List (new) back the admin
@@ -78,6 +78,13 @@ type Handlers struct {
 type createRequest struct {
 	Environment  string `json:"environment"`
 	SourceBranch string `json:"sourceBranch"`
+	Description  string `json:"description"`
+}
+
+// decisionRequest carries the admin's optional reason on a rejection.
+// Same shape and spirit as mergerequest's.
+type decisionRequest struct {
+	Note string `json:"note"`
 }
 
 // Create handles POST /api/repos/{repo}/deployments.
@@ -119,7 +126,7 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, err := h.Store.Create(repo, req.Environment, req.SourceBranch, user.Subject)
+	created, err := h.Store.Create(repo, req.Environment, req.SourceBranch, req.Description, user.Subject)
 	if err != nil {
 		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
 		return
@@ -476,7 +483,15 @@ func (h *Handlers) Reject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	updated, err := h.Store.Decide(repo, id, StatusRejected, "", "")
+	// The reason is optional but, when given, has to reach the author:
+	// a deploy sent back with no explanation gets reopened unchanged.
+	var decision decisionRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&decision)
+	}
+	note := strings.TrimSpace(decision.Note)
+
+	updated, err := h.Store.Reject(repo, id, note)
 	if err != nil {
 		h.writeStoreError(w, err)
 		return
@@ -484,7 +499,11 @@ func (h *Handlers) Reject(w http.ResponseWriter, r *http.Request) {
 
 	_ = h.Audit.Log("system", audit.ActionDeploymentReject, repo, id,
 		"Deploy isteği reddedildi: "+repo+" → "+req.Environment)
-	h.notifyAuthor(req, "Deploy isteğiniz reddedildi: "+repo+" → "+req.Environment)
+	message := "Deploy isteğiniz reddedildi: " + repo + " → " + req.Environment
+	if note != "" {
+		message += " — " + note
+	}
+	h.notifyAuthor(req, message)
 
 	writeJSON(w, http.StatusOK, updated)
 }

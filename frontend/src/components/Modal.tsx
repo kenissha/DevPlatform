@@ -7,12 +7,25 @@ import { useEffect, useRef, type ReactNode } from 'react'
 // Extracted from the task detail panel when a second dialog appeared —
 // two copies of these three keyboard behaviours is exactly where one of
 // them starts silently missing one.
+//
+// Two looks, one shell. The default is a compact dialog for a decision or
+// a field or two. `variant="panel"` is for a form somebody sits inside for
+// a while — wider, with a titled header band that keeps saying what is
+// being configured while they scroll through it. The behaviour is
+// identical; only the frame changes, so a dialog can never be nicer at the
+// cost of being less usable.
 export function Modal({
   title,
+  subtitle,
+  icon,
+  variant = 'dialog',
   onClose,
   children,
 }: {
   title: string
+  subtitle?: string
+  icon?: ReactNode
+  variant?: 'dialog' | 'panel'
   onClose: () => void
   children: ReactNode
 }) {
@@ -30,11 +43,22 @@ export function Modal({
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
+  const isPanel = variant === 'panel'
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+      <div
+        className={isPanel ? 'modal modal-panel' : 'modal'}
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header">
-          <h3>{title}</h3>
+          {isPanel && icon && <span className="modal-icon">{icon}</span>}
+          <div className="modal-heading">
+            <h3>{title}</h3>
+            {subtitle && <p className="modal-subtitle">{subtitle}</p>}
+          </div>
           <button
             type="button"
             className="icon-button"
@@ -46,7 +70,7 @@ export function Modal({
             <CloseGlyph />
           </button>
         </div>
-        {children}
+        <div className={isPanel ? 'modal-body' : 'modal-body is-plain'}>{children}</div>
       </div>
     </div>
   )

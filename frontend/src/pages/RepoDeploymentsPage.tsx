@@ -25,6 +25,7 @@ export function RepoDeploymentsPage() {
   const [openEnvironment, setOpenEnvironment] = useState<string | null>(null)
   const [actingId, setActingId] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [rejectNote, setRejectNote] = useState<Record<string, string>>({})
 
   function reload() {
     Promise.all([api.listDeployments(repo), api.listDeployTargetEnvironments(repo), api.listBranches(repo)])
@@ -56,7 +57,12 @@ export function RepoDeploymentsPage() {
     setActionError(null)
     try {
       if (action === 'approve') await api.approveDeployment(repo, id)
-      else await api.rejectDeployment(repo, id)
+      else await api.rejectDeployment(repo, id, rejectNote[id] ?? '')
+      setRejectNote((prev) => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
       reload()
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'İşlem başarısız')
@@ -66,6 +72,10 @@ export function RepoDeploymentsPage() {
   }
 
   const pending = deployments?.filter((d) => d.status === 'pending') ?? []
+  // The pending section above already shows these in full, with their
+  // decision buttons; leaving them in the history too meant every waiting
+  // request appeared twice on one screen.
+  const history = deployments?.filter((d) => d.status !== 'pending') ?? []
 
   return (
     <div className="page">
@@ -113,25 +123,41 @@ export function RepoDeploymentsPage() {
                   <DeploymentRow deployment={d} />
                   {isAdmin ? (
                     <div className="deploy-decide">
-                      <button
-                        type="button"
-                        className="btn-primary btn-sm"
-                        onClick={() => decide(d.id, 'approve')}
-                        disabled={actingId === d.id}
-                      >
-                        {actingId === d.id ? 'Çalışıyor...' : 'Onayla ve deploy et'}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-danger btn-sm"
-                        onClick={() => decide(d.id, 'reject')}
-                        disabled={actingId === d.id}
-                      >
-                        Reddet
-                      </button>
-                      <span className="deploy-decide-hint">
-                        Onaylayınca build çalışır ve site yeni sürüme çevrilir.
-                      </span>
+                      {/* The reason field sits above the buttons rather
+                          than appearing after clicking Reddet: a note
+                          written before the decision is a note that
+                          actually gets written. */}
+                      <input
+                        type="text"
+                        className="deploy-note"
+                        value={rejectNote[d.id] ?? ''}
+                        onChange={(e) =>
+                          setRejectNote((prev) => ({ ...prev, [d.id]: e.target.value }))
+                        }
+                        placeholder="Reddediyorsan neden? (isteğe bağlı, açan kişiye gider)"
+                        aria-label="Ret gerekçesi"
+                      />
+                      <div className="deploy-decide-actions">
+                        <button
+                          type="button"
+                          className="btn-primary btn-sm"
+                          onClick={() => decide(d.id, 'approve')}
+                          disabled={actingId === d.id}
+                        >
+                          {actingId === d.id ? 'Çalışıyor...' : 'Onayla ve deploy et'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-danger btn-sm"
+                          onClick={() => decide(d.id, 'reject')}
+                          disabled={actingId === d.id}
+                        >
+                          Geri gönder
+                        </button>
+                        <span className="deploy-decide-hint">
+                          Onaylayınca build çalışır ve site yeni sürüme çevrilir.
+                        </span>
+                      </div>
                     </div>
                   ) : (
                     <p className="row-meta">Bir yöneticinin onayı bekleniyor.</p>
@@ -145,16 +171,18 @@ export function RepoDeploymentsPage() {
 
       <div className="section-title">
         <h2>Geçmiş</h2>
-        {deployments && deployments.length > 0 && (
-          <span className="badge badge-neutral">{deployments.length}</span>
-        )}
+        {history.length > 0 && <span className="badge badge-neutral">{history.length}</span>}
       </div>
       <div className="card">
         {deployments === null && <p className="empty-state">Yükleniyor...</p>}
-        {deployments?.length === 0 && <p className="empty-state">Henüz deploy isteği yok.</p>}
-        {deployments && deployments.length > 0 && (
+        {deployments !== null && history.length === 0 && (
+          <p className="empty-state">
+            {pending.length > 0 ? 'Sonuçlanmış bir deploy yok.' : 'Henüz deploy isteği yok.'}
+          </p>
+        )}
+        {history.length > 0 && (
           <ul className="row-list scroll-list">
-            {deployments.map((d) => (
+            {history.map((d) => (
               <li key={d.id}>
                 <DeploymentRow deployment={d} />
               </li>
@@ -273,6 +301,10 @@ function DeploymentRow({ deployment: d }: { deployment: DeploymentRequest }) {
           </>
         )}
       </p>
+      {d.description && <p className="deploy-desc">{d.description}</p>}
+      {d.status === 'rejected' && d.decisionNote && (
+        <p className="deploy-desc is-decision">Geri gönderildi: “{d.decisionNote}”</p>
+      )}
       {d.status === 'deployed' && d.releaseDir && (
         <p className="row-meta">
           <code>{d.releaseDir}</code>
@@ -326,6 +358,7 @@ function NewDeploymentModal({
   onCreated: () => void
 }) {
   const [sourceBranch, setSourceBranch] = useState(branches.includes('main') ? 'main' : branches[0] || '')
+  const [description, setDescription] = useState('')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
@@ -335,7 +368,7 @@ function NewDeploymentModal({
     setCreating(true)
     setCreateError(null)
     try {
-      await api.createDeployment(repo, environment, sourceBranch)
+      await api.createDeployment(repo, environment, sourceBranch, description.trim())
       onCreated()
     } catch (err) {
       setCreateError(err instanceof ApiError ? err.message : 'Deploy isteği oluşturulamadı')
@@ -376,6 +409,18 @@ function NewDeploymentModal({
           <span className="field-hint">
             Bu branch'in son hâli build edilip yeni bir sürüm klasörüne yazılır.
           </span>
+        </label>
+
+        <label className="field">
+          <span className="field-label">
+            Ne çıkıyor? <span className="field-optional">— isteğe bağlı</span>
+          </span>
+          <textarea
+            rows={3}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Onaylayacak kişi ne yayınlandığını buradan anlayacak."
+          />
         </label>
 
         {createError && <p className="error">{createError}</p>}

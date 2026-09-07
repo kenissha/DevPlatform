@@ -2,6 +2,7 @@ package deployment
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -15,7 +16,7 @@ func TestCreate_OmitsDecidedAtFromJSONWhilePending(t *testing.T) {
 	// && ...` check rendered a nonsense "karar: 01 Oca 1" line for every
 	// request that had never been decided.
 	store := NewStore(t.TempDir())
-	created, err := store.Create("intranet-backend", "production", "main", "dev-1")
+	created, err := store.Create("intranet-backend", "production", "main", "", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -32,7 +33,7 @@ func TestCreate_OmitsDecidedAtFromJSONWhilePending(t *testing.T) {
 func TestCreate_PersistsAndReturnsPendingRequest(t *testing.T) {
 	store := NewStore(t.TempDir())
 
-	req, err := store.Create("intranet-backend", "production", "main", "dev-1")
+	req, err := store.Create("intranet-backend", "production", "main", "", "dev-1")
 	if err != nil {
 		t.Fatalf("Create returned error: %v", err)
 	}
@@ -49,7 +50,7 @@ func TestCreate_PersistsAndReturnsPendingRequest(t *testing.T) {
 
 func TestGet_ReturnsCreatedRequest(t *testing.T) {
 	store := NewStore(t.TempDir())
-	created, err := store.Create("intranet-backend", "production", "main", "dev-1")
+	created, err := store.Create("intranet-backend", "production", "main", "", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -110,11 +111,11 @@ func TestGet_ReturnsErrNotFoundForMissingID(t *testing.T) {
 
 func TestList_ReturnsNewestFirst(t *testing.T) {
 	store := NewStore(t.TempDir())
-	first, err := store.Create("intranet-backend", "test", "main", "dev-1")
+	first, err := store.Create("intranet-backend", "test", "main", "", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
-	second, err := store.Create("intranet-backend", "production", "main", "dev-1")
+	second, err := store.Create("intranet-backend", "production", "main", "", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -134,7 +135,7 @@ func TestList_ReturnsNewestFirst(t *testing.T) {
 
 func TestDecide_TransitionsToDeployedAndRecordsReleaseDir(t *testing.T) {
 	store := NewStore(t.TempDir())
-	created, err := store.Create("intranet-backend", "production", "main", "dev-1")
+	created, err := store.Create("intranet-backend", "production", "main", "", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -161,7 +162,7 @@ func TestDecide_TransitionsToDeployedAndRecordsReleaseDir(t *testing.T) {
 
 func TestDecide_RecordsFailureReason(t *testing.T) {
 	store := NewStore(t.TempDir())
-	created, err := store.Create("intranet-backend", "production", "main", "dev-1")
+	created, err := store.Create("intranet-backend", "production", "main", "", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -181,7 +182,7 @@ func TestDecide_RecordsFailureReason(t *testing.T) {
 // concurrent claims may succeed. Run with -race.
 func TestClaim_OnlyOneOfManyConcurrentCallersWins(t *testing.T) {
 	store := NewStore(t.TempDir())
-	created, err := store.Create("intranet-backend", "production", "main", "dev-1")
+	created, err := store.Create("intranet-backend", "production", "main", "", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -223,7 +224,7 @@ func TestClaim_OnlyOneOfManyConcurrentCallersWins(t *testing.T) {
 
 func TestDecide_RecordsOutcomeOfAClaimedRequest(t *testing.T) {
 	store := NewStore(t.TempDir())
-	created, err := store.Create("intranet-backend", "production", "main", "dev-1")
+	created, err := store.Create("intranet-backend", "production", "main", "", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -248,7 +249,7 @@ func TestDecide_RecordsOutcomeOfAClaimedRequest(t *testing.T) {
 
 func TestDecide_RejectsAlreadyDecidedRequest(t *testing.T) {
 	store := NewStore(t.TempDir())
-	created, err := store.Create("intranet-backend", "production", "main", "dev-1")
+	created, err := store.Create("intranet-backend", "production", "main", "", "dev-1")
 	if err != nil {
 		t.Fatalf("Create failed: %v", err)
 	}
@@ -259,5 +260,122 @@ func TestDecide_RejectsAlreadyDecidedRequest(t *testing.T) {
 	_, err = store.Decide("intranet-backend", created.ID, StatusDeployed, "/x", "")
 	if err != ErrNotPending {
 		t.Fatalf("err = %v, want ErrNotPending", err)
+	}
+}
+
+// ------------------------------------------- description & rejection note
+
+func TestCreate_StoresTheDescription(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	req, err := store.Create("sample", "production", "main", "  Hakem raporu düzeltmesi canlıya çıksın.  ", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if req.Description != "Hakem raporu düzeltmesi canlıya çıksın." {
+		t.Errorf("description = %q, want it stored and trimmed", req.Description)
+	}
+
+	reread, err := store.Get("sample", req.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if reread.Description != req.Description {
+		t.Errorf("re-read description = %q, want it to survive the round trip", reread.Description)
+	}
+}
+
+// Requests written before the field existed carry no "description" key;
+// they must read back as empty rather than needing a migration.
+func TestGet_TreatsAMissingDescriptionAsEmpty(t *testing.T) {
+	store := NewStore(t.TempDir())
+	req, err := store.Create("sample", "production", "main", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	reread, err := store.Get("sample", req.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if reread.Description != "" || reread.DecisionNote != "" {
+		t.Errorf("got %q / %q, want both empty", reread.Description, reread.DecisionNote)
+	}
+}
+
+func TestReject_RecordsTheReason(t *testing.T) {
+	store := NewStore(t.TempDir())
+	req, err := store.Create("sample", "production", "main", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	rejected, err := store.Reject("sample", req.ID, "  Önce test ortamında dene.  ")
+	if err != nil {
+		t.Fatalf("Reject failed: %v", err)
+	}
+	if rejected.Status != StatusRejected {
+		t.Errorf("status = %q, want %q", rejected.Status, StatusRejected)
+	}
+	if rejected.DecisionNote != "Önce test ortamında dene." {
+		t.Errorf("decisionNote = %q, want it stored and trimmed", rejected.DecisionNote)
+	}
+	if rejected.DecidedAt == nil {
+		t.Error("decidedAt is nil, want it stamped")
+	}
+
+	reread, err := store.Get("sample", req.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if reread.DecisionNote != rejected.DecisionNote {
+		t.Errorf("re-read note = %q, want it persisted", reread.DecisionNote)
+	}
+}
+
+func TestReject_WorksWithoutAReason(t *testing.T) {
+	store := NewStore(t.TempDir())
+	req, err := store.Create("sample", "production", "main", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	rejected, err := store.Reject("sample", req.ID, "")
+	if err != nil {
+		t.Fatalf("Reject failed: %v", err)
+	}
+	if rejected.Status != StatusRejected || rejected.DecisionNote != "" {
+		t.Errorf("got %q / %q, want rejected with no note", rejected.Status, rejected.DecisionNote)
+	}
+}
+
+// Rejecting a build that is already running would record a decision the
+// deploy is about to overwrite with its own outcome.
+func TestReject_RefusesARequestThatIsAlreadyRunning(t *testing.T) {
+	store := NewStore(t.TempDir())
+	req, err := store.Create("sample", "production", "main", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if err := store.Claim("sample", req.ID); err != nil {
+		t.Fatalf("Claim failed: %v", err)
+	}
+
+	if _, err := store.Reject("sample", req.ID, "geç kaldım"); !errors.Is(err, ErrNotPending) {
+		t.Errorf("Reject of an in-progress request = %v, want ErrNotPending", err)
+	}
+}
+
+func TestReject_RefusesAnAlreadyDecidedRequest(t *testing.T) {
+	store := NewStore(t.TempDir())
+	req, err := store.Create("sample", "production", "main", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if _, err := store.Reject("sample", req.ID, "hayır"); err != nil {
+		t.Fatalf("first Reject failed: %v", err)
+	}
+
+	if _, err := store.Reject("sample", req.ID, "yine hayır"); !errors.Is(err, ErrNotPending) {
+		t.Errorf("second Reject = %v, want ErrNotPending", err)
 	}
 }

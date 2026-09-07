@@ -192,6 +192,10 @@ export interface DeploymentRequest {
   kind?: 'rollback'
   sourceBranch?: string
   author: string
+  // Why this deploy was asked for, written by whoever opened it.
+  description?: string
+  // The admin's reason, recorded when a request is rejected.
+  decisionNote?: string
   status: DeploymentStatus
   releaseDir?: string
   failureReason?: string
