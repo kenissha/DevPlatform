@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
 import { api, ApiError, type AccessRegistry, type DisplayNameRegistry, type Person } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
-import { LockIcon } from '../components/icons'
+import { KeyIcon, LockIcon } from '../components/icons'
 import { useRepos } from '../repos/ReposContext'
 
 // AccessPage is the design doc's Faz 3 "proje bazlı yetkilendirme" admin
-// screen: for each known person, which repos they're restricted to. A
-// person absent from the access registry is unrestricted (sees every
-// repo) — see backend/internal/access's doc comment for why that's the
-// default rather than the other way around.
+// screen. A person absent from the access registry is unrestricted (sees
+// every repo) — see backend/internal/access's doc comment for why that is
+// the default rather than the other way around.
+//
+// One card per person, not two lists. The page used to iterate the same
+// people twice — once for access, once for display names — so changing
+// both for one colleague meant working in two places, and two people who
+// happened to share an email address were indistinguishable in either.
 export function AccessPage() {
   const { user } = useAuth()
   const { repos } = useRepos()
@@ -39,88 +43,193 @@ export function AccessPage() {
     )
   }
 
+  const restrictedCount = people && registry ? people.filter((p) => p.subject in registry).length : 0
+
   return (
     <div className="page">
       <div className="page-header">
         <div className="page-title-group">
-          <h1>Proje erişimi</h1>
-          <p className="page-subtitle">Kişilerin hangi repolara erişebileceğini sınırlayın</p>
+          <h1>Kişiler</h1>
+          <p className="page-subtitle">
+            {people === null
+              ? 'Erişim ve görünen adlar'
+              : `${people.length} kişi` +
+                (restrictedCount > 0 ? ` · ${restrictedCount} tanesi kısıtlı` : ' · hepsi tüm repolara erişiyor')}
+          </p>
         </div>
       </div>
 
       {error && <p className="error">{error}</p>}
 
-      <div className="card">
-        {people === null && <p className="empty-state">Yükleniyor...</p>}
-        {people?.length === 0 && <p className="empty-state">Henüz kimse giriş yapmadı.</p>}
-        {people && people.length > 0 && registry && repos && (
-          <ul className="row-list">
-            {people.map((person) => {
-              const restricted = person.subject in registry
-              const allowed = registry[person.subject] ?? repos
-              const isOpen = openSubject === person.subject
-              return (
-                <li key={person.subject}>
-                  <div className="row-main">
-                    <LockIcon className="muted" />
-                    <span className="row-title">{person.email || person.subject}</span>
-                    <span className="spacer" />
-                    <span className={`badge ${restricted ? 'badge-accent' : 'badge-neutral'}`}>
-                      {restricted ? `${allowed.length} repo` : 'Tüm repolar'}
-                    </span>
-                    <GitTokenRevokeButton subject={person.subject} />
-                    <button type="button" className="btn-ghost" onClick={() => setOpenSubject(isOpen ? null : person.subject)}>
-                      {isOpen ? 'Kapat' : 'Düzenle'}
-                    </button>
-                  </div>
-                  {isOpen && (
-                    <AccessEditor
-                      subject={person.subject}
-                      allRepos={repos}
-                      allowed={allowed}
-                      restricted={restricted}
-                      onChange={reload}
-                    />
-                  )}
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </div>
+      {people === null && (
+        <div className="card">
+          <p className="empty-state">Yükleniyor...</p>
+        </div>
+      )}
+      {people?.length === 0 && (
+        <div className="card">
+          <p className="empty-state">Henüz kimse giriş yapmadı.</p>
+        </div>
+      )}
 
-      <div className="section-title">
-        <h2>Görünen adlar</h2>
-        <p className="page-subtitle">Girişte kullanılan e-posta yerine panelde gösterilecek ad-soyad</p>
-      </div>
-      <div className="card">
-        {people === null && <p className="empty-state">Yükleniyor...</p>}
-        {people && people.length > 0 && displayNames && (
-          <ul className="row-list">
-            {people.map((person) => (
-              <DisplayNameRow
-                key={person.subject}
-                subject={person.subject}
-                fallback={person.email || person.subject}
-                current={displayNames[person.subject]}
-                onChange={reload}
-              />
-            ))}
-          </ul>
-        )}
-      </div>
+      {people && people.length > 0 && registry && repos && (
+        <div className="person-list">
+          {people.map((person) => (
+            <PersonCard
+              key={person.subject}
+              person={person}
+              displayName={displayNames?.[person.subject]}
+              restricted={person.subject in registry}
+              allowed={registry[person.subject] ?? repos}
+              allRepos={repos}
+              isOpen={openSubject === person.subject}
+              onToggle={() => setOpenSubject(openSubject === person.subject ? null : person.subject)}
+              onChange={reload}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
-function GitTokenRevokeButton({ subject }: { subject: string }) {
+function PersonCard({
+  person,
+  displayName,
+  restricted,
+  allowed,
+  allRepos,
+  isOpen,
+  onToggle,
+  onChange,
+}: {
+  person: Person
+  displayName?: string
+  restricted: boolean
+  allowed: string[]
+  allRepos: string[]
+  isOpen: boolean
+  onToggle: () => void
+  onChange: () => void
+}) {
+  const label = displayName || person.email || person.subject
+
+  return (
+    <div className="person-card">
+      <div className="person-head">
+        <span className="person-avatar">{initials(label)}</span>
+        <div className="person-identity">
+          <p className="person-name">{label}</p>
+          {/* The subject id is shown, not just the email: two accounts can
+              carry the same address, and without the id they render as one
+              person twice. */}
+          <p className="person-sub">
+            {person.email && person.email !== label ? `${person.email} · ` : ''}
+            <span className="mono">{person.subject}</span>
+          </p>
+        </div>
+        <span className={`badge ${restricted ? 'badge-accent' : 'badge-neutral'}`}>
+          {restricted ? `${allowed.length} repo` : 'Tüm repolar'}
+        </span>
+      </div>
+
+      <DisplayNameField
+        subject={person.subject}
+        fallback={person.email || person.subject}
+        current={displayName}
+        onChange={onChange}
+      />
+
+      <div className="person-actions">
+        <button type="button" className="btn-secondary btn-sm" onClick={onToggle}>
+          <LockIcon /> {isOpen ? 'Erişimi kapat' : 'Erişimi düzenle'}
+        </button>
+        <div className="spacer" />
+        <RevokeKeysButton subject={person.subject} />
+      </div>
+
+      {isOpen && (
+        <AccessEditor
+          subject={person.subject}
+          allRepos={allRepos}
+          allowed={allowed}
+          restricted={restricted}
+          onChange={onChange}
+        />
+      )}
+    </div>
+  )
+}
+
+function DisplayNameField({
+  subject,
+  fallback,
+  current,
+  onChange,
+}: {
+  subject: string
+  fallback: string
+  current: string | undefined
+  onChange: () => void
+}) {
+  const [name, setName] = useState(current ?? '')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  // Reset when the row's data is refreshed from the server, or an edit
+  // made elsewhere would leave a stale value sitting in this input.
+  useEffect(() => {
+    setName(current ?? '')
+  }, [current])
+
+  const dirty = name.trim() !== (current ?? '')
+
+  async function save() {
+    setSaving(true)
+    setSaveError(null)
+    try {
+      if (name.trim()) await api.setDisplayName(subject, name.trim())
+      else await api.clearDisplayName(subject)
+      onChange()
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : 'Kaydedilemedi')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <label className="person-name-field">
+      <span className="field-label">Görünen ad</span>
+      <span className="person-name-input">
+        <input
+          type="text"
+          value={name}
+          placeholder={fallback}
+          disabled={saving}
+          onChange={(e) => setName(e.target.value)}
+        />
+        {/* The button appears only once there is something to save —
+            a row of idle Kaydet buttons reads as work waiting to be done. */}
+        {dirty && (
+          <button type="button" className="btn-primary btn-sm" disabled={saving} onClick={save}>
+            {saving ? '...' : 'Kaydet'}
+          </button>
+        )}
+      </span>
+      {saveError && <span className="error">{saveError}</span>}
+    </label>
+  )
+}
+
+function RevokeKeysButton({ subject }: { subject: string }) {
   const [revoking, setRevoking] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
 
   async function revoke() {
     if (
       !window.confirm(
-        'Bu kişinin TÜM git anahtarları iptal edilecek ve bütün makinelerinde git erişimi kesilecek. Emin misiniz?',
+        `${subject} kişisinin TÜM git anahtarları iptal edilecek ve bütün makinelerinde git erişimi kesilecek. Emin misiniz?`,
       )
     ) {
       return
@@ -139,10 +248,10 @@ function GitTokenRevokeButton({ subject }: { subject: string }) {
 
   return (
     <>
-      <button type="button" className="btn-ghost" disabled={revoking} onClick={revoke}>
-        Tüm git anahtarlarını iptal et
+      {message && <span className="row-meta-inline">{message}</span>}
+      <button type="button" className="link-button danger" disabled={revoking} onClick={revoke}>
+        <KeyIcon /> Git anahtarlarını iptal et
       </button>
-      {message && <span className="muted">{message}</span>}
     </>
   )
 }
@@ -191,21 +300,28 @@ function AccessEditor({
   }
 
   return (
-    <div className="checkbox-grid">
-      {allRepos.map((repo) => (
-        <label key={repo} className="checkbox-item">
-          <input
-            type="checkbox"
-            checked={allowed.includes(repo)}
-            disabled={saving}
-            onChange={(e) => toggle(repo, e.target.checked)}
-          />
-          {repo}
-        </label>
-      ))}
+    <div className="access-editor">
+      <p className="field-hint">
+        {restricted
+          ? 'Sadece işaretli repoları görebilir.'
+          : 'Şu an tüm repolara erişiyor. Bir repo işaretlediğin an sadece işaretlediklerine iner.'}
+      </p>
+      <div className="checkbox-grid">
+        {allRepos.map((repo) => (
+          <label key={repo} className="checkbox-item">
+            <input
+              type="checkbox"
+              checked={allowed.includes(repo)}
+              disabled={saving}
+              onChange={(e) => toggle(repo, e.target.checked)}
+            />
+            {repo}
+          </label>
+        ))}
+      </div>
       {restricted && (
-        <button type="button" className="btn-ghost" disabled={saving} onClick={clear}>
-          Kısıtlamayı kaldır (tüm repolara erişsin)
+        <button type="button" className="link-button" disabled={saving} onClick={clear}>
+          Kısıtlamayı kaldır — tüm repolara erişsin
         </button>
       )}
       {saveError && <p className="error">{saveError}</p>}
@@ -213,56 +329,8 @@ function AccessEditor({
   )
 }
 
-function DisplayNameRow({
-  subject,
-  fallback,
-  current,
-  onChange,
-}: {
-  subject: string
-  fallback: string
-  current: string | undefined
-  onChange: () => void
-}) {
-  const [name, setName] = useState(current ?? '')
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
-
-  async function save() {
-    setSaving(true)
-    setSaveError(null)
-    try {
-      if (name.trim()) {
-        await api.setDisplayName(subject, name.trim())
-      } else {
-        await api.clearDisplayName(subject)
-      }
-      onChange()
-    } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : 'Kaydedilemedi')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <li>
-      <div className="row-main">
-        <span className="row-title">{fallback}</span>
-        <span className="spacer" />
-        <input
-          type="text"
-          value={name}
-          placeholder={fallback}
-          disabled={saving}
-          onChange={(e) => setName(e.target.value)}
-          className="inline-input"
-        />
-        <button type="button" className="btn-ghost" disabled={saving} onClick={save}>
-          Kaydet
-        </button>
-        {saveError && <span className="error">{saveError}</span>}
-      </div>
-    </li>
-  )
+function initials(label: string): string {
+  const parts = label.trim().split(/\s+/)
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
+  return label.slice(0, 2).toUpperCase()
 }

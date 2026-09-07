@@ -263,6 +263,47 @@ export function DashboardPage() {
               )}
             </div>
           </div>
+
+          {/* Beside the repo rail rather than in a full-width band below
+              the fold: it is a glance, not a document, and the graph above
+              leaves exactly this much room. Six entries, one line each —
+              the full record has its own page, linked in the heading. */}
+          <div className="section-title">
+            <h2>Son hareketler</h2>
+            <div className="spacer" />
+            <Link to="/audit">Tümü →</Link>
+          </div>
+          <div className="card">
+            {events === null && <p className="empty-state">Yükleniyor...</p>}
+            {events?.length === 0 && <p className="empty-state">Henüz bir hareket yok.</p>}
+            {events && events.length > 0 && (
+              <ul className="feed feed-compact">
+                {events.slice(0, 6).map((e, i) => (
+                  <li key={`${e.at}-${i}`}>
+                    <span className={`feed-icon ${ACTION_TONE[e.action] ?? 'tone-neutral'}`}>
+                      {ACTION_ICON[e.action] ?? <AuditIcon />}
+                    </span>
+                    <div className="feed-body">
+                      <p className="feed-text" title={e.summary || e.action}>
+                        {e.summary || e.action}
+                      </p>
+                      <p className="feed-meta">
+                        <strong>{nameOf(e.actor)}</strong>
+                        {e.repo && (
+                          <>
+                            <span>·</span>
+                            <Link to={`/repos/${encodeURIComponent(e.repo)}`}>{e.repo}</Link>
+                          </>
+                        )}
+                        <span>·</span>
+                        {formatRelative(e.at)}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </section>
 
         <aside className="dash-rail">
@@ -318,48 +359,10 @@ export function DashboardPage() {
               </ul>
             )}
           </div>
+
         </aside>
       </div>
 
-      <section>
-        <div className="section-title">
-          <h2>Son hareketler</h2>
-        </div>
-        <div className="card">
-          {events === null && <p className="empty-state">Yükleniyor...</p>}
-          {events?.length === 0 && <p className="empty-state">Henüz bir hareket yok.</p>}
-          {events && events.length > 0 && (
-            <ul className="feed">
-              {events.slice(0, 15).map((e, i) => (
-                <li key={`${e.at}-${i}`}>
-                  <span className={`feed-icon ${ACTION_TONE[e.action] ?? 'tone-neutral'}`}>
-                    {ACTION_ICON[e.action] ?? <AuditIcon />}
-                  </span>
-                  <div className="feed-body">
-                    <p className="feed-text">{e.summary || e.action}</p>
-                    <p className="feed-meta">
-                      <strong>{nameOf(e.actor)}</strong>
-                      {e.repo && (
-                        <>
-                          <span>·</span>
-                          <Link to={`/repos/${encodeURIComponent(e.repo)}`}>{e.repo}</Link>
-                        </>
-                      )}
-                      <span>·</span>
-                      {formatRelative(e.at)}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        {events && events.length > 0 && (
-          <p className="muted" style={{ fontSize: 13 }}>
-            <Link to="/audit">Tüm denetim kaydı →</Link>
-          </p>
-        )}
-      </section>
     </div>
   )
 }

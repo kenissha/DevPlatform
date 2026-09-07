@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { DayCount } from '../api/types'
 
 // A year of commits as a week-per-column grid — the shape a contribution
@@ -31,9 +31,43 @@ function level(count: number, busiest: number): number {
   return 1
 }
 
+function dayLabel(date: Date): string {
+  return date.toLocaleDateString('tr-TR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+}
+
+// Positions the tooltip against the graph's own box rather than the page:
+// the grid scrolls horizontally inside .contrib-scroll, and page
+// coordinates would leave the tooltip behind as soon as it did.
+function hoverFrom(el: HTMLElement, date: Date, count: number): Hovered {
+  const cell = el.getBoundingClientRect()
+  const container = el.closest('.contrib')?.getBoundingClientRect()
+  const originX = container ? container.left : 0
+  const originY = container ? container.top : 0
+  return {
+    label: dayLabel(date),
+    count,
+    x: cell.left - originX + cell.width / 2,
+    y: cell.top - originY,
+  }
+}
+
 type Cell = { key: string; date: Date; count: number } | null
 
+// hovered is the cell the pointer (or keyboard focus) is on, plus where
+// to put its tooltip. The native `title` attribute used to carry this,
+// but a browser tooltip waits about a second before appearing and cannot
+// be styled — on a grid people sweep across to read, that delay means the
+// number is effectively not there.
+type Hovered = { label: string; count: number; x: number; y: number }
+
 export function ContributionGraph({ days }: { days: DayCount[] }) {
+  const [hovered, setHovered] = useState<Hovered | null>(null)
+
   const { weeks, busiest, monthMarks } = useMemo(() => {
     const parsed = days.map((d) => ({
       key: d.date,
@@ -106,11 +140,13 @@ export function ContributionGraph({ days }: { days: DayCount[] }) {
                   <span
                     key={cell.key}
                     className={`contrib-cell lvl-${level(cell.count, busiest)}`}
-                    title={`${cell.date.toLocaleDateString('tr-TR', {
-                      day: 'numeric',
-                      month: 'long',
-                      timeZone: 'UTC',
-                    })} · ${cell.count} commit`}
+                    tabIndex={0}
+                    role="img"
+                    aria-label={`${dayLabel(cell.date)}: ${cell.count} commit`}
+                    onMouseEnter={(e) => setHovered(hoverFrom(e.currentTarget, cell.date, cell.count))}
+                    onFocus={(e) => setHovered(hoverFrom(e.currentTarget, cell.date, cell.count))}
+                    onMouseLeave={() => setHovered(null)}
+                    onBlur={() => setHovered(null)}
                   />
                 ),
               )}
@@ -118,6 +154,13 @@ export function ContributionGraph({ days }: { days: DayCount[] }) {
           ))}
         </div>
       </div>
+      {hovered && (
+        <div className="contrib-tip" style={{ left: hovered.x, top: hovered.y }} role="status">
+          <strong>{hovered.count === 0 ? 'Commit yok' : `${hovered.count} commit`}</strong>
+          <span>{hovered.label}</span>
+        </div>
+      )}
+
       <div className="contrib-legend">
         <span>Az</span>
         {[0, 1, 2, 3, 4].map((l) => (

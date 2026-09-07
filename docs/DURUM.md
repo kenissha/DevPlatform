@@ -675,6 +675,43 @@ verildiğinde kişiye haber veren bir şeydi.
   bir adım değil, bir yedek — CLI'dan önce atılmış ya da başka yerden
   push'lanmış commit'ler için.
 
+- **2026-09-07 güncelleme — Kişiler sayfası, panel yerleşimi ve katkı
+  grafiği tooltip'i.**
+
+  **"Proje erişimi" → "Kişiler".** Sayfa aynı kişi listesini iki kez
+  dolaşıyordu — bir kez erişim için, bir kez görünen adlar için. Bir
+  meslektaş hakkında iki şeyi değiştirmek iki ayrı yerde çalışmak
+  demekti. Artık kişi başına tek kart: ad, erişim ve anahtar iptali bir
+  arada. Kart, e-postanın yanında **subject id'yi de** gösteriyor —
+  aksi hâlde aynı adresi taşıyan iki hesap listede tek kişi gibi
+  görünüyor (aşağıdaki hata tam olarak buydu).
+
+  "Kaydet" düğmesi sadece gerçekten değişiklik varken çıkıyor; boşta
+  bekleyen bir düğme sırası, yapılmayı bekleyen iş gibi okunuyordu.
+
+  **Seed verisindeki gerçek hata.** `seeddemo` kendini `dev` subject'i
+  altında yazıyordu, ama yerel giriş `local-dev` imzalıyor
+  (`LoginPage`). İkisi aynı e-postayı taşıdığı için listelerde ayırt
+  edilemiyorlardı ve panel "Bana atanan görev: 0" diyordu — seed beş
+  görevi "sana" atamış olmasına rağmen. Katkı grafiği doluydu çünkü o
+  e-postayla eşleşiyor, görevler ise subject ile. Seeder artık
+  `local-dev` kullanıyor.
+
+  **Panel:** "Son hareketler" sayfanın altındaki tam genişlik bandından
+  çıkıp sol sütuna, grafiğin altına taşındı — yani repo rayının
+  *yanında* duruyor ve grafiğin bıraktığı boşluğu dolduruyor. Altı
+  kayıt, her biri tek satır (taşarsa kırpılıyor, sarmıyor); tamamı zaten
+  denetim kaydı sayfasında.
+
+  **Katkı grafiği artık kendi tooltip'ini çiziyor.** Sayı `title`
+  özniteliğindeydi: tarayıcı tooltip'i yaklaşık bir saniye bekliyor ve
+  biçimlendirilemiyor — insanların üzerinden süpürerek okuduğu bir
+  ızgarada o gecikme, sayının orada olmaması demek. Kareler artık
+  klavyeyle de gezilebiliyor (`tabIndex`), tooltip odakta da çıkıyor.
+  Konum `.contrib`'e göre hesaplanıyor, sayfaya göre değil: ızgara kendi
+  içinde yatay kayıyor ve sayfa koordinatları tooltip'i geride
+  bırakırdı.
+
 ## Sıradaki iş
 
 **2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`

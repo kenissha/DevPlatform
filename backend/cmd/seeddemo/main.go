@@ -51,7 +51,12 @@ type person struct {
 // frontend/src/auth/devToken.ts), so their own dashboard and contribution
 // graph have something in them rather than being the one empty screen.
 var (
-	me    = person{Subject: "dev", Name: "Rifat Öztürk", Email: "dev@localhost"}
+	// Subject must match what the local dev login signs (see
+	// frontend/src/auth/devToken.ts's caller in LoginPage) — seeding under
+	// a different subject with the same email produced two people who look
+	// identical in every list, and a dashboard reporting no assigned tasks
+	// while the seed had assigned five of them to "you".
+	me    = person{Subject: "local-dev", Name: "Rifat Öztürk", Email: "dev@localhost"}
 	ahmet = person{Subject: "ahmet", Name: "Ahmet Yılmaz", Email: "ahmet@localhost"}
 	elif  = person{Subject: "elif", Name: "Elif Kaya", Email: "elif@localhost"}
 )
