@@ -15,6 +15,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/deploy"
 	"github.com/kenissha/DevPlatform/backend/internal/deployment"
 	"github.com/kenissha/DevPlatform/backend/internal/displaynames"
+	"github.com/kenissha/DevPlatform/backend/internal/repodesc"
 	"github.com/kenissha/DevPlatform/backend/internal/gitemails"
 	"github.com/kenissha/DevPlatform/backend/internal/gitserver"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
@@ -66,6 +67,7 @@ func main() {
 	// internal/access's doc comment for why unrestricted is the default).
 	accessStore := access.NewStore(filepath.Join(cfg.DataDir, "access.json"))
 	displayNamesStore := displaynames.NewStore(filepath.Join(cfg.DataDir, "display-names.json"))
+	repoDescStore := repodesc.NewStore(filepath.Join(cfg.DataDir, "repo-descriptions.json"))
 	// gitTokenStore holds the per-person git credentials that replace the
 	// single shared DEVPLATFORM_GIT_USERNAME/_PASSWORD pair — see
 	// docs/superpowers/specs/2026-08-17-per-user-git-access-design.md.
@@ -101,7 +103,7 @@ func main() {
 		Users:  usersStore,
 		Access: accessStore,
 	}
-	repoHandlers := &repoapi.Handlers{Repos: store, Audit: auditLogger, Access: accessStore}
+	repoHandlers := &repoapi.Handlers{Repos: store, Audit: auditLogger, Access: accessStore, Descriptions: repoDescStore}
 	gitTokenHandlers := &gittoken.Handlers{Store: gitTokenStore}
 	gitEmailHandlers := &gitemails.Handlers{Store: gitEmailStore}
 	taskHandlers := &taskboard.Handlers{

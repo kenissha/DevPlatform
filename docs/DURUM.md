@@ -375,6 +375,48 @@ verildiğinde kişiye haber veren bir şeydi.
 - DevPlatform tarafında değişen hiçbir şey yok; bu not sadece Faz 3'ün
   tamamlandığını kayda geçirmek için burada.
 
+- **2026-09-07 güncelleme — repo açıklamaları ve repo sayfalarının
+  yeniden tasarımı:** Git'te "bu depo ne işe yarıyor" diye bir alan yok
+  (GitHub'ın açıklaması da GitHub'ın veritabanında durur, repoda değil),
+  o yüzden adından anlaşılmayan bir depo onu kuran kişi dışında kimseye
+  bir şey anlatmıyordu. `internal/repodesc` bunu tutuyor — displaynames
+  ile aynı desen: tek JSON dosyası, atomik yazma, her çağrıda diskten
+  taze okuma. Güvenlik sınırı değil, sadece gösterilen metin.
+  - `GET /api/repos` artık `[{name, description}]` döndürüyor (eskiden
+    isim listesiydi). Açıklama her zaman var, olmayanda boş string —
+    frontend "anahtar yok" ile "açıklama yok" ayrımı yapmak zorunda
+    kalmasın.
+  - `POST /api/repos` açıklamayı da alıyor, **repo oluşturulmadan önce**
+    uzunluğu doğruluyor: sonradan reddetseydik çağıran kişi hata görürken
+    diskte oluşmuş bir repo kalırdı ve isim de kapanmış olurdu.
+  - `PUT /api/repos/{repo}/description` — yönetici + repo erişimi.
+    Boş string göndermek siliyor, ayrı bir delete yolu yok.
+  - Sınır rune cinsinden (`repodesc.MaxLength = 200`), bayt değil: Türkçe
+    UTF-8'de çok baytlı, bayt sınırı olsaydı bu platformun asıl
+    kullanıcıları yarı yarıya daha az karakter yazabilirdi.
+
+  **Frontend:** `ReposContext` tek istekten hem `repos` (isim listesi,
+  kenar çubuğu ve seçicilerin istediği şey) hem `descriptions` haritası
+  türetiyor — iki istek yok, iki kaynak da yok.
+
+  Repo listesi kart ızgarası oldu; her kart branch sayısını ve son commit
+  zamanını mevcut uçlardan kendisi dolduruyor. Repo sayfası ise alt alta
+  üç kutudan çıkıp: künye (ad + açıklama + klon adresi) → üç sayaç
+  (branch / açık görev / açık inceleme, hepsi aynı anda o listeye giden
+  kısayol) → **yan yana** iki panel (görevler | inceleme istekleri) →
+  branch'ler (liste değil, sarmalanan chip'ler — kısa isimler öyle daha
+  iyi okunuyor ve hepsi bir bakışta sığıyor) → son commit'ler.
+  Açıklama yerinde düzenleniyor; tek satırlık bir metin için ayrı ayar
+  ekranı açmanın anlamı yok.
+
+  **`git clone http://<sunucu>/...` gitti.** Adres artık sayfanın kendi
+  origin'inden kuruluyor ve yanında kopyalama düğmesi var. Sunucuda
+  tutulan bir ayar yok: okuyan kişi platforma zaten o adresten ulaştı.
+  Aynı sebeple IIS'in arkasında da doğru — backend kendi Host'unu
+  bilmiyor, bkz. 2026-09-03'teki kurulum betiği dersi. Dev sunucusu da
+  artık `/git`'i proxy'liyor, yoksa yerelde gösterilen adres çalışmayan
+  bir adres olurdu.
+
 ## Sıradaki iş
 
 **2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`

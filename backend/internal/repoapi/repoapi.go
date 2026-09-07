@@ -9,14 +9,17 @@ package repoapi
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/go-git/go-git/v6/plumbing"
 
 	"github.com/kenissha/DevPlatform/backend/internal/access"
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
+	"github.com/kenissha/DevPlatform/backend/internal/repodesc"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 )
 
@@ -38,6 +41,18 @@ type Handlers struct {
 	// router level instead, since they operate on a single named repo
 	// rather than a list.
 	Access *access.Store
+	// Descriptions is optional; a nil Store means no repository has a
+	// description and Describe fails (see internal/repodesc — every read
+	// path is nil-safe, so List and Create still work).
+	Descriptions *repodesc.Store
+}
+
+// repoResponse is one row of GET /api/repos. Description is always
+// present, empty when the repo has none, so the frontend never has to
+// distinguish "absent key" from "no description".
+type repoResponse struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 // List handles GET /api/repos.
@@ -56,12 +71,25 @@ func (h *Handlers) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Descriptions are cosmetic: if the store can't be read, the list
+	// still answers, just without them. Failing the whole call would take
+	// the sidebar and every repo picker down with it.
+	descriptions, err := h.Descriptions.List()
+	if err != nil {
+		descriptions = map[string]string{}
+	}
+
 	sort.Strings(names)
-	writeJSON(w, http.StatusOK, names)
+	resp := make([]repoResponse, 0, len(names))
+	for _, name := range names {
+		resp = append(resp, repoResponse{Name: name, Description: descriptions[name]})
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 type createRequest struct {
-	Name string `json:"name"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 // Create handles POST /api/repos. Mount this behind
@@ -77,6 +105,13 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "400 name is required", http.StatusBadRequest)
 		return
 	}
+	// Validated before the repo is created, not after: a description
+	// rejected afterwards would leave a repo on disk that the caller
+	// believes failed to be created.
+	if len([]rune(strings.TrimSpace(req.Description))) > repodesc.MaxLength {
+		http.Error(w, "400 açıklama çok uzun", http.StatusBadRequest)
+		return
+	}
 
 	if _, err := h.Repos.Create(req.Name); err != nil {
 		switch {
@@ -90,14 +125,68 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A failed audit write must not fail the action it records — the repo
-	// already exists on disk by this point, so erroring here would report
-	// a failure that didn't happen.
+	// Neither the description nor the audit write may fail the creation
+	// they belong to — the repo already exists on disk by this point, so
+	// erroring here would report a failure that didn't happen. A lost
+	// description costs a line of text somebody can retype; a lost audit
+	// entry costs a log row.
+	if err := h.Descriptions.Set(req.Name, req.Description); err != nil {
+		log.Printf("repoapi: failed to record description for %q: %v", req.Name, err)
+	}
 	if user, ok := auth.UserFromContext(r.Context()); ok {
 		_ = h.Audit.Log(user.Subject, audit.ActionRepoCreated, req.Name, req.Name, "Repo oluşturuldu")
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]string{"name": req.Name})
+	writeJSON(w, http.StatusCreated, repoResponse{
+		Name:        req.Name,
+		Description: strings.TrimSpace(req.Description),
+	})
+}
+
+type describeRequest struct {
+	Description string `json:"description"`
+}
+
+// Describe handles PUT /api/repos/{repo}/description. Mount this behind
+// auth.RequireRole(auth.RoleAdmin, ...) and access.RequireRepoAccess —
+// this handler checks neither.
+//
+// Unlike Create, this one DOES fail on a store error: setting the
+// description is the entire action, so reporting success without having
+// stored anything would be a lie.
+func (h *Handlers) Describe(w http.ResponseWriter, r *http.Request) {
+	repo := r.PathValue("repo")
+
+	// The repo has to exist. Without this, a typo'd name would silently
+	// accumulate a description for a repository nobody can ever see.
+	if _, err := h.Repos.Open(repo); err != nil {
+		if errors.Is(err, repostore.ErrNotExist) || errors.Is(err, repostore.ErrInvalidName) {
+			http.Error(w, "404 repository not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	var req describeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "400 malformed request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Descriptions.Set(repo, req.Description); err != nil {
+		if errors.Is(err, repodesc.ErrTooLong) {
+			http.Error(w, "400 açıklama çok uzun", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, repoResponse{
+		Name:        repo,
+		Description: h.Descriptions.Get(repo),
+	})
 }
 
 // Branches handles GET /api/repos/{repo}/branches.

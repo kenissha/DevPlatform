@@ -153,6 +153,9 @@ func NewRouter(deps Deps) *http.ServeMux {
 	// (project setup), so it's Admin-only. Branches is repo-scoped.
 	mux.Handle("GET /api/repos", authMiddleware(http.HandlerFunc(repos.List)))
 	mux.Handle("POST /api/repos", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(repos.Create))))
+	// Editing a repo's description is project setup, same category as
+	// creating it — repoScopedAdmin rather than repoScoped.
+	mux.Handle("PUT /api/repos/{repo}/description", repoScopedAdmin(http.HandlerFunc(repos.Describe)))
 	mux.Handle("GET /api/repos/{repo}/branches", repoScoped(http.HandlerFunc(repos.Branches)))
 
 	// Any authenticated user (Developer or Admin) can open a merge request

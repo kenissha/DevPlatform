@@ -6,6 +6,14 @@
 
 export type Role = 'admin' | 'developer'
 
+// A repository as the listing endpoint returns it. Description is always
+// present, empty when the repo has none — the backend normalises that so
+// callers never distinguish "absent" from "blank".
+export interface Repo {
+  name: string
+  description: string
+}
+
 export interface User {
   subject: string
   email: string

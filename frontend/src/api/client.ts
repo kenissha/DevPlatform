@@ -20,6 +20,7 @@ import type {
   Notification,
   Person,
   ReleaseInfo,
+  Repo,
   Task,
   TaskStatus,
   User,
@@ -71,11 +72,18 @@ export const api = {
   me: () => request<User>('/api/me'),
   listPeople: () => request<Person[]>('/api/users'),
 
-  listRepos: () => request<string[]>('/api/repos'),
-  createRepo: (name: string) =>
-    request<{ name: string }>('/api/repos', {
+  listRepos: () => request<Repo[]>('/api/repos'),
+  createRepo: (name: string, description: string) =>
+    request<Repo>('/api/repos', {
       method: 'POST',
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, description }),
+    }),
+  // Admin-only, and the same call clears a description: send an empty
+  // string. There is no separate delete route.
+  setRepoDescription: (repo: string, description: string) =>
+    request<Repo>(`/api/repos/${encodeURIComponent(repo)}/description`, {
+      method: 'PUT',
+      body: JSON.stringify({ description }),
     }),
   listBranches: (repo: string) => request<string[]>(`/api/repos/${encodeURIComponent(repo)}/branches`),
   // Branch detail page's data sources — see backend/internal/gitstats.
@@ -306,6 +314,7 @@ export type {
   Notification,
   Person,
   ReleaseInfo,
+  Repo,
   Task,
   User,
 }

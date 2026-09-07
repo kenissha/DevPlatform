@@ -924,6 +924,251 @@ button:disabled {
   color: var(--success);
 }
 
+/* --------------------------------------------------------- form alanları */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.field-optional {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.field-hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.create-repo-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* The name is short and the description is a sentence, so they get
+   proportional shares of one row rather than a stack of equal boxes. */
+@media (min-width: 640px) {
+  .create-repo-form {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 16px 18px;
+    align-items: start;
+  }
+  .create-repo-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+.create-repo-form input {
+  width: 100%;
+}
+
+.create-repo-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* link-button is a button that reads as a link: used where the action is
+   secondary to the text beside it (editing a description) and a real
+   button would shout. */
+.link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: inherit;
+  font-weight: 500;
+}
+.link-button:hover {
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------- repo genel bakış */
+
+.repo-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  margin-bottom: 22px;
+}
+
+.repo-hero-main {
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.repo-hero h1 {
+  font-size: 21px;
+  letter-spacing: -0.01em;
+}
+
+.repo-desc {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.repo-desc .link-button {
+  margin-left: 8px;
+  font-size: 12px;
+}
+
+.repo-desc-empty .link-button {
+  margin-left: 0;
+}
+
+.repo-desc-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.repo-desc-form input {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.repo-desc-form .error {
+  flex-basis: 100%;
+}
+
+.repo-hero-clone {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 0 1 340px;
+  min-width: 0;
+}
+
+.repo-hero-clone-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Three counters that are also the shortcuts to what they count — the
+   number and the way in are the same target, so there is nothing to hunt
+   for once a number looks wrong. */
+.repo-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.repo-stat {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.repo-stat:hover {
+  text-decoration: none;
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.repo-stat-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.repo-stat-value {
+  font-size: 19px;
+  font-weight: 650;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.repo-stat-label {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+/* The two work queues sit side by side — they are read together ("what is
+   open on this project"), and stacking them pushed the second one below
+   the fold on every screen. */
+.repo-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .repo-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Both columns open with a section heading; without this the default
+   26px top margin pushes them below the grid's own start. */
+.repo-columns .section-title:first-child {
+  margin-top: 0;
+}
+
+.branch-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 16px;
+}
+
+.branch-chip-link {
+  color: var(--text);
+}
+.branch-chip-link:hover {
+  text-decoration: none;
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.branch-chip-tag {
+  margin-left: 2px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border-strong);
+  font-family: var(--sans);
+  font-size: 10.5px;
+  color: var(--warn);
+}
+
+.commit-hash {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.row-meta-inline {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* ---------------------------------------------------------------- tasks */
 
 .task-row {

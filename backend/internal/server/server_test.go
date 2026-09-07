@@ -270,10 +270,7 @@ func TestReposCreate_AllowsAdminThenListReturnsIt(t *testing.T) {
 	if listRec.Code != http.StatusOK {
 		t.Fatalf("list status = %d, want %d", listRec.Code, http.StatusOK)
 	}
-	var names []string
-	if err := json.Unmarshal(listRec.Body.Bytes(), &names); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
+	names := decodeRepoNames(t, listRec.Body.Bytes())
 	if len(names) != 1 || names[0] != "intranet-backend" {
 		t.Errorf("names = %v, want [intranet-backend]", names)
 	}
@@ -642,10 +639,7 @@ func TestAccess_ReposListIsNarrowedForARestrictedDeveloper(t *testing.T) {
 	}
 
 	rec := do(t, router, http.MethodGet, "/api/repos", "dev-1", "developer", nil)
-	var names []string
-	if err := json.Unmarshal(rec.Body.Bytes(), &names); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
+	names := decodeRepoNames(t, rec.Body.Bytes())
 	if len(names) != 1 || names[0] != "intranet-backend" {
 		t.Errorf("names = %v, want [intranet-backend]", names)
 	}
@@ -779,4 +773,22 @@ func TestAccess_AdminCanGrantThenRevokeThroughTheRouter(t *testing.T) {
 	if otherRec.Code == http.StatusForbidden {
 		t.Errorf("status after clear = %d, want anything but 403 (restriction should be gone)", otherRec.Code)
 	}
+}
+
+// decodeRepoNames pulls just the names out of a GET /api/repos body,
+// which returns objects (name + description) — see repoapi's response
+// shape. These router-level tests only assert which repos came back.
+func decodeRepoNames(t *testing.T, body []byte) []string {
+	t.Helper()
+	var repos []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(body, &repos); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	names := make([]string, 0, len(repos))
+	for _, r := range repos {
+		names = append(names, r.Name)
+	}
+	return names
 }

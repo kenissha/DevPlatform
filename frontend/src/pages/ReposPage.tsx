@@ -2,18 +2,16 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
-import { BranchIcon, CheckIcon, CopyIcon, PlusIcon, RepoIcon } from '../components/icons'
+import { CopyButton } from '../components/CopyButton'
+import { BranchIcon, PlusIcon, RepoIcon } from '../components/icons'
 import { formatRelative } from '../labels'
+import { cloneURL } from '../repos/clone'
 import { useRepos } from '../repos/ReposContext'
 
-// cloneURL is built from the page's own origin rather than a configured
-// hostname: whoever is reading this page reached the platform at that
-// origin, so it is by definition an address that works for them — no
-// server-side setting to keep in sync, and correct behind IIS's proxy
-// where the backend only ever sees an internal loopback address.
-function cloneURL(repo: string): string {
-  return `${window.location.origin}/git/${encodeURIComponent(repo)}.git`
-}
+// Mirrors repodesc.MaxLength on the backend, which rejects anything longer
+// with a 400. Enforcing it on the input too means the limit is felt as a
+// stopped keystroke rather than a failed submit.
+const DESCRIPTION_MAX = 200
 
 // Summary is the at-a-glance line under a repo's name. Both halves are
 // optional because they come from separate requests that fail
@@ -26,12 +24,13 @@ interface Summary {
 
 export function ReposPage() {
   const { user } = useAuth()
-  const { repos, error, reload } = useRepos()
+  const { repos, descriptions, error, reload } = useRepos()
   const isAdmin = user?.role === 'admin'
 
   const [summaries, setSummaries] = useState<Record<string, Summary>>({})
   const [showCreate, setShowCreate] = useState(false)
   const [newRepoName, setNewRepoName] = useState('')
+  const [newRepoDesc, setNewRepoDesc] = useState('')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
@@ -80,8 +79,9 @@ export function ReposPage() {
     setCreating(true)
     setCreateError(null)
     try {
-      await api.createRepo(newRepoName.trim())
+      await api.createRepo(newRepoName.trim(), newRepoDesc.trim())
       setNewRepoName('')
+      setNewRepoDesc('')
       setShowCreate(false)
       reload()
     } catch (err) {
@@ -124,8 +124,9 @@ export function ReposPage() {
 
       {isAdmin && showCreate && (
         <div className="card create-repo">
-          <div className="card-body">
-            <form onSubmit={handleCreate} className="inline-form">
+          <form onSubmit={handleCreate} className="card-body create-repo-form">
+            <label className="field">
+              <span className="field-label">Repo adı</span>
               {/* autoFocus is right here and only here: this panel appears
                   in response to a deliberate click, so the caret lands
                   where the person was already headed. */}
@@ -136,18 +137,34 @@ export function ReposPage() {
                 placeholder="yeni-repo-adi"
                 pattern="[a-zA-Z0-9_-]+"
                 title="Sadece harf, rakam, tire ve alt çizgi"
-                aria-label="Yeni repo adı"
                 autoFocus
               />
+              <span className="field-hint">Sadece harf, rakam, tire ve alt çizgi.</span>
+            </label>
+
+            <label className="field">
+              <span className="field-label">
+                Açıklama <span className="field-optional">— isteğe bağlı</span>
+              </span>
+              <input
+                type="text"
+                value={newRepoDesc}
+                onChange={(e) => setNewRepoDesc(e.target.value)}
+                placeholder="Bu depo ne işe yarıyor?"
+                maxLength={DESCRIPTION_MAX}
+              />
+              <span className="field-hint">
+                Listede ve reponun sayfasında görünür. Sonradan da değiştirebilirsin.
+              </span>
+            </label>
+
+            <div className="create-repo-actions">
               <button type="submit" className="btn-primary" disabled={creating || !newRepoName.trim()}>
                 {creating ? 'Oluşturuluyor...' : 'Oluştur'}
               </button>
-            </form>
-            <p className="form-hint">
-              Boş bir depo oluşturulur. Adında sadece harf, rakam, tire ve alt çizgi olabilir.
-            </p>
-            {createError && <p className="error">{createError}</p>}
-          </div>
+              {createError && <p className="error">{createError}</p>}
+            </div>
+          </form>
         </div>
       )}
 
@@ -166,7 +183,12 @@ export function ReposPage() {
       {repos && repos.length > 0 && (
         <div className="repo-grid">
           {repos.map((name) => (
-            <RepoCard key={name} name={name} summary={summaries[name]} />
+            <RepoCard
+              key={name}
+              name={name}
+              description={descriptions[name]}
+              summary={summaries[name]}
+            />
           ))}
         </div>
       )}
@@ -174,7 +196,15 @@ export function ReposPage() {
   )
 }
 
-function RepoCard({ name, summary }: { name: string; summary?: Summary }) {
+function RepoCard({
+  name,
+  description,
+  summary,
+}: {
+  name: string
+  description?: string
+  summary?: Summary
+}) {
   const url = cloneURL(name)
 
   return (
@@ -183,6 +213,8 @@ function RepoCard({ name, summary }: { name: string; summary?: Summary }) {
         <RepoIcon className="repo-card-icon" />
         <span className="repo-card-name">{name}</span>
       </Link>
+
+      {description && <p className="repo-card-desc">{description}</p>}
 
       <div className="repo-card-meta">
         {summary?.branches !== undefined && (
@@ -204,38 +236,5 @@ function RepoCard({ name, summary }: { name: string; summary?: Summary }) {
         <CopyButton value={url} label={`${name} adresini kopyala`} />
       </div>
     </div>
-  )
-}
-
-function CopyButton({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    if (!copied) return
-    const timer = setTimeout(() => setCopied(false), 1600)
-    return () => clearTimeout(timer)
-  }, [copied])
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(value)
-      setCopied(true)
-    } catch {
-      // navigator.clipboard is unavailable over plain HTTP on some
-      // browsers, and there is nothing useful to say about it — the
-      // address is right there on screen to select by hand.
-    }
-  }
-
-  return (
-    <button
-      type="button"
-      className="icon-button"
-      onClick={copy}
-      aria-label={label}
-      title={copied ? 'Kopyalandı' : 'Kopyala'}
-    >
-      {copied ? <CheckIcon className="copied" /> : <CopyIcon />}
-    </button>
   )
 }
