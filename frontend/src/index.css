@@ -2493,6 +2493,200 @@ button:disabled {
   color: var(--text-muted);
 }
 
+/* ------------------------------------------------------------ alt görevler */
+
+/* The bar is the point of a checklist: how far along, at a glance,
+   without counting ticks. */
+.subtask-progress {
+  height: 4px;
+  background: var(--sunken, var(--bg));
+  border-bottom: 1px solid var(--border);
+}
+.subtask-progress span {
+  display: block;
+  height: 100%;
+  background: var(--success);
+  transition: width 0.18s ease;
+}
+
+.subtask-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.subtask-list > li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px;
+}
+.subtask-list > li + li {
+  border-top: 1px solid var(--border);
+}
+
+.subtask-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-strong);
+  cursor: pointer;
+}
+.subtask-item input {
+  width: auto;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+/* A ticked item is struck through and dimmed — done work should recede,
+   not compete with what is left. */
+.subtask-list > li.is-done .subtask-item span {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.subtask-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+.subtask-form input {
+  flex: 1;
+  min-width: 0;
+}
+
+.kanban-card-subtasks {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- yorumlar */
+
+/* The conversation is what people open a task for, so it sits above the
+   audit timeline and gets the wider half of the split. */
+.task-main {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  min-width: 0;
+}
+
+.comments .section-title:first-child {
+  margin-top: 0;
+}
+
+.comment-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.comment {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+
+.comment-avatar {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.comment-body {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.comment-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.comment-head strong {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--text-strong);
+}
+
+.comment-when {
+  color: var(--text-muted);
+}
+
+/* An edited comment says so — a discussion people can silently rewrite is
+   not a record of what was said. */
+.comment-edited {
+  padding: 0 6px;
+  border-radius: 20px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  font-size: 10px;
+  font-style: italic;
+}
+
+.comment-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.comment-form textarea {
+  width: 100%;
+}
+.comment-form .form-actions {
+  margin-top: 0;
+}
+
+/* Audit rows that lead somewhere look like it; the ones that do not stay
+   plain text rather than pretending. */
+.timeline-text.is-link {
+  display: block;
+  color: var(--text-strong);
+}
+.timeline-text.is-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.notice-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 /* ---------------------------------------------------------------- tasks */
 
 .task-row {

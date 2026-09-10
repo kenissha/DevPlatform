@@ -31,6 +31,7 @@ const (
 	ActionTaskCreated        Action = "task.created"
 	ActionTaskUpdated        Action = "task.updated"
 	ActionTaskDeleted        Action = "task.deleted"
+	ActionTaskCommented      Action = "task.commented"
 	ActionMROpened           Action = "merge_request.opened"
 	ActionMRApproved         Action = "merge_request.approved"
 	ActionMRRejected         Action = "merge_request.rejected"

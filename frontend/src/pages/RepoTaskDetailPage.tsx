@@ -4,6 +4,8 @@ import { api, ApiError } from '../api/client'
 import type { AuditEvent, Person, Task, TaskPriority, TaskStatus } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { AuditIcon, TaskIcon } from '../components/icons'
+import { TaskComments } from '../components/TaskComments'
+import { TaskSubtasks } from '../components/TaskSubtasks'
 import {
   TASK_PRIORITIES,
   TASK_PRIORITY_LABELS,
@@ -135,7 +137,12 @@ export function RepoTaskDetailPage() {
       {actionError && <p className="error">{actionError}</p>}
 
       <div className="task-split">
-        <section>
+        <div className="task-main">
+          <TaskSubtasks repo={repo} task={task} onChanged={setTask} />
+
+          <TaskComments repo={repo} taskId={id} people={people} />
+
+          <section>
           <div className="section-title">
             <h2>Geçmiş</h2>
             {history && history.length > 0 && (
@@ -175,7 +182,8 @@ export function RepoTaskDetailPage() {
                 </ol>
               </div>
             ))}
-        </section>
+          </section>
+        </div>
 
         <aside className="task-rail">
           <div className="card">

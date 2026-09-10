@@ -175,6 +175,17 @@ func NewRouter(deps Deps) *http.ServeMux {
 	mux.Handle("GET /api/repos/{repo}/tasks", repoScoped(http.HandlerFunc(tasks.List)))
 	mux.Handle("GET /api/repos/{repo}/tasks/{id}", repoScoped(http.HandlerFunc(tasks.Get)))
 	mux.Handle("GET /api/repos/{repo}/tasks/{id}/history", repoScoped(http.HandlerFunc(tasks.History)))
+	// Comments are open to everyone with repo access; the store enforces
+	// "only your own" for edit, and the handler adds "or admin" for delete.
+	mux.Handle("GET /api/repos/{repo}/tasks/{id}/comments", repoScoped(http.HandlerFunc(tasks.Comments)))
+	mux.Handle("POST /api/repos/{repo}/tasks/{id}/comments", repoScoped(http.HandlerFunc(tasks.AddComment)))
+	mux.Handle("PATCH /api/repos/{repo}/tasks/{id}/comments/{commentID}", repoScoped(http.HandlerFunc(tasks.EditComment)))
+	mux.Handle("DELETE /api/repos/{repo}/tasks/{id}/comments/{commentID}", repoScoped(http.HandlerFunc(tasks.DeleteComment)))
+	// Subtasks are a checklist on the task, so anyone who can edit the
+	// task can tick them — no separate permission.
+	mux.Handle("POST /api/repos/{repo}/tasks/{id}/subtasks", repoScoped(http.HandlerFunc(tasks.AddSubtask)))
+	mux.Handle("PATCH /api/repos/{repo}/tasks/{id}/subtasks/{subtaskID}", repoScoped(http.HandlerFunc(tasks.UpdateSubtask)))
+	mux.Handle("DELETE /api/repos/{repo}/tasks/{id}/subtasks/{subtaskID}", repoScoped(http.HandlerFunc(tasks.RemoveSubtask)))
 	mux.Handle("PATCH /api/repos/{repo}/tasks/{id}", repoScoped(http.HandlerFunc(tasks.Update)))
 	// Not admin-gated at the router: Delete does its own narrower check
 	// (author or admin) because it needs the task's author to make it.
@@ -214,6 +225,7 @@ func NewRouter(deps Deps) *http.ServeMux {
 	// read only their own — see notify.Handlers' doc comment.
 	mux.Handle("GET /api/notifications", authMiddleware(http.HandlerFunc(notifications.List)))
 	mux.Handle("POST /api/notifications/{id}/read", authMiddleware(http.HandlerFunc(notifications.MarkRead)))
+	mux.Handle("DELETE /api/notifications/read", authMiddleware(http.HandlerFunc(notifications.ClearRead)))
 
 	// Deploy requests: any authenticated user can open one or read its
 	// status; only an Admin can approve (which actually runs the deploy)

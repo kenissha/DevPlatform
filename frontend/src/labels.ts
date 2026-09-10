@@ -71,6 +71,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   'task.created': 'Görev açıldı',
   'task.updated': 'Görev güncellendi',
   'task.deleted': 'Görev silindi',
+  'task.commented': 'Göreve yorum yapıldı',
   'merge_request.opened': 'İnceleme isteği açıldı',
   'merge_request.approved': 'İnceleme isteği onaylandı',
   'merge_request.rejected': 'İnceleme isteği reddedildi',
@@ -85,6 +86,7 @@ export const AUDIT_ACTION_BADGE: Record<AuditAction, string> = {
   'task.created': 'badge-neutral',
   'task.updated': 'badge-neutral',
   'task.deleted': 'badge-danger',
+  'task.commented': 'badge-neutral',
   'merge_request.opened': 'badge-accent',
   'merge_request.approved': 'badge-success',
   'merge_request.rejected': 'badge-danger',
@@ -117,6 +119,7 @@ export const NOTIFICATION_KIND_LABELS: Record<string, string> = {
   task_assigned: 'Görev atandı',
   merge_request_opened: 'İnceleme isteği açıldı',
   merge_request_decided: 'İnceleme sonucu',
+  task_commented: 'Göreve yorum',
   deployment_opened: 'Deploy isteği açıldı',
   deployment_decided: 'Deploy sonucu',
 }
@@ -125,6 +128,7 @@ export const NOTIFICATION_KIND_BADGE: Record<string, string> = {
   task_assigned: 'badge-accent',
   merge_request_opened: 'badge-accent',
   merge_request_decided: 'badge-neutral',
+  task_commented: 'badge-accent',
   deployment_opened: 'badge-accent',
   deployment_decided: 'badge-neutral',
 }

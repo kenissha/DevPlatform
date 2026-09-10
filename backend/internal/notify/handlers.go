@@ -60,6 +60,25 @@ func (h *Handlers) writeStoreError(w http.ResponseWriter, err error) {
 	}
 }
 
+// ClearRead handles DELETE /api/notifications/read — drops the caller's
+// already-read notifications. Acts on the caller's own inbox only; there
+// is no recipient parameter anywhere here, so nobody can clear somebody
+// else's.
+func (h *Handlers) ClearRead(w http.ResponseWriter, r *http.Request) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		http.Error(w, "401 Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	removed, err := h.Store.ClearRead(user.Subject)
+	if err != nil {
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"removed": removed})
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

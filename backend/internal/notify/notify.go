@@ -293,6 +293,44 @@ func (s *Store) MarkRead(recipient, id string) error {
 	return nil
 }
 
+// ClearRead deletes recipient's already-read notifications and reports
+// how many went.
+//
+// Only the read ones, and only in bulk: a notification is something that
+// arrived, not something the person wrote, so there is nothing to edit
+// and no reason to remove them one at a time. What people actually want
+// is to stop an inbox growing forever once they have dealt with it.
+//
+// Unread notifications are deliberately untouchable here — clearing
+// something you have not looked at is how a request quietly goes
+// unanswered.
+func (s *Store) ClearRead(recipient string) (int, error) {
+	if recipient == "" {
+		return 0, ErrInvalidRecipient
+	}
+
+	all, err := s.ListForUser(recipient)
+	if err != nil {
+		return 0, err
+	}
+
+	removed := 0
+	for _, n := range all {
+		if !n.Read {
+			continue
+		}
+		path, err := s.path(recipient, n.ID)
+		if err != nil {
+			continue
+		}
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return removed, err
+		}
+		removed++
+	}
+	return removed, nil
+}
+
 func (s *Store) path(recipient, id string) (string, error) {
 	if !validRecipient(recipient) {
 		return "", ErrInvalidRecipient

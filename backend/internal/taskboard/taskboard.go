@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -84,7 +85,11 @@ type Task struct {
 	// date is a day in the reader's calendar, and storing an instant would
 	// make "due Friday" land on Thursday for anybody in a different zone.
 	// Empty means no date set.
-	DueDate   string    `json:"dueDate,omitempty"`
+	DueDate string `json:"dueDate,omitempty"`
+	// Subtasks is a checklist, not a set of child tasks — see subtasks.go
+	// for why. Absent on tasks written before it existed, which decode as
+	// an empty list.
+	Subtasks  []Subtask `json:"subtasks,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 }
 
@@ -100,6 +105,18 @@ func (t Task) Overdue(today string) bool {
 // mergerequest already use.
 type Store struct {
 	rootDir string
+
+	// mu serialises every read-modify-write in this package. It became
+	// necessary with task keys: allocating one reads a counter, increments
+	// it and writes it back, so two concurrent Creates without this would
+	// both read N and both produce N+1 — two tasks sharing a key, which is
+	// the exact thing the key exists to prevent. Update and the comment
+	// operations have the same read-modify-write shape.
+	//
+	// Get and List are not guarded: they only read, and a task file is
+	// written atomically (temp file + rename), so a reader sees either the
+	// old file or the new one, never a half-written one.
+	mu sync.Mutex
 }
 
 // NewStore returns a Store rooted at rootDir. rootDir does not need to
@@ -115,6 +132,9 @@ func (s *Store) Create(repo, title, description, assignedTo, author string) (Tas
 	if !validRepoName.MatchString(repo) {
 		return Task{}, ErrInvalidRepo
 	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	dir := filepath.Join(s.rootDir, repo)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
@@ -170,14 +190,14 @@ func (s *Store) Create(repo, title, description, assignedTo, author string) (Tas
 	return Task{}, fmt.Errorf("taskboard: failed to allocate a unique id after 5 attempts")
 }
 
-// Get returns the task identified by (repo, id).
 // validDueDate accepts exactly "YYYY-MM-DD" and only real calendar days,
-// so "2026-02-31" is rejected rather than silently normalised.
+// so "2026-02-31" is rejected rather than silently normalised into March.
 func validDueDate(v string) bool {
 	parsed, err := time.Parse("2006-01-02", v)
 	return err == nil && parsed.Format("2006-01-02") == v
 }
 
+// Get returns the task identified by (repo, id).
 func (s *Store) Get(repo, id string) (Task, error) {
 	path, err := s.path(repo, id)
 	if err != nil {
@@ -278,6 +298,9 @@ func (s *Store) Update(repo, id string, c Changes) (Task, error) {
 		return Task{}, ErrInvalidDueDate
 	}
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	task, err := s.Get(repo, id)
 	if err != nil {
 		return Task{}, err
@@ -304,21 +327,8 @@ func (s *Store) Update(repo, id string, c Changes) (Task, error) {
 		task.AssignedTo = *c.AssignedTo
 	}
 
-	path, err := s.path(repo, id)
-	if err != nil {
+	if err := s.write(repo, task); err != nil {
 		return Task{}, err
-	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0o640)
-	if err != nil {
-		return Task{}, err
-	}
-	err = json.NewEncoder(f).Encode(task)
-	closeErr := f.Close()
-	if err != nil {
-		return Task{}, err
-	}
-	if closeErr != nil {
-		return Task{}, closeErr
 	}
 	return task, nil
 }
@@ -333,6 +343,9 @@ func (s *Store) Update(repo, id string, c Changes) (Task, error) {
 // succeeding quietly, so a caller working from a stale board learns their
 // view is out of date instead of seeing a phantom success.
 func (s *Store) Delete(repo, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	path, err := s.path(repo, id)
 	if err != nil {
 		return err
@@ -343,7 +356,27 @@ func (s *Store) Delete(repo, id string) error {
 		}
 		return err
 	}
-	return nil
+	// The conversation goes with the task. Left behind it would be a file
+	// nothing can reach and nothing will ever clean up.
+	return s.deleteComments(repo, id)
+}
+
+// write overwrites a task's on-disk file. Callers must already hold s.mu.
+func (s *Store) write(repo string, task Task) error {
+	path, err := s.path(repo, task.ID)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0o640)
+	if err != nil {
+		return err
+	}
+	err = json.NewEncoder(f).Encode(task)
+	closeErr := f.Close()
+	if err != nil {
+		return err
+	}
+	return closeErr
 }
 
 func (s *Store) path(repo, id string) (string, error) {

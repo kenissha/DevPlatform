@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -48,7 +50,9 @@ func TestGet_ReturnsCreatedTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get returned error: %v", err)
 	}
-	if got != created {
+	// reflect.DeepEqual, not ==: Task carries a Subtasks slice now, and a
+	// struct containing a slice is not comparable.
+	if !reflect.DeepEqual(got, created) {
 		t.Errorf("got %+v, want %+v", got, created)
 	}
 }
@@ -146,7 +150,7 @@ func TestUpdate_ChangesOnlyProvidedFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get after Update failed: %v", err)
 	}
-	if reread != updated2 {
+	if !reflect.DeepEqual(reread, updated2) {
 		t.Errorf("persisted = %+v, want %+v", reread, updated2)
 	}
 }
@@ -578,5 +582,322 @@ func TestGet_UpgradesTheOldUrgentFlag(t *testing.T) {
 	}
 	if reread.Priority != PriorityNormal {
 		t.Errorf("priority = %q, want %q", reread.Priority, PriorityNormal)
+	}
+}
+
+// ------------------------------------------------------------ comments
+
+func TestComments_StartEmptyAndAppendInOrder(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("deneme", "Görev", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	list, err := store.Comments("deneme", task.ID)
+	if err != nil {
+		t.Fatalf("Comments failed: %v", err)
+	}
+	if len(list) != 0 {
+		t.Fatalf("a new task has %d comments, want 0", len(list))
+	}
+
+	if _, err := store.AddComment("deneme", task.ID, "dev-1", "  İlk yorum  "); err != nil {
+		t.Fatalf("AddComment failed: %v", err)
+	}
+	if _, err := store.AddComment("deneme", task.ID, "dev-2", "İkinci yorum"); err != nil {
+		t.Fatalf("AddComment failed: %v", err)
+	}
+
+	list, err = store.Comments("deneme", task.ID)
+	if err != nil {
+		t.Fatalf("Comments failed: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("got %d comments, want 2", len(list))
+	}
+	// Oldest first: a conversation reads top to bottom.
+	if list[0].Body != "İlk yorum" {
+		t.Errorf("first comment = %q, want the oldest, trimmed", list[0].Body)
+	}
+	if list[1].Author != "dev-2" {
+		t.Errorf("second author = %q, want dev-2", list[1].Author)
+	}
+}
+
+func TestAddComment_RejectsEmptyAndOverlongBodies(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("deneme", "Görev", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	for _, blank := range []string{"", "   ", "\n\t "} {
+		if _, err := store.AddComment("deneme", task.ID, "dev-1", blank); !errors.Is(err, ErrEmptyComment) {
+			t.Errorf("AddComment(%q) = %v, want ErrEmptyComment", blank, err)
+		}
+	}
+
+	// The cap counts runes: Turkish is multi-byte, and a byte limit would
+	// silently allow half as much text.
+	atLimit := strings.Repeat("ğ", MaxCommentLength)
+	if _, err := store.AddComment("deneme", task.ID, "dev-1", atLimit); err != nil {
+		t.Errorf("AddComment at exactly MaxCommentLength runes = %v, want nil", err)
+	}
+	over := strings.Repeat("ğ", MaxCommentLength+1)
+	if _, err := store.AddComment("deneme", task.ID, "dev-1", over); !errors.Is(err, ErrCommentTooLong) {
+		t.Errorf("AddComment past the cap = %v, want ErrCommentTooLong", err)
+	}
+}
+
+// A comment on a task that does not exist would be a file nothing can
+// ever reach.
+func TestAddComment_RequiresTheTaskToExist(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if _, err := store.AddComment("deneme", "0123456789abcdef", "dev-1", "merhaba"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("AddComment on a missing task = %v, want ErrNotFound", err)
+	}
+}
+
+func TestEditComment_OnlyByItsAuthorAndStamped(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("deneme", "Görev", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	comment, err := store.AddComment("deneme", task.ID, "dev-1", "ilk hâli")
+	if err != nil {
+		t.Fatalf("AddComment failed: %v", err)
+	}
+	if comment.EditedAt != nil {
+		t.Error("a fresh comment is already marked edited")
+	}
+
+	if _, err := store.EditComment("deneme", task.ID, comment.ID, "dev-2", "başkası yazdı"); !errors.Is(err, ErrCommentNotOurs) {
+		t.Errorf("edit by another person = %v, want ErrCommentNotOurs", err)
+	}
+
+	edited, err := store.EditComment("deneme", task.ID, comment.ID, "dev-1", "düzeltilmiş hâli")
+	if err != nil {
+		t.Fatalf("EditComment failed: %v", err)
+	}
+	if edited.Body != "düzeltilmiş hâli" {
+		t.Errorf("body = %q, want the new text", edited.Body)
+	}
+	// Stamped, so a conversation cannot be silently rewritten.
+	if edited.EditedAt == nil {
+		t.Error("editedAt is nil after an edit")
+	}
+
+	list, _ := store.Comments("deneme", task.ID)
+	if len(list) != 1 || list[0].Body != "düzeltilmiş hâli" {
+		t.Errorf("stored comments = %+v, want the edit persisted", list)
+	}
+}
+
+func TestDeleteComment_AuthorOrAdminOnly(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("deneme", "Görev", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	comment, err := store.AddComment("deneme", task.ID, "dev-1", "silinecek")
+	if err != nil {
+		t.Fatalf("AddComment failed: %v", err)
+	}
+
+	if err := store.DeleteComment("deneme", task.ID, comment.ID, "dev-2", false); !errors.Is(err, ErrCommentNotOurs) {
+		t.Errorf("delete by another developer = %v, want ErrCommentNotOurs", err)
+	}
+	// Still there after the refusal.
+	if list, _ := store.Comments("deneme", task.ID); len(list) != 1 {
+		t.Fatalf("comment was removed despite the refusal")
+	}
+
+	// allowAny is what the handler passes for an admin.
+	if err := store.DeleteComment("deneme", task.ID, comment.ID, "dev-2", true); err != nil {
+		t.Fatalf("admin delete failed: %v", err)
+	}
+	if list, _ := store.Comments("deneme", task.ID); len(list) != 0 {
+		t.Errorf("comment survived an admin delete")
+	}
+}
+
+// Deleting a task takes its conversation with it — otherwise the file
+// lingers with nothing able to reach it.
+func TestDelete_RemovesTheTasksComments(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+	task, err := store.Create("deneme", "Görev", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if _, err := store.AddComment("deneme", task.ID, "dev-1", "bir şey"); err != nil {
+		t.Fatalf("AddComment failed: %v", err)
+	}
+
+	commentFile := filepath.Join(dir, "deneme", "comments", task.ID+".json")
+	if _, err := os.Stat(commentFile); err != nil {
+		t.Fatalf("comment file missing before delete: %v", err)
+	}
+
+	if err := store.Delete("deneme", task.ID); err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+	if _, err := os.Stat(commentFile); !os.IsNotExist(err) {
+		t.Errorf("comment file survived the task: %v", err)
+	}
+}
+
+// Comments live in a subdirectory precisely so List's *.json scan cannot
+// pick them up and try to decode a comment array as a task.
+func TestList_IsUnaffectedByComments(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("deneme", "Görev", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if _, err := store.AddComment("deneme", task.ID, "dev-1", "yorum"); err != nil {
+		t.Fatalf("AddComment failed: %v", err)
+	}
+
+	tasks, err := store.List("deneme")
+	if err != nil {
+		t.Fatalf("List failed after a comment was added: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Errorf("List returned %d tasks, want 1", len(tasks))
+	}
+}
+
+func TestComments_RejectsPathTraversal(t *testing.T) {
+	store := NewStore(t.TempDir())
+	if _, err := store.Comments("deneme", "../../etc/passwd"); !errors.Is(err, ErrInvalidID) {
+		t.Errorf("Comments with a traversal id = %v, want ErrInvalidID", err)
+	}
+	if _, err := store.AddComment("../escape", "0123456789abcdef", "dev-1", "x"); !errors.Is(err, ErrInvalidRepo) {
+		t.Errorf("AddComment with a traversal repo = %v, want ErrInvalidRepo", err)
+	}
+}
+
+// ----------------------------------------------------------- subtasks
+
+func TestSubtasks_AddTickRenameRemove(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("deneme", "Büyük iş", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if done, total := task.SubtaskProgress(); done != 0 || total != 0 {
+		t.Fatalf("a new task has %d/%d subtasks, want 0/0", done, total)
+	}
+
+	task, err = store.AddSubtask("deneme", task.ID, "  Tasarımı çiz  ")
+	if err != nil {
+		t.Fatalf("AddSubtask failed: %v", err)
+	}
+	if len(task.Subtasks) != 1 || task.Subtasks[0].Title != "Tasarımı çiz" {
+		t.Fatalf("subtasks = %+v, want one trimmed item", task.Subtasks)
+	}
+	if task.Subtasks[0].Done {
+		t.Error("a new subtask starts ticked")
+	}
+
+	task, err = store.AddSubtask("deneme", task.ID, "Testleri yaz")
+	if err != nil {
+		t.Fatalf("AddSubtask failed: %v", err)
+	}
+
+	first := task.Subtasks[0].ID
+	task, err = store.SetSubtaskDone("deneme", task.ID, first, true)
+	if err != nil {
+		t.Fatalf("SetSubtaskDone failed: %v", err)
+	}
+	if done, total := task.SubtaskProgress(); done != 1 || total != 2 {
+		t.Errorf("progress = %d/%d, want 1/2", done, total)
+	}
+
+	task, err = store.RenameSubtask("deneme", task.ID, first, "Tasarımı bitir")
+	if err != nil {
+		t.Fatalf("RenameSubtask failed: %v", err)
+	}
+	if task.Subtasks[0].Title != "Tasarımı bitir" {
+		t.Errorf("title = %q, want the new one", task.Subtasks[0].Title)
+	}
+	// Renaming must not untick it.
+	if !task.Subtasks[0].Done {
+		t.Error("renaming a subtask cleared its tick")
+	}
+
+	task, err = store.RemoveSubtask("deneme", task.ID, first)
+	if err != nil {
+		t.Fatalf("RemoveSubtask failed: %v", err)
+	}
+	if len(task.Subtasks) != 1 || task.Subtasks[0].Title != "Testleri yaz" {
+		t.Errorf("subtasks = %+v, want only the second one", task.Subtasks)
+	}
+
+	// And it all survived the round trip to disk.
+	reread, err := store.Get("deneme", task.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if !reflect.DeepEqual(reread.Subtasks, task.Subtasks) {
+		t.Errorf("re-read subtasks = %+v, want %+v", reread.Subtasks, task.Subtasks)
+	}
+}
+
+func TestSubtasks_RejectEmptyTitles(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("deneme", "Görev", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	for _, blank := range []string{"", "   "} {
+		if _, err := store.AddSubtask("deneme", task.ID, blank); !errors.Is(err, ErrEmptySubtask) {
+			t.Errorf("AddSubtask(%q) = %v, want ErrEmptySubtask", blank, err)
+		}
+	}
+
+	task, err = store.AddSubtask("deneme", task.ID, "gerçek bir madde")
+	if err != nil {
+		t.Fatalf("AddSubtask failed: %v", err)
+	}
+	if _, err := store.RenameSubtask("deneme", task.ID, task.Subtasks[0].ID, "  "); !errors.Is(err, ErrEmptySubtask) {
+		t.Errorf("RenameSubtask with a blank title = %v, want ErrEmptySubtask", err)
+	}
+}
+
+// Past the cap the thing being described is a project, not a task.
+func TestSubtasks_AreCapped(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("deneme", "Görev", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	for i := 0; i < MaxSubtasks; i++ {
+		if task, err = store.AddSubtask("deneme", task.ID, "madde"); err != nil {
+			t.Fatalf("AddSubtask %d failed: %v", i, err)
+		}
+	}
+	if _, err := store.AddSubtask("deneme", task.ID, "bir tane daha"); !errors.Is(err, ErrTooManySubtasks) {
+		t.Errorf("AddSubtask past the cap = %v, want ErrTooManySubtasks", err)
+	}
+}
+
+func TestSubtasks_UnknownItemIsNotFound(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("deneme", "Görev", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	if _, err := store.SetSubtaskDone("deneme", task.ID, "0123456789abcdef", true); !errors.Is(err, ErrNotFound) {
+		t.Errorf("SetSubtaskDone on a missing item = %v, want ErrNotFound", err)
+	}
+	if _, err := store.RemoveSubtask("deneme", task.ID, "0123456789abcdef"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("RemoveSubtask on a missing item = %v, want ErrNotFound", err)
 	}
 }

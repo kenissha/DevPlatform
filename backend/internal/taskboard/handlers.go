@@ -3,6 +3,7 @@ package taskboard
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"sort"
@@ -283,6 +284,247 @@ func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+type subtaskRequest struct {
+	Title *string `json:"title"`
+	Done  *bool   `json:"done"`
+}
+
+// AddSubtask handles POST /api/repos/{repo}/tasks/{id}/subtasks.
+//
+// Every subtask endpoint responds with the whole updated task rather than
+// the item alone: a checklist is only meaningful as a set, and the caller
+// wants the new progress ("3/5") anyway.
+func (h *Handlers) AddSubtask(w http.ResponseWriter, r *http.Request) {
+	repo, id := r.PathValue("repo"), r.PathValue("id")
+	if !h.repoExists(repo) {
+		http.Error(w, "404 repository not found", http.StatusNotFound)
+		return
+	}
+
+	var req subtaskRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Title == nil {
+		http.Error(w, "400 malformed request body", http.StatusBadRequest)
+		return
+	}
+
+	task, err := h.Store.AddSubtask(repo, id, *req.Title)
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	h.logSubtaskChange(r, repo, task, "alt görev eklendi: "+*req.Title)
+	writeJSON(w, http.StatusOK, task)
+}
+
+// UpdateSubtask handles PATCH .../subtasks/{subtaskID} — tick, untick or
+// rename, whichever field the body carries.
+func (h *Handlers) UpdateSubtask(w http.ResponseWriter, r *http.Request) {
+	repo, id := r.PathValue("repo"), r.PathValue("id")
+	subtaskID := r.PathValue("subtaskID")
+	if !h.repoExists(repo) {
+		http.Error(w, "404 repository not found", http.StatusNotFound)
+		return
+	}
+
+	var req subtaskRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "400 malformed request body", http.StatusBadRequest)
+		return
+	}
+
+	var task Task
+	var err error
+	summary := ""
+	switch {
+	case req.Done != nil:
+		task, err = h.Store.SetSubtaskDone(repo, id, subtaskID, *req.Done)
+		if *req.Done {
+			summary = "alt görev tamamlandı"
+		} else {
+			summary = "alt görev geri açıldı"
+		}
+	case req.Title != nil:
+		task, err = h.Store.RenameSubtask(repo, id, subtaskID, *req.Title)
+		summary = "alt görev yeniden adlandırıldı"
+	default:
+		http.Error(w, "400 değiştirilecek bir alan yok", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	h.logSubtaskChange(r, repo, task, summary)
+	writeJSON(w, http.StatusOK, task)
+}
+
+// RemoveSubtask handles DELETE .../subtasks/{subtaskID}.
+func (h *Handlers) RemoveSubtask(w http.ResponseWriter, r *http.Request) {
+	repo, id := r.PathValue("repo"), r.PathValue("id")
+	subtaskID := r.PathValue("subtaskID")
+	if !h.repoExists(repo) {
+		http.Error(w, "404 repository not found", http.StatusNotFound)
+		return
+	}
+
+	task, err := h.Store.RemoveSubtask(repo, id, subtaskID)
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	h.logSubtaskChange(r, repo, task, "alt görev silindi")
+	writeJSON(w, http.StatusOK, task)
+}
+
+// logSubtaskChange records a checklist change against the task, so the
+// task's own history shows it alongside every other change. The progress
+// is included because "3/5 tamamlandı" is the part somebody reading the
+// history back actually wants.
+func (h *Handlers) logSubtaskChange(r *http.Request, repo string, task Task, summary string) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		return
+	}
+	done, total := task.SubtaskProgress()
+	_ = h.Audit.Log(user.Subject, audit.ActionTaskUpdated, repo, task.ID,
+		fmt.Sprintf("Görev güncellendi: %s (%s, %d/%d)", task.Title, summary, done, total))
+}
+
+type commentRequest struct {
+	Body string `json:"body"`
+}
+
+// Comments handles GET /api/repos/{repo}/tasks/{id}/comments.
+func (h *Handlers) Comments(w http.ResponseWriter, r *http.Request) {
+	repo, id := r.PathValue("repo"), r.PathValue("id")
+	if !h.repoExists(repo) {
+		http.Error(w, "404 repository not found", http.StatusNotFound)
+		return
+	}
+	list, err := h.Store.Comments(repo, id)
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// AddComment handles POST /api/repos/{repo}/tasks/{id}/comments.
+//
+// Open to anyone with access to the repository: a conversation nobody but
+// the assignee may join is not a conversation. The author of each comment
+// is taken from the token, never from the body.
+func (h *Handlers) AddComment(w http.ResponseWriter, r *http.Request) {
+	repo, id := r.PathValue("repo"), r.PathValue("id")
+	if !h.repoExists(repo) {
+		http.Error(w, "404 repository not found", http.StatusNotFound)
+		return
+	}
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		http.Error(w, "401 Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req commentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "400 malformed request body", http.StatusBadRequest)
+		return
+	}
+
+	comment, err := h.Store.AddComment(repo, id, user.Subject, req.Body)
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+
+	task, taskErr := h.Store.Get(repo, id)
+	title := id
+	if taskErr == nil {
+		title = task.Title
+	}
+	_ = h.Audit.Log(user.Subject, audit.ActionTaskCommented, repo, id, "Göreve yorum yapıldı: "+title)
+
+	// Told to the two people who have a stake in it and are not the one
+	// typing: whoever the work is assigned to, and whoever opened it.
+	if taskErr == nil {
+		h.notifyAboutComment(repo, task, user.Subject)
+	}
+
+	writeJSON(w, http.StatusCreated, comment)
+}
+
+// EditComment handles PATCH .../comments/{commentID} — author only.
+func (h *Handlers) EditComment(w http.ResponseWriter, r *http.Request) {
+	repo, id := r.PathValue("repo"), r.PathValue("id")
+	commentID := r.PathValue("commentID")
+	if !h.repoExists(repo) {
+		http.Error(w, "404 repository not found", http.StatusNotFound)
+		return
+	}
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		http.Error(w, "401 Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req commentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "400 malformed request body", http.StatusBadRequest)
+		return
+	}
+
+	comment, err := h.Store.EditComment(repo, id, commentID, user.Subject, req.Body)
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, comment)
+}
+
+// DeleteComment handles DELETE .../comments/{commentID}.
+//
+// Its author or an admin, the same rule task deletion uses: removing what
+// somebody said is destructive, and everyone else's recourse is to reply.
+func (h *Handlers) DeleteComment(w http.ResponseWriter, r *http.Request) {
+	repo, id := r.PathValue("repo"), r.PathValue("id")
+	commentID := r.PathValue("commentID")
+	if !h.repoExists(repo) {
+		http.Error(w, "404 repository not found", http.StatusNotFound)
+		return
+	}
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		http.Error(w, "401 Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if err := h.Store.DeleteComment(repo, id, commentID, user.Subject, user.Role == auth.RoleAdmin); err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// notifyAboutComment tells the assignee and the task's author that
+// something was said, skipping whoever said it. A no-op without Notify.
+func (h *Handlers) notifyAboutComment(repo string, task Task, commenter string) {
+	if h.Notify == nil {
+		return
+	}
+	message := "Görevine yorum yapıldı: " + task.Title
+	link := "/repos/" + repo + "/tasks/" + task.ID
+
+	told := map[string]bool{commenter: true}
+	for _, subject := range []string{task.AssignedTo, task.Author} {
+		if subject == "" || told[subject] {
+			continue
+		}
+		told[subject] = true
+		_, _ = h.Notify.Create(subject, "task_commented", message, link)
+	}
+}
+
 // History handles GET /api/repos/{repo}/tasks/{id}/history — everything
 // recorded against this task, newest first.
 //
@@ -393,6 +635,18 @@ func (h *Handlers) writeStoreError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		http.Error(w, "404 task not found", http.StatusNotFound)
+	case errors.Is(err, ErrCommentNotOurs):
+		// Covers both rules without overstating either: editing is
+		// author-only, deleting is author-or-admin.
+		http.Error(w, "403 bu yorum sana ait değil", http.StatusForbidden)
+	case errors.Is(err, ErrEmptySubtask):
+		http.Error(w, "400 alt görev başlığı boş olamaz", http.StatusBadRequest)
+	case errors.Is(err, ErrTooManySubtasks):
+		http.Error(w, "400 bir görevde en fazla 50 alt görev olabilir", http.StatusBadRequest)
+	case errors.Is(err, ErrEmptyComment):
+		http.Error(w, "400 yorum boş olamaz", http.StatusBadRequest)
+	case errors.Is(err, ErrCommentTooLong):
+		http.Error(w, "400 yorum çok uzun", http.StatusBadRequest)
 	case errors.Is(err, ErrEmptyTitle):
 		// Named rather than folded into the generic 400 below: this is the
 		// one store rejection a person can hit by typing, so the panel has

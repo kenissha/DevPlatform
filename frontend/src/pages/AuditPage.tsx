@@ -50,6 +50,31 @@ const ACTION_TONE: Record<string, string> = {
   'deployment.rolled_back': 'tone-warn',
 }
 
+// Where an audit row points, when it points anywhere.
+//
+// The log already records which entity each event was about (Target), and
+// the frontend has a page for each kind — so a row saying "Görev
+// güncellendi" can take you to that task instead of leaving you to find
+// it. Actions whose target is not a linkable thing (a repo name, a
+// deployment id with no page) fall through to no link at all rather than
+// to a URL that 404s.
+function targetLink(e: AuditEvent): string | null {
+  if (!e.repo || !e.target) return null
+  const repo = encodeURIComponent(e.repo)
+  if (e.action.startsWith('task.')) {
+    // A deleted task has no page left to visit.
+    if (e.action === 'task.deleted') return null
+    return `/repos/${repo}/tasks/${encodeURIComponent(e.target)}`
+  }
+  if (e.action.startsWith('merge_request.')) {
+    return `/repos/${repo}/merge-requests/${encodeURIComponent(e.target)}`
+  }
+  if (e.action.startsWith('deployment.')) {
+    return `/repos/${repo}/deployments`
+  }
+  return null
+}
+
 export function AuditPage() {
   const [events, setEvents] = useState<AuditEvent[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -127,7 +152,15 @@ export function AuditPage() {
                   {ACTION_ICON[e.action] ?? <AuditIcon />}
                 </span>
                 <div className="timeline-body">
-                  <p className="timeline-text">{e.summary || AUDIT_ACTION_LABELS[e.action] || e.action}</p>
+                  {targetLink(e) ? (
+                    <Link to={targetLink(e)!} className="timeline-text is-link">
+                      {e.summary || AUDIT_ACTION_LABELS[e.action] || e.action}
+                    </Link>
+                  ) : (
+                    <p className="timeline-text">
+                      {e.summary || AUDIT_ACTION_LABELS[e.action] || e.action}
+                    </p>
+                  )}
                   <p className="timeline-meta">
                     <strong>{e.actor}</strong>
                     {e.repo && (

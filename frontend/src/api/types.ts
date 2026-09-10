@@ -94,6 +94,7 @@ export type AuditAction =
   | 'task.created'
   | 'task.updated'
   | 'task.deleted'
+  | 'task.commented'
   | 'merge_request.opened'
   | 'merge_request.approved'
   | 'merge_request.rejected'
@@ -160,6 +161,25 @@ export type TaskStatus = 'todo' | 'in_progress' | 'awaiting_test' | 'done'
 // were flagged — see backend/internal/taskboard's Priority.
 export type TaskPriority = 'low' | 'normal' | 'high' | 'critical'
 
+// One message in a task's conversation. editedAt is set only when the
+// author changed it after posting — an edited comment says so, because a
+// discussion people can silently rewrite is not a record.
+export interface TaskComment {
+  id: string
+  author: string
+  body: string
+  at: string
+  editedAt?: string
+}
+
+// One item on a task's checklist. Not a task of its own — no key, no
+// assignee, no board presence; see backend/internal/taskboard/subtasks.go.
+export interface Subtask {
+  id: string
+  title: string
+  done: boolean
+}
+
 export interface Task {
   id: string
   // The readable name — "DEN-14". Absent on tasks created before keys
@@ -176,6 +196,8 @@ export interface Task {
   // A calendar day, "YYYY-MM-DD", not a timestamp — a deadline is a day
   // in the reader's calendar. Empty/absent means none set.
   dueDate?: string
+  // Absent on tasks created before checklists existed.
+  subtasks?: Subtask[]
   createdAt: string
 }
 

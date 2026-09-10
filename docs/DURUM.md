@@ -835,6 +835,53 @@ verildiğinde kişiye haber veren bir şeydi.
   handler'lar yazıyor, depo değil, yani sadece depodan tohumlamak her
   demo görevi boş geçmişle bırakıyordu — tam da bakılmak istenen ekran.
 
+- **2026-09-10 güncelleme — Faz 2: yorumlar, alt görevler; ve iki küçük
+  eksik.**
+
+  **Yorumlar.** İşin gidişatı artık görevin altında konuşuluyor. Bir
+  görevin bütün yorumları **tek dosyada**: hep birlikte okunuyorlar (tek
+  başına bir yorum hiçbir şey ifade etmiyor), sayıları az, ve tek dosya
+  bir yorumun iki yere yarım yazılmasını imkânsız kılıyor. Dosya
+  `<repo>/comments/<görev>.json` altında — **`<görev>.comments.json`
+  olarak görev dosyasının yanına koymak `List`'i bozardı**, çünkü o
+  klasördeki her `*.json`'ı görev sanıp çözümlemeye çalışıyor ve tek bir
+  hata bütün panoyu düşürürdü. Alt klasör `List`'in mevcut `IsDir`
+  kontrolüyle zaten atlanıyor.
+
+  Düzenlemeyi sadece yazan yapabiliyor ve **düzenlendi damgası**
+  vuruluyor: sessizce yeniden yazılabilen bir tartışma, söylenenlerin
+  kaydı değildir. Silme yazan kişi veya yönetici — görev silmeyle aynı
+  kural. Yorum yapılınca atanan kişiye ve görevi açana bildirim gidiyor,
+  yazana gitmiyor.
+
+  **Alt görevler checklist, ayrı görev değil.** Gerçek ebeveyn/çocuk görev
+  kurgusu bilinçli olarak reddedildi: her çocuk kendi numarasını,
+  panodaki yerini, atananını ve tarihini isterdi — tek bir iş varken
+  panoda yirmi satır olurdu. İnsanların bir işi bölerken istediği şey
+  "şu beş şey doğru olmadan bu bitmez", yani tik listesi. Görevin
+  içinde duruyorlar (hep birlikte okunup yazılıyorlar), 50 ile
+  sınırlılar — ötesi görev değil proje demektir. Değişiklikler görev
+  geçmişine ilerlemeyle birlikte düşüyor: *"alt görev tamamlandı, 1/3"*.
+
+  **Mutex eklendi — ve gerekliydi.** `taskboard.Store`'da hiç kilit
+  yoktu. Görev numarası sayacı oku-artır-yaz olduğu için iki eşzamanlı
+  `Create` ikisi de N okuyup ikisi de N+1 üretebilirdi: **aynı anahtarı
+  taşıyan iki görev**, yani anahtarın var olma sebebinin tam tersi.
+  Yazan yollar artık kilitli; `Get`/`List` değil (sadece okuyorlar, dosya
+  atomik yazılıyor).
+
+  **Denetim kaydı satırları artık hedefe götürüyor.** Kayıtta zaten
+  görev/inceleme ID'si duruyordu; "Görev güncellendi" satırına tıklayınca
+  o görevin sayfası açılıyor. Silinmiş görev gibi gidilecek yeri olmayan
+  satırlar bilerek düz metin kalıyor — 404'e giden bir bağlantı hiç
+  bağlantı olmamasından kötü.
+
+  **Bildirimlerde "Okunanları temizle".** Tek tek silme yok: bildirim
+  senin yazdığın değil, sana gelen bir şey — düzenlenecek bir tarafı yok.
+  Sadece **okunmuşlar** siliniyor, hem arayüzde hem sunucuda:
+  bakmadığın bir şeyi temizlemek, bir isteğin sessizce cevapsız kalma
+  yoludur.
+
 ## Sıradaki iş
 
 **2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`

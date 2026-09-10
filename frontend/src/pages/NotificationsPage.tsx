@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { api } from '../api/client'
 import { BellIcon, CheckIcon, DeployIcon, MergeIcon, TaskIcon } from '../components/icons'
 import { NOTIFICATION_KIND_LABELS, dayHeading, formatTime, groupByDay } from '../labels'
 import { useNotifications } from '../notifications/useNotifications'
@@ -13,6 +15,7 @@ const KIND_ICON: Record<string, React.ReactNode> = {
   merge_request_decided: <MergeIcon />,
   deployment_opened: <DeployIcon />,
   deployment_decided: <DeployIcon />,
+  task_commented: <TaskIcon />,
 }
 
 const KIND_TONE: Record<string, string> = {
@@ -21,12 +24,15 @@ const KIND_TONE: Record<string, string> = {
   merge_request_decided: 'tone-neutral',
   deployment_opened: 'tone-warn',
   deployment_decided: 'tone-neutral',
+  task_commented: 'tone-accent',
 }
 
 export function NotificationsPage() {
-  const { notifications, error, markRead } = useNotifications()
+  const { notifications, error, markRead, reload } = useNotifications()
+  const [clearing, setClearing] = useState(false)
 
   const unread = notifications?.filter((n) => !n.read) ?? []
+  const read = notifications?.filter((n) => n.read) ?? []
   const groups = groupByDay(notifications ?? [], (n) => n.createdAt)
 
   return (
@@ -42,15 +48,39 @@ export function NotificationsPage() {
                 : 'Hepsi okundu'}
           </p>
         </div>
-        {unread.length > 0 && (
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => unread.forEach((n) => markRead(n.id))}
-          >
-            <CheckIcon /> Tümünü okundu işaretle
-          </button>
-        )}
+        <div className="notice-actions">
+          {unread.length > 0 && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => unread.forEach((n) => markRead(n.id))}
+            >
+              <CheckIcon /> Tümünü okundu işaretle
+            </button>
+          )}
+          {/* Only the read ones, and only in bulk: clearing something you
+              have not looked at is how a request quietly goes unanswered.
+              The server enforces the same rule. */}
+          {read.length > 0 && (
+            <button
+              type="button"
+              className="link-button"
+              disabled={clearing}
+              onClick={async () => {
+                if (!confirm(`Okunmuş ${read.length} bildirim silinsin mi?`)) return
+                setClearing(true)
+                try {
+                  await api.clearReadNotifications()
+                  reload()
+                } finally {
+                  setClearing(false)
+                }
+              }}
+            >
+              Okunanları temizle
+            </button>
+          )}
+        </div>
       </div>
 
       {error && <p className="error">{error}</p>}

@@ -178,6 +178,11 @@ export function RepoTasksPage() {
                         )}
                       </div>
                       <p className="kanban-card-title">{task.title}</p>
+                      {task.subtasks && task.subtasks.length > 0 && (
+                        <p className="kanban-card-subtasks">
+                          ☑ {task.subtasks.filter((st) => st.done).length}/{task.subtasks.length}
+                        </p>
+                      )}
                       <div className="kanban-card-foot">
                         <Avatar label={task.assignedTo ? personLabel(task.assignedTo) : ''} />
                         <span className="kanban-card-meta">

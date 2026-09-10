@@ -22,6 +22,7 @@ import type {
   ReleaseInfo,
   Repo,
   Task,
+  TaskComment,
   TaskPriority,
   TaskStatus,
   User,
@@ -161,6 +162,48 @@ export const api = {
   // Only the task's author or an admin may delete; anyone else gets 403.
   getTask: (repo: string, id: string) =>
     request<Task>(`/api/repos/${encodeURIComponent(repo)}/tasks/${encodeURIComponent(id)}`),
+  // Every subtask call answers with the whole updated task: a checklist
+  // only means anything as a set, and the caller wants the new progress.
+  addSubtask: (repo: string, id: string, title: string) =>
+    request<Task>(
+      `/api/repos/${encodeURIComponent(repo)}/tasks/${encodeURIComponent(id)}/subtasks`,
+      { method: 'POST', body: JSON.stringify({ title }) },
+    ),
+  setSubtaskDone: (repo: string, id: string, subtaskId: string, done: boolean) =>
+    request<Task>(
+      `/api/repos/${encodeURIComponent(repo)}/tasks/${encodeURIComponent(id)}/subtasks/${encodeURIComponent(subtaskId)}`,
+      { method: 'PATCH', body: JSON.stringify({ done }) },
+    ),
+  renameSubtask: (repo: string, id: string, subtaskId: string, title: string) =>
+    request<Task>(
+      `/api/repos/${encodeURIComponent(repo)}/tasks/${encodeURIComponent(id)}/subtasks/${encodeURIComponent(subtaskId)}`,
+      { method: 'PATCH', body: JSON.stringify({ title }) },
+    ),
+  removeSubtask: (repo: string, id: string, subtaskId: string) =>
+    request<Task>(
+      `/api/repos/${encodeURIComponent(repo)}/tasks/${encodeURIComponent(id)}/subtasks/${encodeURIComponent(subtaskId)}`,
+      { method: 'DELETE' },
+    ),
+  taskComments: (repo: string, id: string) =>
+    request<TaskComment[]>(
+      `/api/repos/${encodeURIComponent(repo)}/tasks/${encodeURIComponent(id)}/comments`,
+    ),
+  addTaskComment: (repo: string, id: string, body: string) =>
+    request<TaskComment>(
+      `/api/repos/${encodeURIComponent(repo)}/tasks/${encodeURIComponent(id)}/comments`,
+      { method: 'POST', body: JSON.stringify({ body }) },
+    ),
+  // Author only — the server refuses anyone else with 403.
+  editTaskComment: (repo: string, id: string, commentId: string, body: string) =>
+    request<TaskComment>(
+      `/api/repos/${encodeURIComponent(repo)}/tasks/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`,
+      { method: 'PATCH', body: JSON.stringify({ body }) },
+    ),
+  deleteTaskComment: (repo: string, id: string, commentId: string) =>
+    request<void>(
+      `/api/repos/${encodeURIComponent(repo)}/tasks/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`,
+      { method: 'DELETE' },
+    ),
   // The task's own audit trail — who changed what, when. Reads the same
   // append-only log the Denetim kaydı page shows, narrowed to one task.
   taskHistory: (repo: string, id: string) =>
@@ -210,6 +253,10 @@ export const api = {
   removeMyGitEmail: (email: string) =>
     request<GitEmails>(`/api/me/git-emails?email=${encodeURIComponent(email)}`, { method: 'DELETE' }),
 
+  // Drops the caller's already-read notifications and reports how many
+  // went. Unread ones are deliberately untouched server-side.
+  clearReadNotifications: () =>
+    request<{ removed: number }>('/api/notifications/read', { method: 'DELETE' }),
   listAudit: (limit = 100) => request<AuditEvent[]>(`/api/audit?limit=${limit}`),
 
   listNotifications: () => request<Notification[]>('/api/notifications'),
@@ -363,6 +410,7 @@ export type {
   ReleaseInfo,
   Repo,
   Task,
+  TaskComment,
   TaskPriority,
   User,
 }
