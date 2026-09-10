@@ -174,6 +174,7 @@ func NewRouter(deps Deps) *http.ServeMux {
 	mux.Handle("POST /api/repos/{repo}/tasks", repoScoped(http.HandlerFunc(tasks.Create)))
 	mux.Handle("GET /api/repos/{repo}/tasks", repoScoped(http.HandlerFunc(tasks.List)))
 	mux.Handle("GET /api/repos/{repo}/tasks/{id}", repoScoped(http.HandlerFunc(tasks.Get)))
+	mux.Handle("GET /api/repos/{repo}/tasks/{id}/history", repoScoped(http.HandlerFunc(tasks.History)))
 	mux.Handle("PATCH /api/repos/{repo}/tasks/{id}", repoScoped(http.HandlerFunc(tasks.Update)))
 	// Not admin-gated at the router: Delete does its own narrower check
 	// (author or admin) because it needs the task's author to make it.

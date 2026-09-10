@@ -17,6 +17,7 @@ import { RepoDeploymentsPage } from './pages/RepoDeploymentsPage'
 import { RepoInsightsPage } from './pages/RepoInsightsPage'
 import { RepoMergeRequestsPage } from './pages/RepoMergeRequestsPage'
 import { RepoOverviewPage } from './pages/RepoOverviewPage'
+import { RepoTaskDetailPage } from './pages/RepoTaskDetailPage'
 import { RepoTasksPage } from './pages/RepoTasksPage'
 import { ReposPage } from './pages/ReposPage'
 import { ReposProvider } from './repos/ReposContext'
@@ -54,6 +55,7 @@ export default function App() {
                 <Route path="/notifications" element={<NotificationsPage />} />
                 <Route path="/repos/:repo" element={<RepoOverviewPage />} />
                 <Route path="/repos/:repo/tasks" element={<RepoTasksPage />} />
+                <Route path="/repos/:repo/tasks/:id" element={<RepoTaskDetailPage />} />
                 <Route path="/repos/:repo/branches" element={<RepoBranchesPage />} />
                 {/* "*" (not ":branch") because branch names may contain
                     slashes (e.g. "feature/hakem-raporlari") — a plain

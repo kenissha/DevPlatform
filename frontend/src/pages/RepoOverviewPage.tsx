@@ -107,9 +107,9 @@ export function RepoOverviewPage() {
           empty={tasks !== null && openTasks.length === 0 ? 'Açık görev yok.' : null}
         >
           {openTasks.slice(0, 5).map((task) => (
-            <li key={task.id} className={task.urgent ? 'urgent' : undefined}>
+            <li key={task.id}>
               <div className="row-main">
-                {task.urgent && <span className="badge badge-danger">Acil</span>}
+                {task.key && <span className="task-key">{task.key}</span>}
                 <span className="row-title">{task.title}</span>
                 <div className="spacer" />
                 <span className={`badge ${TASK_STATUS_BADGE[task.status]}`}>

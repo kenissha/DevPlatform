@@ -780,6 +780,61 @@ verildiğinde kişiye haber veren bir şeydi.
   Yeniden deneme sınırlı ve son hatayı döndürüyor — gerçek bir izin
   sorunu hâlâ raporlanıyor, sessizce başarı sayılmıyor.
 
+- **2026-09-10 güncelleme — görev panosu "iş verilebilir" hâle geldi
+  (Jira'nın işe yarayan kısmı).**
+
+  **Neden içeride, ayrı proje değil.** Focalboard / Plane / Vikunja üçü de
+  AGPL-3.0 ve "klonlayıp içimize gömelim" tam AGPL'in tetiklendiği durum —
+  DevPlatform'un tamamı türev esere dönüşürdü. Üstüne Focalboard terk
+  edilmiş, üçü de kendi veritabanını/auth'unu/frontend'ini getiriyor. Buna
+  karşılık DevPlatform'da altyapının çoğu zaten hazırdı (SSO, kişi kaydı,
+  bildirim, yetki, denetim kaydı, tasarım sistemi) ve asıl kazanç şu:
+  **görev ile kod aynı yerde.** Jira'nın küçük ekiplerdeki zaafı koddan
+  kopuk olması; burada `DEV-14 → branch → commit → inceleme → deploy`
+  zinciri doğal olarak çıkıyor.
+
+  **Görev numarası (`DEN-14`).** Prefix repo adından türetiliyor, elle
+  ayarlanan bir alan değil — doldurulması gereken alan doldurulmayan
+  alandır. Türkçe harfler ASCII'ye katlanıyor (ç→C, ş→S, ı→I): anahtar
+  commit mesajında ve URL'de sağ salim yolculuk etmeli. İki repo aynı
+  harflerle başlarsa ikincisi uzuyor (INT → INTR); prefix'ler saklanıyor,
+  yeniden hesaplanmıyor, yoksa yazılı bir numara sessizce başka bir işi
+  gösterebilirdi.
+
+  **Sayaç önce yazılıyor, görev sonra.** Çökme olursa bir numara boşa
+  yanar — zararsız, silinen görev de zaten boşluk bırakıyor. Tersi (görev
+  önce) çökme sonrası **aynı numarayı iki göreve** verebilirdi; eksik
+  numara sorun değil, aynı adı taşıyan iki görev sorundur. Bu, dosya
+  tabanlı depoda işlem (transaction) olmamasının tasarımla çözülmesi.
+
+  **Öncelik ikili bayrağın yerini aldı.** `urgent` yes/no idi ve bir-iki
+  şey işaretlendikten sonra hiçbir şeyi ayırt etmiyordu. Dört seviye
+  (düşük/normal/yüksek/kritik) geldi; eski `urgent: true` görevler okuma
+  anında **yükseğe** yükseltiliyor (kritiğe değil — o bayrak "yakında
+  bak" için kullanılıyordu, hepsini tepeye taşımak yeni ölçeği de düz
+  bırakırdı). Diskte hiçbir şey yeniden yazılmıyor.
+
+  **Bitiş tarihi takvim günü olarak (`YYYY-MM-DD`), zaman damgası değil:**
+  "cuma teslim" başka saat diliminde perşembeye düşmemeli. Geçmiş tarih
+  kartta kırmızı; **biten görev asla gecikmiş sayılmıyor** — teslim
+  edilmiş işi kovalamak gürültü.
+
+  **Görev geçmişi için yeni veri toplanmadı.** Denetim kaydı zaten her
+  değişikliği aktör + zaman + ne değişti olarak, hedef alanında görev
+  ID'siyle yazıyordu. `audit.ListForTarget` eklendi; ikinci bir indeks
+  yok, aynı append-only dosya daha dar bir soruyla okunuyor.
+
+  **Görevin kendi sayfası** (`/repos/:repo/tasks/:id`): solda geçmiş
+  zaman çizelgesi, sağda değiştirilen alanlar. Pano modal'ı duruyor
+  (hızlı bakış için) ama artık paylaşılabilir bir adres de var.
+
+  Pano sütunları önceliğe, eşitlikte en eskiye göre sıralanıyor — önemli
+  olan şey üç kart aşağıda kalmasın.
+
+  `seeddemo` artık denetim kaydına da yazıyor: denetim satırlarını
+  handler'lar yazıyor, depo değil, yani sadece depodan tohumlamak her
+  demo görevi boş geçmişle bırakıyordu — tam da bakılmak istenen ekran.
+
 ## Sıradaki iş
 
 **2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`

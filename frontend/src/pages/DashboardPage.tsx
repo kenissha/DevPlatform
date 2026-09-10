@@ -23,7 +23,14 @@ import {
   TaskIcon,
 } from '../components/icons'
 import { useRepos } from '../repos/ReposContext'
-import { formatDayHeading, formatRelative, greeting } from '../labels'
+import {
+  TASK_PRIORITY_BADGE,
+  TASK_PRIORITY_LABELS,
+  formatDayHeading,
+  formatRelative,
+  greeting,
+  todayKey,
+} from '../labels'
 
 // The platform's landing page, written as a personal dashboard rather
 // than a set of tables: what is waiting on *me* first, then what the
@@ -112,7 +119,9 @@ export function DashboardPage() {
 
   const openTasks = useMemo(() => tasks?.filter((t) => t.status !== 'done') ?? [], [tasks])
   const myTasks = openTasks.filter((t) => t.assignedTo === user?.subject)
-  const myUrgent = myTasks.filter((t) => t.urgent)
+  // Overdue replaces "urgent" as the thing worth interrupting somebody
+  // about: a flag says how it was labelled, a date says it is late.
+  const myOverdue = myTasks.filter((t) => t.dueDate && t.status !== 'done' && t.dueDate < todayKey())
 
   // Open work per person, busiest first, with unassigned pinned last —
   // it's a bucket, not a colleague.
@@ -160,9 +169,9 @@ export function DashboardPage() {
 
       {error && <p className="error">{error}</p>}
 
-      {myUrgent.length > 0 && (
+      {myOverdue.length > 0 && (
         <div className="alert-strip">
-          <strong>{myUrgent.length} acil görev</strong> üzerinize atanmış.
+          <strong>{myOverdue.length} acil görev</strong> üzerinize atanmış.
         </div>
       )}
 
@@ -176,10 +185,15 @@ export function DashboardPage() {
           empty="Üzerinize atanmış açık görev yok."
           items={myTasks.map((t) => ({
             key: t.id,
-            to: `/repos/${encodeURIComponent(t.repo)}/tasks`,
+            to: `/repos/${encodeURIComponent(t.repo)}/tasks/${t.id}`,
             title: t.title,
             meta: t.repo,
-            badge: t.urgent ? { text: 'Acil', className: 'badge-danger' } : undefined,
+            badge:
+              t.dueDate && t.status !== 'done' && t.dueDate < todayKey()
+                ? { text: 'Gecikti', className: 'badge-danger' }
+                : TASK_PRIORITY_BADGE[t.priority]
+                  ? { text: TASK_PRIORITY_LABELS[t.priority], className: TASK_PRIORITY_BADGE[t.priority]! }
+                  : undefined,
           }))}
         />
         <FocusCard

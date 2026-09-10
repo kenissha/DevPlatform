@@ -164,11 +164,12 @@ func (h *Handlers) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateRequest struct {
-	Title       *string `json:"title"`
-	Description *string `json:"description"`
-	Status      *Status `json:"status"`
-	Urgent      *bool   `json:"urgent"`
-	AssignedTo  *string `json:"assignedTo"`
+	Title       *string   `json:"title"`
+	Description *string   `json:"description"`
+	Status      *Status   `json:"status"`
+	Priority    *Priority `json:"priority"`
+	DueDate     *string   `json:"dueDate"`
+	AssignedTo  *string   `json:"assignedTo"`
 }
 
 func (r updateRequest) changes() Changes {
@@ -176,7 +177,8 @@ func (r updateRequest) changes() Changes {
 		Title:       r.Title,
 		Description: r.Description,
 		Status:      r.Status,
-		Urgent:      r.Urgent,
+		Priority:    r.Priority,
+		DueDate:     r.DueDate,
 		AssignedTo:  r.AssignedTo,
 	}
 }
@@ -281,9 +283,50 @@ func (h *Handlers) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// History handles GET /api/repos/{repo}/tasks/{id}/history — everything
+// recorded against this task, newest first.
+//
+// Open to anyone with access to the repository, deliberately: the point
+// of a history is that the person doing the work can see what was decided
+// about it and by whom. Nothing here is more sensitive than the task
+// itself, which they can already read.
+func (h *Handlers) History(w http.ResponseWriter, r *http.Request) {
+	repo := r.PathValue("repo")
+	id := r.PathValue("id")
+	if !h.repoExists(repo) {
+		http.Error(w, "404 repository not found", http.StatusNotFound)
+		return
+	}
+
+	// Confirms the task exists (and that the id is well-formed) before
+	// reporting a history for it — an unknown id should 404, not return
+	// an empty list that reads as "nothing ever happened".
+	if _, err := h.Store.Get(repo, id); err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+
+	events, err := h.Audit.ListForTarget(repo, id, 200)
+	if err != nil {
+		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, events)
+}
+
 // statusLabels renders a Status the way the audit log reads it out. The
 // rest of the summary is Turkish prose, so the raw enum value ("awaiting_test")
 // would be the one untranslated token in the sentence.
+// priorityLabels renders a Priority the way the audit log reads it out —
+// the same reason statusLabels exists: the raw enum value would be the one
+// untranslated token in a Turkish sentence.
+var priorityLabels = map[Priority]string{
+	PriorityLow:      "düşük",
+	PriorityNormal:   "normal",
+	PriorityHigh:     "yüksek",
+	PriorityCritical: "kritik",
+}
+
 var statusLabels = map[Status]string{
 	StatusTodo:         "yapılacak",
 	StatusInProgress:   "yapılıyor",
@@ -311,11 +354,18 @@ func describeUpdate(req updateRequest) string {
 		}
 		parts = append(parts, "durum → "+label)
 	}
-	if req.Urgent != nil {
-		if *req.Urgent {
-			parts = append(parts, "acil işaretlendi")
+	if req.Priority != nil {
+		label, ok := priorityLabels[*req.Priority]
+		if !ok {
+			label = string(*req.Priority)
+		}
+		parts = append(parts, "öncelik → "+label)
+	}
+	if req.DueDate != nil {
+		if *req.DueDate == "" {
+			parts = append(parts, "bitiş tarihi kaldırıldı")
 		} else {
-			parts = append(parts, "acil kaldırıldı")
+			parts = append(parts, "bitiş tarihi → "+*req.DueDate)
 		}
 	}
 	if req.AssignedTo != nil {
@@ -348,6 +398,10 @@ func (h *Handlers) writeStoreError(w http.ResponseWriter, err error) {
 		// one store rejection a person can hit by typing, so the panel has
 		// something to show them instead of "Bad Request".
 		http.Error(w, "400 görev başlığı boş olamaz", http.StatusBadRequest)
+	case errors.Is(err, ErrInvalidPriority):
+		http.Error(w, "400 geçersiz öncelik", http.StatusBadRequest)
+	case errors.Is(err, ErrInvalidDueDate):
+		http.Error(w, "400 bitiş tarihi GG.AA.YYYY biçiminde geçerli bir gün olmalı", http.StatusBadRequest)
 	case errors.Is(err, ErrInvalidRepo), errors.Is(err, ErrInvalidID), errors.Is(err, ErrInvalidStatus):
 		http.Error(w, "400 Bad Request", http.StatusBadRequest)
 	default:

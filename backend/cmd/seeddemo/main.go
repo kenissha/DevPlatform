@@ -27,8 +27,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/deploy"
 	"github.com/kenissha/DevPlatform/backend/internal/deployment"
 	"github.com/kenissha/DevPlatform/backend/internal/displaynames"
@@ -109,29 +111,34 @@ type demoTask struct {
 	Author      person
 	AssignedTo  person
 	Status      taskboard.Status
-	Urgent      bool
+	Priority    taskboard.Priority
+	// DueDate is "YYYY-MM-DD" or empty. Filled in relative to today by
+	// dueIn below, so a freshly seeded board always has something both
+	// overdue and upcoming rather than a fixed date that ages into the
+	// past.
+	DueDate string
 }
 
 // Deliberately lopsided: more waiting than finished, a couple unassigned,
 // two urgent. A board with one card per column looks designed rather than
 // used, and tells you nothing about how it holds up when it fills.
 var demoTasks = []demoTask{
-	{"deneme", "Rapor filtrelerini tasarla", "Tarih aralığı, hakem ve durum filtresi.", me, me, taskboard.StatusTodo, false},
-	{"deneme", "Excel dışa aktarım", "Liste ekranındaki veriyi xlsx olarak indir.", ahmet, ahmet, taskboard.StatusTodo, false},
-	{"deneme", "PDF şablonunu güncelle", "Yeni antet ve imza alanı eklenecek.", me, elif, taskboard.StatusInProgress, false},
-	{"deneme", "Hakem atama ekranı", "Toplu atama da olmalı.", ahmet, ahmet, taskboard.StatusAwaitingTest, false},
-	{"deneme", "Giriş zaman aşımı", "VPN üzerinden AD 22 saniye sürüyor.", me, me, taskboard.StatusDone, false},
+	{"deneme", "Rapor filtrelerini tasarla", "Tarih aralığı, hakem ve durum filtresi.", me, me, taskboard.StatusTodo, taskboard.PriorityNormal, dueIn(9)},
+	{"deneme", "Excel dışa aktarım", "Liste ekranındaki veriyi xlsx olarak indir.", ahmet, ahmet, taskboard.StatusTodo, taskboard.PriorityLow, ""},
+	{"deneme", "PDF şablonunu güncelle", "Yeni antet ve imza alanı eklenecek.", me, elif, taskboard.StatusInProgress, taskboard.PriorityNormal, dueIn(3)},
+	{"deneme", "Hakem atama ekranı", "Toplu atama da olmalı.", ahmet, ahmet, taskboard.StatusAwaitingTest, taskboard.PriorityHigh, ""},
+	{"deneme", "Giriş zaman aşımı", "VPN üzerinden AD 22 saniye sürüyor.", me, me, taskboard.StatusDone, taskboard.PriorityNormal, ""},
 
-	{"oasrapor-frontend", "Mobil görünüm", "Tablo dar ekranda taşıyor.", me, elif, taskboard.StatusTodo, false},
-	{"oasrapor-frontend", "Yükleme göstergesi", "Uzun sorgularda boş ekran görünüyor.", me, person{}, taskboard.StatusTodo, false},
-	{"oasrapor-frontend", "Üretimde 500 hatası", "Rapor detayında aralıklı olarak patlıyor.", elif, elif, taskboard.StatusInProgress, true},
-	{"oasrapor-frontend", "Karanlık mod", "Panel ile aynı token seti kullanılacak.", me, me, taskboard.StatusInProgress, false},
-	{"oasrapor-frontend", "Erişilebilirlik taraması", "Klavye ile gezinme çalışmıyor.", elif, elif, taskboard.StatusAwaitingTest, false},
-	{"oasrapor-frontend", "Bağımlılık güncellemesi", "Vite 8 geçişi.", me, me, taskboard.StatusDone, false},
+	{"oasrapor-frontend", "Mobil görünüm", "Tablo dar ekranda taşıyor.", me, elif, taskboard.StatusTodo, taskboard.PriorityLow, ""},
+	{"oasrapor-frontend", "Yükleme göstergesi", "Uzun sorgularda boş ekran görünüyor.", me, person{}, taskboard.StatusTodo, taskboard.PriorityNormal, ""},
+	{"oasrapor-frontend", "Üretimde 500 hatası", "Rapor detayında aralıklı olarak patlıyor.", elif, elif, taskboard.StatusInProgress, taskboard.PriorityCritical, dueIn(-2)},
+	{"oasrapor-frontend", "Karanlık mod", "Panel ile aynı token seti kullanılacak.", me, me, taskboard.StatusInProgress, taskboard.PriorityNormal, dueIn(14)},
+	{"oasrapor-frontend", "Erişilebilirlik taraması", "Klavye ile gezinme çalışmıyor.", elif, elif, taskboard.StatusAwaitingTest, taskboard.PriorityHigh, ""},
+	{"oasrapor-frontend", "Bağımlılık güncellemesi", "Vite 8 geçişi.", me, me, taskboard.StatusDone, taskboard.PriorityLow, ""},
 
-	{"intranet-servis", "AD bağlantı havuzu", "Her istekte yeni bind açılıyor.", me, ahmet, taskboard.StatusInProgress, true},
-	{"intranet-servis", "Servis sağlık ucu", "/healthz eklenecek.", ahmet, ahmet, taskboard.StatusTodo, false},
-	{"intranet-servis", "Log formatını birleştir", "JSON satır formatı.", me, me, taskboard.StatusDone, false},
+	{"intranet-servis", "AD bağlantı havuzu", "Her istekte yeni bind açılıyor.", me, ahmet, taskboard.StatusInProgress, taskboard.PriorityCritical, dueIn(-5)},
+	{"intranet-servis", "Servis sağlık ucu", "/healthz eklenecek.", ahmet, ahmet, taskboard.StatusTodo, taskboard.PriorityNormal, dueIn(6)},
+	{"intranet-servis", "Log formatını birleştir", "JSON satır formatı.", me, me, taskboard.StatusDone, taskboard.PriorityNormal, ""},
 }
 
 var demoRequests = []struct {
@@ -177,6 +184,49 @@ var demoTargets = []deployment.Target{
 		SiteName: "Intranet Servis", SecretsTarget: "appsettings.Production.json", KeepVersions: 5},
 }
 
+// describeSeedChange writes the audit summary for a seeded task's first
+// edit, naming only what the seed actually changed. The real path builds
+// this in taskboard.describeUpdate; that one is unexported, and copying
+// its full logic here would be a second thing to keep in step for no
+// benefit — the seed only ever sets these three fields.
+func describeSeedChange(t demoTask) string {
+	parts := []string{}
+	if t.Status != taskboard.StatusTodo {
+		parts = append(parts, "durum → "+seedStatusLabels[t.Status])
+	}
+	if t.Priority != taskboard.PriorityNormal {
+		parts = append(parts, "öncelik → "+seedPriorityLabels[t.Priority])
+	}
+	if t.DueDate != "" {
+		parts = append(parts, "bitiş tarihi → "+t.DueDate)
+	}
+	if len(parts) == 0 {
+		return "değişiklik yok"
+	}
+	return strings.Join(parts, ", ")
+}
+
+var seedStatusLabels = map[taskboard.Status]string{
+	taskboard.StatusTodo:         "yapılacak",
+	taskboard.StatusInProgress:   "yapılıyor",
+	taskboard.StatusAwaitingTest: "test bekliyor",
+	taskboard.StatusDone:         "bitti",
+}
+
+var seedPriorityLabels = map[taskboard.Priority]string{
+	taskboard.PriorityLow:      "düşük",
+	taskboard.PriorityNormal:   "normal",
+	taskboard.PriorityHigh:     "yüksek",
+	taskboard.PriorityCritical: "kritik",
+}
+
+// dueIn renders a due date N days from today. Negative is in the past —
+// the seed needs a couple of genuinely overdue tasks, because "overdue"
+// is a state the board has to be looked at in.
+func dueIn(days int) string {
+	return time.Now().AddDate(0, 0, days).Format("2006-01-02")
+}
+
 func main() {
 	dataDir := flag.String("data", "./data", "development data directory to fill")
 	force := flag.Bool("force", false, "seed even if the data directory already holds repositories")
@@ -209,6 +259,7 @@ func main() {
 	descriptions := repodesc.NewStore(filepath.Join(*dataDir, "repo-descriptions.json"))
 	tasks := taskboard.NewStore(filepath.Join(*dataDir, "tasks"))
 	requests := mergerequest.NewStore(filepath.Join(*dataDir, "merge-requests"))
+	auditLog := audit.New(filepath.Join(*dataDir, "audit.jsonl"))
 	registry := users.NewStore(filepath.Join(*dataDir, "users.json"))
 	displayNames := displaynames.NewStore(filepath.Join(*dataDir, "display-names.json"))
 
@@ -252,14 +303,24 @@ func main() {
 		if err != nil {
 			log.Fatalf("görev oluşturulamadı (%s): %v", t.Title, err)
 		}
+		// Audit entries are written by the HTTP handlers, not the store —
+		// so seeding through the store alone leaves every demo task with
+		// an empty history, which is exactly the screen we want to be able
+		// to look at. Written here to match what the real path records.
+		_ = auditLog.Log(t.Author.Subject, audit.ActionTaskCreated, t.Repo, task.ID,
+			"Görev açıldı: "+t.Title)
 		// Create always starts a task in StatusTodo, so anything further
 		// along the board is moved here rather than written directly —
 		// same path the panel takes.
-		if t.Status != taskboard.StatusTodo || t.Urgent {
-			status, urgent := t.Status, t.Urgent
-			if _, err := tasks.Update(t.Repo, task.ID, taskboard.Changes{Status: &status, Urgent: &urgent}); err != nil {
+		if t.Status != taskboard.StatusTodo || t.Priority != taskboard.PriorityNormal || t.DueDate != "" {
+			status, priority, due := t.Status, t.Priority, t.DueDate
+			if _, err := tasks.Update(t.Repo, task.ID, taskboard.Changes{
+				Status: &status, Priority: &priority, DueDate: &due,
+			}); err != nil {
 				log.Fatalf("görev güncellenemedi (%s): %v", t.Title, err)
 			}
+			_ = auditLog.Log(t.AssignedTo.Subject, audit.ActionTaskUpdated, t.Repo, task.ID,
+				"Görev güncellendi: "+t.Title+" ("+describeSeedChange(t)+")")
 		}
 	}
 	fmt.Printf("  %d görev\n", len(demoTasks))

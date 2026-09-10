@@ -114,6 +114,33 @@ func (l *Logger) Log(actor string, action Action, repo, target, summary string) 
 
 // List returns the most recent events, newest first, capped at limit.
 func (l *Logger) List(limit int) ([]Event, error) {
+	return l.list(limit, nil)
+}
+
+// ListForTarget returns the events recorded against one (repo, target)
+// pair — the history of a single task, merge request or deployment.
+//
+// This reads the same append-only file rather than keeping a second
+// index: every mutation already logs its actor, timestamp and a summary
+// of what changed, with the entity's id as Target. The per-entity history
+// was therefore already recorded; it only needed a way to ask for it.
+//
+// The scan is linear, which is fine at this log's size and is the same
+// cost List already pays. If the log ever grows past what a linear read
+// can serve, that is the signal to index it — not a reason to duplicate
+// the data now.
+func (l *Logger) ListForTarget(repo, target string, limit int) ([]Event, error) {
+	if target == "" {
+		return []Event{}, nil
+	}
+	return l.list(limit, func(e Event) bool {
+		return e.Target == target && (repo == "" || e.Repo == repo)
+	})
+}
+
+// list scans the log newest-first, keeping events that match keep (nil
+// keeps everything).
+func (l *Logger) list(limit int, keep func(Event) bool) ([]Event, error) {
 	if l == nil {
 		return []Event{}, nil
 	}
@@ -147,6 +174,9 @@ func (l *Logger) List(limit int) ([]Event, error) {
 		var e Event
 		if err := json.Unmarshal(line, &e); err != nil {
 			// A corrupt line must not hide every event after it.
+			continue
+		}
+		if keep != nil && !keep(e) {
 			continue
 		}
 		events = append(events, e)

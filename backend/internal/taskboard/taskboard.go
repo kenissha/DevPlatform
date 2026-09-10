@@ -19,11 +19,13 @@ import (
 )
 
 var (
-	ErrInvalidRepo   = errors.New("taskboard: invalid repository name")
-	ErrInvalidID     = errors.New("taskboard: invalid task id")
-	ErrNotFound      = errors.New("taskboard: not found")
-	ErrInvalidStatus = errors.New("taskboard: invalid status")
-	ErrEmptyTitle    = errors.New("taskboard: title must not be empty")
+	ErrInvalidRepo     = errors.New("taskboard: invalid repository name")
+	ErrInvalidID       = errors.New("taskboard: invalid task id")
+	ErrNotFound        = errors.New("taskboard: not found")
+	ErrInvalidStatus   = errors.New("taskboard: invalid status")
+	ErrEmptyTitle      = errors.New("taskboard: title must not be empty")
+	ErrInvalidPriority = errors.New("taskboard: invalid priority")
+	ErrInvalidDueDate  = errors.New("taskboard: due date must be YYYY-MM-DD")
 )
 
 // validRepoName mirrors repostore's and mergerequest's own name
@@ -61,15 +63,36 @@ func (s Status) valid() bool {
 
 // Task is a unit of work tracked on one repository's board.
 type Task struct {
-	ID          string    `json:"id"`
-	Repo        string    `json:"repo"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	AssignedTo  string    `json:"assignedTo"`
-	Author      string    `json:"author"`
-	Status      Status    `json:"status"`
-	Urgent      bool      `json:"urgent"`
-	CreatedAt   time.Time `json:"createdAt"`
+	ID string `json:"id"`
+	// Key is the human-readable name — "DEN-14" — that a task can be
+	// referred to by in conversation, in a commit message, or in a URL.
+	// Assigned once at creation and never reused, even after a delete.
+	// Empty on tasks written before keys existed (see Store.Get).
+	Key         string `json:"key,omitempty"`
+	Repo        string `json:"repo"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	AssignedTo  string `json:"assignedTo"`
+	Author      string `json:"author"`
+	Status      Status `json:"status"`
+	// Urgent is the original boolean, kept only so tasks written before
+	// Priority existed still decode and can be upgraded (see
+	// upgradePriority). Nothing sets it any more; read Priority instead.
+	Urgent   bool     `json:"urgent,omitempty"`
+	Priority Priority `json:"priority,omitempty"`
+	// DueDate is a calendar day as "YYYY-MM-DD", not a timestamp. A due
+	// date is a day in the reader's calendar, and storing an instant would
+	// make "due Friday" land on Thursday for anybody in a different zone.
+	// Empty means no date set.
+	DueDate   string    `json:"dueDate,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// Overdue reports whether the task has a due date that has already passed
+// and is not finished. Done work is never overdue — chasing something
+// that is already delivered is noise.
+func (t Task) Overdue(today string) bool {
+	return t.DueDate != "" && t.Status != StatusDone && t.DueDate < today
 }
 
 // Store persists tasks as one JSON file per task under rootDir, grouped in
@@ -98,13 +121,22 @@ func (s *Store) Create(repo, title, description, assignedTo, author string) (Tas
 		return Task{}, err
 	}
 
+	// Allocated before the task is written; see nextKey for why a burned
+	// number is preferable to a duplicated one.
+	key, err := s.nextKey(repo)
+	if err != nil {
+		return Task{}, err
+	}
+
 	task := Task{
+		Key:         key,
 		Repo:        repo,
 		Title:       title,
 		Description: description,
 		AssignedTo:  assignedTo,
 		Author:      author,
 		Status:      StatusTodo,
+		Priority:    PriorityNormal,
 		CreatedAt:   time.Now().UTC(),
 	}
 
@@ -139,6 +171,13 @@ func (s *Store) Create(repo, title, description, assignedTo, author string) (Tas
 }
 
 // Get returns the task identified by (repo, id).
+// validDueDate accepts exactly "YYYY-MM-DD" and only real calendar days,
+// so "2026-02-31" is rejected rather than silently normalised.
+func validDueDate(v string) bool {
+	parsed, err := time.Parse("2006-01-02", v)
+	return err == nil && parsed.Format("2006-01-02") == v
+}
+
 func (s *Store) Get(repo, id string) (Task, error) {
 	path, err := s.path(repo, id)
 	if err != nil {
@@ -157,7 +196,10 @@ func (s *Store) Get(repo, id string) (Task, error) {
 	if err := json.Unmarshal(data, &task); err != nil {
 		return Task{}, err
 	}
-	return task, nil
+	// Upgraded on read, not by rewriting the file: a task saved before
+	// Priority existed reads back with one, and nothing on disk has to be
+	// migrated. The same pattern the git-token and git-email stores use.
+	return upgradePriority(task), nil
 }
 
 // List returns every task for repo, newest first.
@@ -188,7 +230,7 @@ func (s *Store) List(repo string) ([]Task, error) {
 		if err := json.Unmarshal(data, &task); err != nil {
 			return nil, err
 		}
-		tasks = append(tasks, task)
+		tasks = append(tasks, upgradePriority(task))
 	}
 
 	sort.Slice(tasks, func(i, j int) bool {
@@ -211,8 +253,11 @@ type Changes struct {
 	Title       *string
 	Description *string
 	Status      *Status
-	Urgent      *bool
-	AssignedTo  *string
+	Priority    *Priority
+	// DueDate accepts "YYYY-MM-DD" to set one and "" to clear it — the
+	// pointer distinguishes "leave alone" (nil) from "remove" (empty).
+	DueDate    *string
+	AssignedTo *string
 }
 
 func (s *Store) Update(repo, id string, c Changes) (Task, error) {
@@ -225,6 +270,12 @@ func (s *Store) Update(repo, id string, c Changes) (Task, error) {
 	// write one by going around the API.
 	if c.Title != nil && strings.TrimSpace(*c.Title) == "" {
 		return Task{}, ErrEmptyTitle
+	}
+	if c.Priority != nil && !c.Priority.valid() {
+		return Task{}, ErrInvalidPriority
+	}
+	if c.DueDate != nil && *c.DueDate != "" && !validDueDate(*c.DueDate) {
+		return Task{}, ErrInvalidDueDate
 	}
 
 	task, err := s.Get(repo, id)
@@ -240,8 +291,14 @@ func (s *Store) Update(repo, id string, c Changes) (Task, error) {
 	if c.Status != nil {
 		task.Status = *c.Status
 	}
-	if c.Urgent != nil {
-		task.Urgent = *c.Urgent
+	if c.Priority != nil {
+		task.Priority = *c.Priority
+		// The old flag is no longer the source of truth; clearing it stops
+		// upgradePriority from ever second-guessing an explicit choice.
+		task.Urgent = false
+	}
+	if c.DueDate != nil {
+		task.DueDate = *c.DueDate
 	}
 	if c.AssignedTo != nil {
 		task.AssignedTo = *c.AssignedTo

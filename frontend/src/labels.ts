@@ -1,4 +1,10 @@
-import type { AuditAction, DeploymentStatus, MergeRequestStatus, TaskStatus } from './api/types'
+import type {
+  AuditAction,
+  DeploymentStatus,
+  MergeRequestStatus,
+  TaskPriority,
+  TaskStatus,
+} from './api/types'
 
 // Turkish display strings + which badge variant each status wears. Shared
 // so the same status never renders as two different labels/colours on two
@@ -18,6 +24,34 @@ export const TASK_STATUS_BADGE: Record<TaskStatus, string> = {
   in_progress: 'badge-accent',
   awaiting_test: 'badge-warn',
   done: 'badge-success',
+}
+
+export const TASK_PRIORITY_LABELS: Record<TaskPriority, string> = {
+  low: 'Düşük',
+  normal: 'Normal',
+  high: 'Yüksek',
+  critical: 'Kritik',
+}
+
+// Highest first: a picker and a sort both want the urgent end at the top.
+export const TASK_PRIORITIES: TaskPriority[] = ['critical', 'high', 'normal', 'low']
+
+// Normal is deliberately absent from the badge map — the default carries
+// no colour, so the ones that do mean something stand out. Callers render
+// a badge only when there is a class here.
+export const TASK_PRIORITY_BADGE: Partial<Record<TaskPriority, string>> = {
+  critical: 'badge-danger',
+  high: 'badge-warn',
+  low: 'badge-neutral',
+}
+
+// Sort weight, descending by urgency. Used to order a column so the thing
+// that matters is not three cards down.
+export const TASK_PRIORITY_RANK: Record<TaskPriority, number> = {
+  critical: 0,
+  high: 1,
+  normal: 2,
+  low: 3,
 }
 
 export const MR_STATUS_LABELS: Record<MergeRequestStatus, string> = {
@@ -184,4 +218,26 @@ function dayKey(iso: string): string {
 // Just the clock time — the day is already in the group heading above.
 export function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+}
+
+// Today as "YYYY-MM-DD" in the reader's own calendar — the same shape a
+// due date is stored in, so overdue is a plain string comparison and never
+// drifts by a timezone.
+export function todayKey(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+// A due date rendered for reading: "12 Eylül" — the year only when it is
+// not this one, because most deadlines are weeks away and the year is
+// noise.
+export function formatDueDate(due: string): string {
+  const d = new Date(due + 'T00:00:00')
+  const sameYear = d.getFullYear() === new Date().getFullYear()
+  return d.toLocaleDateString('tr-TR', {
+    day: 'numeric',
+    month: 'long',
+    year: sameYear ? undefined : 'numeric',
+  })
 }

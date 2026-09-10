@@ -155,15 +155,27 @@ export interface GitEmails {
 // are deliberately different states.
 export type TaskStatus = 'todo' | 'in_progress' | 'awaiting_test' | 'done'
 
+// In ascending order of "deal with this sooner". Replaces the original
+// boolean `urgent`, which collapsed once more than a couple of things
+// were flagged — see backend/internal/taskboard's Priority.
+export type TaskPriority = 'low' | 'normal' | 'high' | 'critical'
+
 export interface Task {
   id: string
+  // The readable name — "DEN-14". Absent on tasks created before keys
+  // existed; the UI falls back to nothing rather than showing a blank
+  // chip.
+  key?: string
   repo: string
   title: string
   description: string
   assignedTo: string
   author: string
   status: TaskStatus
-  urgent: boolean
+  priority: TaskPriority
+  // A calendar day, "YYYY-MM-DD", not a timestamp — a deadline is a day
+  // in the reader's calendar. Empty/absent means none set.
+  dueDate?: string
   createdAt: string
 }
 

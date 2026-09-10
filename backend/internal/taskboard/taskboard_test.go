@@ -2,6 +2,8 @@ package taskboard
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -18,8 +20,8 @@ func TestCreate_PersistsAndReturnsATodoTask(t *testing.T) {
 	if task.Status != StatusTodo {
 		t.Errorf("Status = %q, want %q — a task starts written-down, not started", task.Status, StatusTodo)
 	}
-	if task.Urgent {
-		t.Error("expected Urgent to default to false")
+	if task.Priority != PriorityNormal {
+		t.Errorf("Priority = %q, want %q — a new task is not special until somebody says so", task.Priority, PriorityNormal)
 	}
 	if task.CreatedAt.IsZero() {
 		t.Error("expected CreatedAt to be set")
@@ -124,14 +126,14 @@ func TestUpdate_ChangesOnlyProvidedFields(t *testing.T) {
 		t.Errorf("AssignedTo = %q, want unchanged %q", updated.AssignedTo, "dev-1")
 	}
 
-	urgent := true
+	high := PriorityHigh
 	newAssignee := "dev-2"
-	updated2, err := store.Update("intranet-backend", created.ID, Changes{Urgent: &urgent, AssignedTo: &newAssignee})
+	updated2, err := store.Update("intranet-backend", created.ID, Changes{Priority: &high, AssignedTo: &newAssignee})
 	if err != nil {
 		t.Fatalf("second Update returned error: %v", err)
 	}
-	if !updated2.Urgent {
-		t.Error("expected Urgent = true")
+	if updated2.Priority != PriorityHigh {
+		t.Errorf("Priority = %q, want %q", updated2.Priority, PriorityHigh)
 	}
 	if updated2.AssignedTo != "dev-2" {
 		t.Errorf("AssignedTo = %q, want %q", updated2.AssignedTo, "dev-2")
@@ -335,5 +337,246 @@ func TestDelete_RejectsPathTraversalAttempts(t *testing.T) {
 	}
 	if err := store.Delete("../escape", "0123456789abcdef"); !errors.Is(err, ErrInvalidRepo) {
 		t.Errorf("Delete with a traversal repo = %v, want ErrInvalidRepo", err)
+	}
+}
+
+// ----------------------------------------------------- keys & priority
+
+func TestCreate_AssignsAReadableKey(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	first, err := store.Create("deneme", "Bir", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	second, err := store.Create("deneme", "İki", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	if first.Key != "DEN-1" {
+		t.Errorf("first key = %q, want %q", first.Key, "DEN-1")
+	}
+	if second.Key != "DEN-2" {
+		t.Errorf("second key = %q, want %q", second.Key, "DEN-2")
+	}
+}
+
+// Each repository counts on its own, so one busy project does not push
+// another project's numbers into the hundreds.
+func TestCreate_CountsPerRepository(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	if _, err := store.Create("deneme", "Bir", "", "", "dev-1"); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if _, err := store.Create("deneme", "İki", "", "", "dev-1"); err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	other, err := store.Create("oasrapor", "Bir", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	if other.Key != "OAS-1" {
+		t.Errorf("other repo's first key = %q, want %q", other.Key, "OAS-1")
+	}
+}
+
+// A deleted task's number is never handed out again: somebody who wrote
+// "DEN-3" in a commit message must not find it pointing at different work
+// a month later.
+func TestCreate_DoesNotReuseADeletedNumber(t *testing.T) {
+	store := NewStore(t.TempDir())
+
+	first, err := store.Create("deneme", "Silinecek", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if err := store.Delete("deneme", first.ID); err != nil {
+		t.Fatalf("Delete failed: %v", err)
+	}
+
+	next, err := store.Create("deneme", "Yeni", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if next.Key == first.Key {
+		t.Errorf("key %q was reused after the task was deleted", next.Key)
+	}
+	if next.Key != "DEN-2" {
+		t.Errorf("key = %q, want DEN-2 — the sequence should continue, leaving a gap", next.Key)
+	}
+}
+
+func TestKeyPrefix(t *testing.T) {
+	cases := []struct {
+		repo string
+		want string
+	}{
+		{"deneme", "DEN"},
+		{"oasrapor-frontend", "OAS"},
+		{"intranet-servis", "INT"},
+		// Turkish letters fold to ASCII: a key gets typed on any keyboard
+		// and travels through commit messages and URLs.
+		{"çalışma", "CAL"},
+		{"ürün-takip", "URU"},
+		{"ışık", "ISI"},
+		// Punctuation and separators are skipped, not counted.
+		{"a-b-c-d", "ABC"},
+		{"x1-y2", "X1Y"},
+		// Nothing usable at all still produces a well-formed key.
+		{"---", "TSK"},
+		{"", "TSK"},
+	}
+
+	for _, tc := range cases {
+		if got := keyPrefix(tc.repo); got != tc.want {
+			t.Errorf("keyPrefix(%q) = %q, want %q", tc.repo, got, tc.want)
+		}
+	}
+}
+
+// Two repositories starting with the same letters must not share a
+// prefix, or DEN-4 would be ambiguous. The first one keeps the short
+// form; the second lengthens.
+func TestResolvePrefix_AvoidsCollisions(t *testing.T) {
+	taken := map[string]string{"intranet-servis": "INT"}
+
+	got := resolvePrefix("intranet-frontend", taken)
+	if got == "INT" {
+		t.Fatal("second repo took the prefix already in use")
+	}
+	if got != "INTR" {
+		t.Errorf("prefix = %q, want INTR — lengthen from the repo's own letters first", got)
+	}
+}
+
+func TestResolvePrefix_IsStableForAKnownRepo(t *testing.T) {
+	// A repo that already has a prefix keeps it, whatever else exists —
+	// recomputing could silently renumber tasks that are already written
+	// down somewhere.
+	taken := map[string]string{"deneme": "DEN", "denetim": "DENE"}
+	if got := resolvePrefix("deneme", taken); got != "DEN" {
+		t.Errorf("prefix = %q, want the stored DEN", got)
+	}
+}
+
+func TestUpdate_SetsPriorityAndDueDate(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("deneme", "Görev", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	critical, due := PriorityCritical, "2026-12-31"
+	updated, err := store.Update("deneme", task.ID, Changes{Priority: &critical, DueDate: &due})
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+	if updated.Priority != PriorityCritical || updated.DueDate != "2026-12-31" {
+		t.Errorf("got %q / %q, want critical / 2026-12-31", updated.Priority, updated.DueDate)
+	}
+
+	// An empty string clears the date; nil would have left it alone.
+	cleared := ""
+	updated, err = store.Update("deneme", task.ID, Changes{DueDate: &cleared})
+	if err != nil {
+		t.Fatalf("Update failed: %v", err)
+	}
+	if updated.DueDate != "" {
+		t.Errorf("dueDate = %q, want it cleared", updated.DueDate)
+	}
+	if updated.Priority != PriorityCritical {
+		t.Errorf("priority = %q, want it untouched by a due-date-only update", updated.Priority)
+	}
+}
+
+func TestUpdate_RejectsABadPriorityOrDate(t *testing.T) {
+	store := NewStore(t.TempDir())
+	task, err := store.Create("deneme", "Görev", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	bogus := Priority("acil")
+	if _, err := store.Update("deneme", task.ID, Changes{Priority: &bogus}); !errors.Is(err, ErrInvalidPriority) {
+		t.Errorf("Update with a bad priority = %v, want ErrInvalidPriority", err)
+	}
+
+	// A date that parses as text but is not a real day must not slip
+	// through and become a silently normalised 2026-03-03.
+	for _, bad := range []string{"31.12.2026", "2026-13-01", "2026-02-31", "yarın"} {
+		v := bad
+		if _, err := store.Update("deneme", task.ID, Changes{DueDate: &v}); !errors.Is(err, ErrInvalidDueDate) {
+			t.Errorf("Update with dueDate %q = %v, want ErrInvalidDueDate", bad, err)
+		}
+	}
+}
+
+func TestOverdue(t *testing.T) {
+	cases := []struct {
+		name  string
+		task  Task
+		today string
+		want  bool
+	}{
+		{"tarihsiz görev gecikmez", Task{Status: StatusTodo}, "2026-09-10", false},
+		{"gelecekteki tarih", Task{Status: StatusTodo, DueDate: "2026-09-20"}, "2026-09-10", false},
+		{"bugün henüz gecikme değil", Task{Status: StatusTodo, DueDate: "2026-09-10"}, "2026-09-10", false},
+		{"geçmiş tarih", Task{Status: StatusTodo, DueDate: "2026-09-01"}, "2026-09-10", true},
+		// Finished work is never overdue — chasing something already
+		// delivered is noise, and the board would show a permanent red
+		// column of completed tasks.
+		{"biten görev gecikmez", Task{Status: StatusDone, DueDate: "2026-09-01"}, "2026-09-10", false},
+	}
+
+	for _, tc := range cases {
+		if got := tc.task.Overdue(tc.today); got != tc.want {
+			t.Errorf("%s: Overdue = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// Tasks written before Priority existed carry the old boolean. They must
+// read back with a usable priority without anything on disk being
+// rewritten.
+func TestGet_UpgradesTheOldUrgentFlag(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(dir)
+
+	task, err := store.Create("deneme", "Eski görev", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	// Rewrite the file the way the previous version would have.
+	path := filepath.Join(dir, "deneme", task.ID+".json")
+	legacy := `{"id":"` + task.ID + `","repo":"deneme","title":"Eski görev",` +
+		`"status":"in_progress","urgent":true,"createdAt":"2026-08-01T10:00:00Z"}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatalf("failed to write the legacy file: %v", err)
+	}
+
+	reread, err := store.Get("deneme", task.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if reread.Priority != PriorityHigh {
+		t.Errorf("priority = %q, want %q for a task saved with urgent=true", reread.Priority, PriorityHigh)
+	}
+
+	// And one saved without the flag becomes normal, not empty.
+	plain := `{"id":"` + task.ID + `","repo":"deneme","title":"Eski görev",` +
+		`"status":"todo","createdAt":"2026-08-01T10:00:00Z"}`
+	if err := os.WriteFile(path, []byte(plain), 0o600); err != nil {
+		t.Fatalf("failed to write the legacy file: %v", err)
+	}
+	reread, err = store.Get("deneme", task.ID)
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	if reread.Priority != PriorityNormal {
+		t.Errorf("priority = %q, want %q", reread.Priority, PriorityNormal)
 	}
 }

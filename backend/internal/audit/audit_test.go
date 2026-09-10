@@ -159,3 +159,69 @@ func TestLog_IsSafeUnderConcurrentWriters(t *testing.T) {
 		t.Fatalf("got %d events, want 20 — a concurrent write was lost or interleaved", len(events))
 	}
 }
+
+// A task's history is the same append-only file, asked a narrower
+// question — this is what makes a per-task timeline possible without a
+// second index.
+func TestListForTarget_ReturnsOnlyThatEntitysEvents(t *testing.T) {
+	logger := New(filepath.Join(t.TempDir(), "audit.jsonl"))
+
+	writes := []struct {
+		actor, repo, target, summary string
+	}{
+		{"dev-1", "deneme", "task-a", "Görev açıldı"},
+		{"dev-2", "deneme", "task-b", "Başka görev açıldı"},
+		{"dev-2", "deneme", "task-a", "durum → yapılıyor"},
+		{"dev-1", "oasrapor", "task-a", "Aynı id, başka repo"},
+	}
+	for _, w := range writes {
+		if err := logger.Log(w.actor, ActionTaskUpdated, w.repo, w.target, w.summary); err != nil {
+			t.Fatalf("Log failed: %v", err)
+		}
+	}
+
+	events, err := logger.ListForTarget("deneme", "task-a", 50)
+	if err != nil {
+		t.Fatalf("ListForTarget failed: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("got %d events, want 2 — %+v", len(events), events)
+	}
+	// Newest first, like List.
+	if events[0].Summary != "durum → yapılıyor" {
+		t.Errorf("first event = %q, want the newest one", events[0].Summary)
+	}
+	// The repo has to be part of the match: two repos can hold entities
+	// with the same id, and mixing their histories would be worse than
+	// showing none.
+	for _, e := range events {
+		if e.Repo != "deneme" {
+			t.Errorf("event from repo %q leaked into deneme's history", e.Repo)
+		}
+	}
+}
+
+func TestListForTarget_EmptyTargetReturnsNothing(t *testing.T) {
+	logger := New(filepath.Join(t.TempDir(), "audit.jsonl"))
+	if err := logger.Log("dev-1", ActionTaskUpdated, "deneme", "task-a", "bir şey"); err != nil {
+		t.Fatalf("Log failed: %v", err)
+	}
+
+	// An empty target would otherwise match every event that has no
+	// target at all, which is the opposite of "history of this thing".
+	events, err := logger.ListForTarget("deneme", "", 50)
+	if err != nil {
+		t.Fatalf("ListForTarget failed: %v", err)
+	}
+	if len(events) != 0 {
+		t.Errorf("got %d events for an empty target, want 0", len(events))
+	}
+}
+
+func TestListForTarget_NilLoggerIsSafe(t *testing.T) {
+	var logger *Logger
+	events, err := logger.ListForTarget("deneme", "task-a", 50)
+	if err != nil || len(events) != 0 {
+		t.Errorf("nil logger returned (%v, %v), want (empty, nil)", events, err)
+	}
+}

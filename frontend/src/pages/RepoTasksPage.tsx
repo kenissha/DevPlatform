@@ -1,11 +1,22 @@
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
-import type { Person, Task, TaskStatus } from '../api/types'
+import type { Person, Task, TaskPriority, TaskStatus } from '../api/types'
 import { PlusIcon } from '../components/icons'
 import { Modal } from '../components/Modal'
-import { TASK_STATUS_LABELS, TASK_STATUSES, formatDate, formatRelative } from '../labels'
+import {
+  TASK_PRIORITIES,
+  TASK_PRIORITY_BADGE,
+  TASK_PRIORITY_LABELS,
+  TASK_PRIORITY_RANK,
+  TASK_STATUS_LABELS,
+  TASK_STATUSES,
+  formatDate,
+  formatDueDate,
+  formatRelative,
+  todayKey,
+} from '../labels'
 
 export function RepoTasksPage() {
   const { repo = '' } = useParams<{ repo: string }>()
@@ -69,8 +80,10 @@ export function RepoTasksPage() {
     return person?.email || subject
   }
 
+  const today = todayKey()
   const openCount = tasks?.filter((t) => t.status !== 'done').length ?? 0
-  const urgentCount = tasks?.filter((t) => t.urgent && t.status !== 'done').length ?? 0
+  const overdueCount =
+    tasks?.filter((t) => t.dueDate && t.status !== 'done' && t.dueDate < today).length ?? 0
 
   return (
     <div className="page board-page">
@@ -80,7 +93,7 @@ export function RepoTasksPage() {
           <p className="page-subtitle">
             {tasks === null
               ? `${repo} üzerindeki iş takibi`
-              : `${openCount} açık görev` + (urgentCount > 0 ? ` · ${urgentCount} acil` : '')}
+              : `${openCount} açık görev` + (overdueCount > 0 ? ` · ${overdueCount} geciken` : '')}
           </p>
         </div>
         <button type="button" className="btn-primary" onClick={() => setCreatingOpen(true)}>
@@ -94,7 +107,16 @@ export function RepoTasksPage() {
       {tasks && (
         <div className="kanban-board">
           {TASK_STATUSES.map((status) => {
-            const columnTasks = tasks.filter((t) => t.status === status)
+            // Highest priority first, then oldest first inside a level:
+            // the thing that matters should never be three cards down,
+            // and among equals the one that has waited longest wins.
+            const columnTasks = tasks
+              .filter((t) => t.status === status)
+              .sort(
+                (a, b) =>
+                  TASK_PRIORITY_RANK[a.priority] - TASK_PRIORITY_RANK[b.priority] ||
+                  a.createdAt.localeCompare(b.createdAt),
+              )
             return (
               <div
                 key={status}
@@ -115,7 +137,7 @@ export function RepoTasksPage() {
                   {columnTasks.map((task) => (
                     <div
                       key={task.id}
-                      className={task.urgent ? 'kanban-card kanban-card-urgent' : 'kanban-card'}
+                      className={`kanban-card prio-${task.priority}`}
                       draggable
                       role="button"
                       tabIndex={0}
@@ -136,7 +158,25 @@ export function RepoTasksPage() {
                         }
                       }}
                     >
-                      {task.urgent && <span className="badge badge-danger">Acil</span>}
+                      <div className="kanban-card-top">
+                        {task.key && <span className="task-key">{task.key}</span>}
+                        {TASK_PRIORITY_BADGE[task.priority] && (
+                          <span className={`badge ${TASK_PRIORITY_BADGE[task.priority]}`}>
+                            {TASK_PRIORITY_LABELS[task.priority]}
+                          </span>
+                        )}
+                        {task.dueDate && (
+                          <span
+                            className={
+                              task.status !== 'done' && task.dueDate < today
+                                ? 'due-chip is-overdue'
+                                : 'due-chip'
+                            }
+                          >
+                            {formatDueDate(task.dueDate)}
+                          </span>
+                        )}
+                      </div>
                       <p className="kanban-card-title">{task.title}</p>
                       <div className="kanban-card-foot">
                         <Avatar label={task.assignedTo ? personLabel(task.assignedTo) : ''} />
@@ -215,6 +255,8 @@ function NewTaskModal({
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [assignee, setAssignee] = useState('')
+  const [priority, setPriority] = useState<TaskPriority>('normal')
+  const [dueDate, setDueDate] = useState('')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
@@ -224,7 +266,15 @@ function NewTaskModal({
     setCreating(true)
     setCreateError(null)
     try {
-      await api.createTask(repo, title.trim(), description.trim(), assignee.trim())
+      const created = await api.createTask(repo, title.trim(), description.trim(), assignee.trim())
+      // Create fixes status and priority; anything the person chose here
+      // is applied as an edit, which also puts it in the task's history.
+      if (priority !== 'normal' || dueDate) {
+        await api.updateTask(repo, created.id, {
+          ...(priority !== 'normal' ? { priority } : {}),
+          ...(dueDate ? { dueDate } : {}),
+        })
+      }
       onCreated()
     } catch (err) {
       setCreateError(err instanceof ApiError ? err.message : 'Görev oluşturulamadı')
@@ -247,6 +297,26 @@ function NewTaskModal({
           </span>
           <textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} />
         </label>
+
+        <div className="field-row">
+          <label className="field">
+            <span className="field-label">Öncelik</span>
+            <select value={priority} onChange={(e) => setPriority(e.target.value as TaskPriority)}>
+              {TASK_PRIORITIES.map((p) => (
+                <option key={p} value={p}>
+                  {TASK_PRIORITY_LABELS[p]}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="field">
+            <span className="field-label">
+              Bitiş tarihi <span className="field-optional">— isteğe bağlı</span>
+            </span>
+            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          </label>
+        </div>
 
         <label className="field">
           <span className="field-label">Atanan</span>
@@ -298,7 +368,7 @@ function TaskDetailPanel({
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  async function patch(changes: Partial<{ status: TaskStatus; urgent: boolean; assignedTo: string }>) {
+  async function patch(changes: Parameters<typeof api.updateTask>[2]) {
     setError(null)
     try {
       await api.updateTask(repo, task.id, changes)
@@ -367,6 +437,31 @@ function TaskDetailPanel({
         </div>
       </div>
 
+      <div className="field-row">
+        <label className="field">
+          <span className="field-label">Öncelik</span>
+          <select
+            value={task.priority}
+            onChange={(e) => patch({ priority: e.target.value as TaskPriority })}
+          >
+            {TASK_PRIORITIES.map((p) => (
+              <option key={p} value={p}>
+                {TASK_PRIORITY_LABELS[p]}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="field">
+          <span className="field-label">Bitiş tarihi</span>
+          <input
+            type="date"
+            value={task.dueDate ?? ''}
+            onChange={(e) => patch({ dueDate: e.target.value })}
+          />
+        </label>
+      </div>
+
       <label className="field">
         <span className="field-label">Atanan</span>
         <select value={task.assignedTo} onChange={(e) => patch({ assignedTo: e.target.value })}>
@@ -383,16 +478,13 @@ function TaskDetailPanel({
       </label>
 
       <div className="task-actions">
+        <Link to={`/repos/${encodeURIComponent(repo)}/tasks/${task.id}`} className="btn-secondary">
+          Görev sayfası →
+        </Link>
         <button type="button" className="btn-secondary" onClick={() => setEditing(true)}>
           Düzenle
         </button>
-        <button
-          type="button"
-          className={task.urgent ? 'btn-danger' : 'btn-secondary'}
-          onClick={() => patch({ urgent: !task.urgent })}
-        >
-          {task.urgent ? 'Acili kaldır' : 'Acil işaretle'}
-        </button>
+
         <div className="spacer" />
         {canDelete &&
           (confirmingDelete ? (

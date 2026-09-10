@@ -22,6 +22,7 @@ import type {
   ReleaseInfo,
   Repo,
   Task,
+  TaskPriority,
   TaskStatus,
   User,
 } from './types'
@@ -147,7 +148,9 @@ export const api = {
       title: string
       description: string
       status: TaskStatus
-      urgent: boolean
+      priority: TaskPriority
+      // '' clears the date; omitting the field leaves it alone.
+      dueDate: string
       assignedTo: string
     }>,
   ) =>
@@ -156,6 +159,14 @@ export const api = {
       body: JSON.stringify(changes),
     }),
   // Only the task's author or an admin may delete; anyone else gets 403.
+  getTask: (repo: string, id: string) =>
+    request<Task>(`/api/repos/${encodeURIComponent(repo)}/tasks/${encodeURIComponent(id)}`),
+  // The task's own audit trail — who changed what, when. Reads the same
+  // append-only log the Denetim kaydı page shows, narrowed to one task.
+  taskHistory: (repo: string, id: string) =>
+    request<AuditEvent[]>(
+      `/api/repos/${encodeURIComponent(repo)}/tasks/${encodeURIComponent(id)}/history`,
+    ),
   deleteTask: (repo: string, id: string) =>
     request<void>(`/api/repos/${encodeURIComponent(repo)}/tasks/${encodeURIComponent(id)}`, {
       method: 'DELETE',
@@ -352,5 +363,6 @@ export type {
   ReleaseInfo,
   Repo,
   Task,
+  TaskPriority,
   User,
 }

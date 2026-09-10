@@ -230,10 +230,10 @@ func TestUpdate_AppliesPartialChangeAsAnyAuthenticatedUser(t *testing.T) {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	body, _ := json.Marshal(map[string]any{"status": "awaiting_test", "urgent": true})
+	body, _ := json.Marshal(map[string]any{"status": "awaiting_test", "priority": "critical"})
 	req := httptest.NewRequest(http.MethodPatch, "/api/repos/sample/tasks/"+created.ID, bytes.NewReader(body))
 	// A plain developer (not the assignee, not an admin) can still update
-	// status/urgent — the board has no per-field authorization, see
+	// status/priority — the board has no per-field authorization, see
 	// Store.Update's doc comment.
 	req = addAuth(req, t, "dev-2", "developer")
 	rec := httptest.NewRecorder()
@@ -247,8 +247,8 @@ func TestUpdate_AppliesPartialChangeAsAnyAuthenticatedUser(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &task); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if task.Status != StatusAwaitingTest || !task.Urgent {
-		t.Errorf("task = %+v, want status=awaiting_test urgent=true", task)
+	if task.Status != StatusAwaitingTest || task.Priority != PriorityCritical {
+		t.Errorf("task = %+v, want status=awaiting_test priority=critical", task)
 	}
 	if task.AssignedTo != "dev-1" {
 		t.Errorf("AssignedTo = %q, want unchanged %q", task.AssignedTo, "dev-1")
