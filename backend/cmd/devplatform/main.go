@@ -15,7 +15,6 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/deploy"
 	"github.com/kenissha/DevPlatform/backend/internal/deployment"
 	"github.com/kenissha/DevPlatform/backend/internal/displaynames"
-	"github.com/kenissha/DevPlatform/backend/internal/repodesc"
 	"github.com/kenissha/DevPlatform/backend/internal/gitemails"
 	"github.com/kenissha/DevPlatform/backend/internal/gitserver"
 	"github.com/kenissha/DevPlatform/backend/internal/gitstats"
@@ -24,6 +23,8 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/notify"
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
+	"github.com/kenissha/DevPlatform/backend/internal/repodesc"
+	"github.com/kenissha/DevPlatform/backend/internal/repoimport"
 	"github.com/kenissha/DevPlatform/backend/internal/repostore"
 	"github.com/kenissha/DevPlatform/backend/internal/secretsvault"
 	"github.com/kenissha/DevPlatform/backend/internal/server"
@@ -111,6 +112,13 @@ func main() {
 		Access: accessStore,
 	}
 	repoHandlers := &repoapi.Handlers{Repos: store, Audit: auditLogger, Access: accessStore, Descriptions: repoDescStore}
+	// Imports write into the same directory repostore serves from — an
+	// imported repository is not a different kind of repository, it just
+	// arrives with a history instead of empty.
+	importHandlers := &repoimport.Handlers{
+		Store: repoimport.NewStore(cfg.DataDir, nil),
+		Audit: auditLogger,
+	}
 	gitTokenHandlers := &gittoken.Handlers{Store: gitTokenStore}
 	gitEmailHandlers := &gitemails.Handlers{Store: gitEmailStore}
 	taskHandlers := &taskboard.Handlers{
@@ -203,6 +211,7 @@ func main() {
 		AuthMiddleware:  authMiddleware,
 		MergeRequests:   mrHandlers,
 		Repos:           repoHandlers,
+		Imports:         importHandlers,
 		Tasks:           taskHandlers,
 		Stats:           statsHandlers,
 		Audit:           auditHandlers,

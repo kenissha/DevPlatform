@@ -975,6 +975,88 @@ verildiğinde kişiye haber veren bir şeydi.
   istiyor, ve tüm gövdeleri saklamak her sayfa görüntülemesinde okunan bir
   dosyaya sınırsız metin koymak olurdu. Görev başına en fazla 100 commit.
 
+- **2026-09-11 güncelleme — var olan bir depoyu geçmişiyle içeri alma
+  (`internal/repoimport`).**
+
+  **Neden gerekti.** Panel yalnızca boş depo açabiliyordu, doldurmanın tek
+  yolu push'tu, o da gizli-veri tarayıcısından geçiyordu. Var olan bir depo
+  için bu yanlış kapı: tarayıcının işi **bugün** birinin kimlik bilgisi
+  commit'lemesini engellemek, oysa yıllar önceki bir commit'teki sır
+  deponun durduğu yerde çoktan yayımlanmış. Pratikte gerçek bir projeyi
+  içeri almak imkânsızdı — 600 commit'in herhangi birindeki tek bir blob
+  bütün push'u reddettiriyordu.
+
+  Bunu tahminle değil ölçerek bulduk: Intranet-F'in (571 commit) ve
+  IntranetBackend'in (485 commit) tam geçmişi tarandı, sonra gerçekten
+  push denendi. İkisi de reddedildi — `jwt` (Playwright `e2e/.auth/*.json`)
+  ve `connection-string-password` (`appsettings.Production.json`). Altı
+  dosya, hepsi **sadece eski commit'lerde**, hiçbiri canlı dalda değil.
+  Reddedilen push 12 dakika sürüyor ve ardında 47 MB ölü nesne bırakıyordu.
+
+  **Neden `filter-repo` değil.** Geçmişi bir kopyada temizlemek commit
+  hash'lerini değiştiriyor; o zaman kişinin mevcut çalışma klasörü yeni
+  sunucuyla uyumsuz kalıyor ve yeniden clone gerekiyor. İstenen tam olarak
+  bunun tersiydi: mevcut klasörde çalışmaya devam edip `git remote add` ile
+  ikinci bir uzak sunucuya push edebilmek.
+
+  **Çözüm.** İçe aktarım depoyu doğrudan `DataDir`'e yazıyor, push
+  etmiyor. Geçmiş olduğu gibi geliyor, hash'ler korunuyor, dolayısıyla var
+  olan çalışma kopyaları sorunsuz push edebiliyor. Doğrulandı: içe
+  aktarımdan sonra normal push **8.7 saniyede** geçiyor (12 dakikalık
+  reddedilen push yerine), main'e merge edilip push edilebiliyor, ve yeni
+  bir sır push edilmeye kalkılırsa **hâlâ reddediliyor** — tarayıcı
+  kapanmıyor, sadece "var olanı içeri al" ile "bugün yeni sır ekle"
+  ayrımı yapılıyor.
+
+  **Tarayıcıyı atlıyor ama sessizce değil.** Her içe aktarım getirdiği
+  geçmişi tarayıp ne bulduğunu söylüyor: hangi desen, hangi dosya. Bir
+  kontrolü atlamak savunulabilir; atladığını gizlemek değil. Bulgu hata
+  sayılmıyor — aktarım zaten başarılı; beş yıllık bir commit yüzünden
+  reddetmek deponun başka yerde durmasından başka bir şey sağlamaz.
+  Eşleşen metin **asla** taşınmıyor, sadece desenin adı: sırrı panele,
+  denetim kaydına ve tarayıcı geçmişine basmak onu commit'te bırakmaktan
+  daha geniş yayardı.
+
+  **Kimlik bilgisi hiçbir yere sızmıyor.** Kapalı depolar için anahtar
+  gerekiyor ve bir klonun anahtarı kalıcı olarak bırakabileceği üç yer
+  var: komut satırı (süreç listesinden okunur), klonlanan deponun kendi
+  config'i (`git clone <url>` verilen URL'yi `remote.origin.url`'e yazar —
+  anahtar `DataDir`'de sonsuza kadar kalırdı), ve git'in hata çıktısı
+  (başarısızlıkta URL'yi olduğu gibi basar). Bu yüzden: git'e verilen URL
+  anahtar içermiyor, anahtar bir kerelik credential dosyasına yazılıp
+  silinyor, klonlama biter bitmez `remote origin` kaldırılıyor, ve git'ten
+  çıkan her şey log'a/denetim kaydına/panele gitmeden önce maskeleniyor.
+  Yapıştırılan `https://token@github.com/...` biçimindeki URL'ler de
+  temizleniyor — insanlar terminalde ne varsa onu yapıştırıyor.
+
+  **Kaynak adresi paketin güvenlik sınırı.** Adres bir git komut satırına
+  gidiyor ve git'in remote helper'ları bunu göründüğünden çok daha
+  tehlikeli yapıyor: `ext::sh -c whoami` belgelenmiş bir git transport'u ve
+  komut çalıştırıyor; `-` ile başlayan bir değer URL değil seçenek olarak
+  okunuyor (`--upload-pack=...` rastgele program çalıştırır); `file:///`
+  sunucudaki herhangi bir dizini başkalarının okuyabileceği bir depoya
+  çevirirdi. Tehlikeli olanları saymak yerine **iki şemaya izin verilip
+  gerisi reddediliyor**. Yönetici yetkisi bunu atlamak için gerekçe değil:
+  çalınmaya en değer hesap yönetici hesabı.
+
+  **Arka planda çalışıyor.** 202 dönüyor, panel durumu yokluyor. Senkron
+  olsa IIS zaman aşımına uğrardı. Klonlama yüzde bildirmediği için ilerleme
+  çubuğu yok, geçen süre var — ölçülmemiş bir hızda dolan çubuk yalan
+  söyler.
+
+  **Yarı kalmış depo bırakmıyor.** Klonlama `DataDir` içinde `.import-<id>`
+  adlı geçici bir dizine yapılıp bitince yerine taşınıyor: aynı birimde
+  rename, yani atomik, ve `.git` uzantısı olmadığı için `repostore.List`
+  iş sürerken onu görmüyor — depo ancak bütün hâlde ortaya çıkıyor.
+  Başarısızlıkta isim serbest bırakılıyor, yoksa adres düzeltmek için
+  sunucuyu yeniden başlatmak gerekirdi.
+
+  **Rotalar `/api/repo-imports` altında, `/api/repos/` altında değil.**
+  Bu bir üslup tercihi değil: `"/api/repos/import/{id}"` ile
+  `"/api/repos/{repo}/branches"` ikisi de `"/api/repos/import/branches"`
+  ile eşleşiyor, hiçbiri diğerinden daha özel değil, ve `net/http` kayıt
+  anında panikliyor. Önce yanlış yazıldı, mux uyardı.
+
 ## Sıradaki iş
 
 **2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`

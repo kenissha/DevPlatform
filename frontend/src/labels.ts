@@ -105,6 +105,7 @@ export const MR_STATUS_BADGE: Record<MergeRequestStatus, string> = {
 
 export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   'repo.created': 'Repo oluşturuldu',
+  'repo.imported': 'Repo içe aktarıldı',
   'task.created': 'Görev açıldı',
   'task.updated': 'Görev güncellendi',
   'task.deleted': 'Görev silindi',
@@ -120,6 +121,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
 
 export const AUDIT_ACTION_BADGE: Record<AuditAction, string> = {
   'repo.created': 'badge-neutral',
+  'repo.imported': 'badge-accent',
   'task.created': 'badge-neutral',
   'task.updated': 'badge-neutral',
   'task.deleted': 'badge-danger',

@@ -27,7 +27,12 @@ import (
 type Action string
 
 const (
-	ActionRepoCreated        Action = "repo.created"
+	ActionRepoCreated Action = "repo.created"
+	// Distinct from repo.created on purpose: an imported repository arrives
+	// with a history nobody on this platform reviewed, and the entry that
+	// records it should say so rather than read like somebody started a
+	// project here.
+	ActionRepoImported       Action = "repo.imported"
 	ActionTaskCreated        Action = "task.created"
 	ActionTaskUpdated        Action = "task.updated"
 	ActionTaskDeleted        Action = "task.deleted"

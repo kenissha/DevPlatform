@@ -91,6 +91,7 @@ export interface Person {
 
 export type AuditAction =
   | 'repo.created'
+  | 'repo.imported'
   | 'task.created'
   | 'task.updated'
   | 'task.deleted'
@@ -149,6 +150,36 @@ export interface Contributions {
 export interface GitEmails {
   claimed: string[]
   suggestions: string[]
+}
+
+// One secret found in an imported repository's history. Never carries the
+// matched text — only which detector fired and where the file sat — since
+// echoing the secret into the panel would spread it further than leaving
+// it in the commit did.
+export interface ImportFinding {
+  pattern: string
+  path: string
+}
+
+// An in-flight or finished repository import. Cloning a real project takes
+// minutes, so the panel watches one of these rather than waiting on a
+// request. Jobs live in the server's memory and are lost on restart — what
+// survives is the repository itself and the audit entry.
+export interface ImportJob {
+  id: string
+  name: string
+  // Always credential-free, even when the person pasted a URL with a token
+  // in it.
+  source: string
+  status: 'running' | 'done' | 'failed'
+  startedAt: string
+  finishedAt?: string
+  commits?: number
+  branches?: number
+  // Present on a finished import. Non-empty is information, not failure:
+  // the import already succeeded.
+  findings?: ImportFinding[]
+  error?: string
 }
 
 // In board order. 'todo' is where every new task lands — see

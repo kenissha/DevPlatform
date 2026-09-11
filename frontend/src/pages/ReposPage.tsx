@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
 import { CopyButton } from '../components/CopyButton'
+import { ImportRepoModal } from '../components/ImportRepoModal'
 import { BranchIcon, PlusIcon, RepoIcon } from '../components/icons'
 import { formatRelative } from '../labels'
 import { cloneURL } from '../repos/clone'
@@ -29,6 +30,7 @@ export function ReposPage() {
 
   const [summaries, setSummaries] = useState<Record<string, Summary>>({})
   const [showCreate, setShowCreate] = useState(false)
+  const [importing, setImporting] = useState(false)
   const [newRepoName, setNewRepoName] = useState('')
   const [newRepoDesc, setNewRepoDesc] = useState('')
   const [creating, setCreating] = useState(false)
@@ -103,20 +105,27 @@ export function ReposPage() {
           </p>
         </div>
         {isAdmin && (
-          <button
-            type="button"
-            className={showCreate ? 'btn-secondary' : 'btn-primary'}
-            onClick={() => {
-              setShowCreate((open) => !open)
-              setCreateError(null)
-            }}
-          >
-            {showCreate ? 'Vazgeç' : (
-              <>
-                <PlusIcon /> Yeni repo
-              </>
-            )}
-          </button>
+          <div className="page-header-actions">
+            {/* Not a primary button: importing is the rarer of the two, and
+                two primaries side by side make neither one the answer. */}
+            <button type="button" className="btn-secondary" onClick={() => setImporting(true)}>
+              İçe aktar
+            </button>
+            <button
+              type="button"
+              className={showCreate ? 'btn-secondary' : 'btn-primary'}
+              onClick={() => {
+                setShowCreate((open) => !open)
+                setCreateError(null)
+              }}
+            >
+              {showCreate ? 'Vazgeç' : (
+                <>
+                  <PlusIcon /> Yeni repo
+                </>
+              )}
+            </button>
+          </div>
         )}
       </div>
 
@@ -191,6 +200,15 @@ export function ReposPage() {
             />
           ))}
         </div>
+      )}
+
+      {importing && (
+        <ImportRepoModal
+          onClose={() => setImporting(false)}
+          // Refreshes the list behind the modal, so the imported repo is
+          // already there when the person closes it.
+          onImported={reload}
+        />
       )}
     </div>
   )

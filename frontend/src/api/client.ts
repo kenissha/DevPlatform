@@ -23,6 +23,7 @@ import type {
   Repo,
   Task,
   TaskComment,
+  ImportJob,
   TaskCommit,
   TaskLabel,
   TaskPriority,
@@ -77,6 +78,16 @@ export const api = {
   listPeople: () => request<Person[]>('/api/users'),
 
   listRepos: () => request<Repo[]>('/api/repos'),
+  // Returns 202 with a job to watch — the repository does not exist yet.
+  // token is for a private source and is used once server-side; it is
+  // never stored and never comes back in a response.
+  startRepoImport: (source: string, name: string, token: string) =>
+    request<ImportJob>('/api/repo-imports', {
+      method: 'POST',
+      body: JSON.stringify({ source, name, token }),
+    }),
+  repoImport: (id: string) => request<ImportJob>(`/api/repo-imports/${encodeURIComponent(id)}`),
+
   createRepo: (name: string, description: string) =>
     request<Repo>('/api/repos', {
       method: 'POST',

@@ -17,6 +17,7 @@ import (
 	"github.com/kenissha/DevPlatform/backend/internal/mergerequest"
 	"github.com/kenissha/DevPlatform/backend/internal/notify"
 	"github.com/kenissha/DevPlatform/backend/internal/repoapi"
+	"github.com/kenissha/DevPlatform/backend/internal/repoimport"
 	"github.com/kenissha/DevPlatform/backend/internal/secretsvault"
 	"github.com/kenissha/DevPlatform/backend/internal/taskboard"
 	"github.com/kenissha/DevPlatform/backend/internal/users"
@@ -37,6 +38,7 @@ type Deps struct {
 
 	MergeRequests *mergerequest.Handlers // merge request review API
 	Repos         *repoapi.Handlers      // repository listing/creation/branches
+	Imports       *repoimport.Handlers   // bringing an existing repository in with its history
 	Tasks         *taskboard.Handlers    // task board
 	Stats         *gitstats.Handlers     // read-only repository insight
 	Audit         *audit.Handlers        // recorded action history
@@ -98,6 +100,7 @@ func NewRouter(deps Deps) *http.ServeMux {
 	authMiddleware := deps.AuthMiddleware
 	mr := deps.MergeRequests
 	repos := deps.Repos
+	imports := deps.Imports
 	tasks := deps.Tasks
 	stats := deps.Stats
 	auditLog := deps.Audit
@@ -153,6 +156,19 @@ func NewRouter(deps Deps) *http.ServeMux {
 	// (project setup), so it's Admin-only. Branches is repo-scoped.
 	mux.Handle("GET /api/repos", authMiddleware(http.HandlerFunc(repos.List)))
 	mux.Handle("POST /api/repos", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(repos.Create))))
+	// Importing is creating a repository, so it carries repo creation's
+	// admin requirement.
+	//
+	// The routes live at /api/repo-imports, NOT under /api/repos/, because
+	// an import is not scoped to a repository — none exists yet — and
+	// putting it there is an outright conflict rather than a style
+	// preference: "/api/repos/import/{id}" and "/api/repos/{repo}/branches"
+	// both match "/api/repos/import/branches", neither is more specific,
+	// and net/http panics at registration. (Learned the hard way; the mux
+	// is right.)
+	mux.Handle("POST /api/repo-imports", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(imports.Start))))
+	mux.Handle("GET /api/repo-imports", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(imports.List))))
+	mux.Handle("GET /api/repo-imports/{id}", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(imports.Get))))
 	// Editing a repo's description is project setup, same category as
 	// creating it — repoScopedAdmin rather than repoScoped.
 	mux.Handle("PUT /api/repos/{repo}/description", repoScopedAdmin(http.HandlerFunc(repos.Describe)))

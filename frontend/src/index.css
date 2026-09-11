@@ -889,6 +889,126 @@ code,
   white-space: nowrap;
 }
 
+/* ------------------------------------------------- depo içe aktarımı */
+
+.import-state {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.import-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 15px;
+  margin: 0;
+}
+.import-done strong {
+  color: var(--success);
+}
+.import-failed strong {
+  color: var(--danger);
+}
+
+/* A clone reports no percentage over this path, so there is no progress
+   to draw. A spinner says "still working" without claiming to know how
+   far along it is — which a bar would, falsely. */
+.import-spinner {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  animation: import-spin 0.8s linear infinite;
+}
+
+@keyframes import-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .import-spinner {
+    animation-duration: 2.4s;
+  }
+}
+
+.import-source {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+
+.import-elapsed,
+.import-summary {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.import-error {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* The findings block. Warning-coloured, not danger: the import worked.
+   This is something to act on, not a failure to recover from. */
+.import-findings {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--warn-soft);
+  border: 1px solid var(--warn);
+}
+
+.import-findings-head {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--warn);
+  margin: 0 0 8px;
+}
+
+.import-findings ul {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.import-findings li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+}
+
+.import-findings code {
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .branch-chip {
   display: inline-flex;
   align-items: center;
