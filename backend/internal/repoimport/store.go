@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -115,6 +116,17 @@ func (s *Store) run(id, name, source, token string) {
 	// clone is in flight and the repository only appears once it is whole.
 	staging := filepath.Join(s.rootDir, ".import-"+id)
 
+	// Logged at every step, not just on failure.
+	//
+	// An import is minutes of work in a background goroutine, on a server
+	// nobody is watching, and when it goes wrong the panel has room for
+	// one sentence. Two rounds of diagnosing this from that one sentence
+	// were two rounds too many: the log is where the sequence lives, and
+	// it costs a handful of lines per import.
+	started := time.Now()
+	log.Printf("repoimport[%s]: başlıyor — %q ← %s (hazırlık dizini: %s)",
+		id, name, sanitiseURL(source), staging)
+
 	if err := os.MkdirAll(s.rootDir, 0o750); err != nil {
 		s.fail(id, name, err.Error())
 		return
@@ -132,25 +144,38 @@ func (s *Store) run(id, name, source, token string) {
 		}
 	}()
 
+	cloneStart := time.Now()
 	if err := s.cloner.Clone(ctx, source, token, staging); err != nil {
-		s.fail(id, name, scrub(err.Error(), token, tokenIn(source)))
+		message := scrub(err.Error(), token, tokenIn(source))
+		log.Printf("repoimport[%s]: klonlama başarısız (%s): %s",
+			id, time.Since(cloneStart).Round(time.Second), message)
+		s.fail(id, name, message)
 		return
 	}
+	log.Printf("repoimport[%s]: klonlama bitti (%s)", id, time.Since(cloneStart).Round(time.Second))
 
 	commits, branches := countRefs(staging)
+	log.Printf("repoimport[%s]: %d commit, %d dal", id, commits, branches)
 	if branches == 0 {
+		log.Printf("repoimport[%s]: dal yok, vazgeçiliyor", id)
 		s.fail(id, name, "kaynak depoda hiç dal yok — adres doğru mu?")
 		return
 	}
 
 	// Scanned before the move, so a repository never becomes visible
 	// without its findings already recorded.
+	scanStart := time.Now()
 	findings := ScanHistory(staging)
+	log.Printf("repoimport[%s]: geçmiş tarandı (%s) — %d bulgu",
+		id, time.Since(scanStart).Round(time.Millisecond), len(findings))
 
 	target := s.repoPath(name)
-	if err := moveIntoPlace(staging, target); err != nil {
+	log.Printf("repoimport[%s]: yerine taşınıyor → %s", id, target)
+	if err := moveIntoPlace(id, staging, target); err != nil {
 		discardStaging = false
-		s.fail(id, name, describeMoveFailure(err, staging, target))
+		message := describeMoveFailure(err, staging, target)
+		log.Printf("repoimport[%s]: TAŞIMA BAŞARISIZ — %s", id, message)
+		s.fail(id, name, message)
 		return
 	}
 
@@ -163,6 +188,8 @@ func (s *Store) run(id, name, source, token string) {
 		job.Branches = branches
 		job.Findings = findings
 	}
+	log.Printf("repoimport[%s]: bitti — %q hazır (%s)",
+		id, name, time.Since(started).Round(time.Second))
 }
 
 // fail records the failure and releases the name so the person can correct

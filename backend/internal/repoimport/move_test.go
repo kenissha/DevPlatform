@@ -17,7 +17,7 @@ func TestMoveIntoPlace_MovesTheDirectory(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	if err := moveIntoPlace(from, to); err != nil {
+	if err := moveIntoPlace("test", from, to); err != nil {
 		t.Fatalf("moveIntoPlace: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(to, "objects")); err != nil {
@@ -43,7 +43,7 @@ func TestMoveIntoPlace_ExistingDestinationIsReportedAsSuch(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	err := moveIntoPlace(from, to)
+	err := moveIntoPlace("test", from, to)
 	if !errors.Is(err, ErrAlreadyExists) {
 		t.Fatalf("err = %v, want ErrAlreadyExists", err)
 	}
@@ -60,7 +60,7 @@ func TestMoveIntoPlace_DoesNotWaitOnAnExistingDestination(t *testing.T) {
 	_ = os.MkdirAll(to, 0o750)
 
 	done := make(chan error, 1)
-	go func() { done <- moveIntoPlace(from, to) }()
+	go func() { done <- moveIntoPlace("test", from, to) }()
 
 	select {
 	case err := <-done:

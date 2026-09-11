@@ -3,6 +3,7 @@ package repoimport
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -49,7 +50,7 @@ var ErrMoveDenied = errors.New("repoimport: staged repository could not be moved
 // Store.Start checks this before cloning, but minutes pass in between —
 // somebody can create the repository from the panel while the clone runs,
 // and finding out now is better than overwriting their work.
-func moveIntoPlace(from, to string) error {
+func moveIntoPlace(id, from, to string) error {
 	if _, err := os.Stat(to); err == nil {
 		return ErrAlreadyExists
 	}
@@ -58,10 +59,19 @@ func moveIntoPlace(from, to string) error {
 	delay := moveInitialDelay
 	var lastErr error
 
-	for {
+	// Every attempt is logged, not just the last. If the error changes
+	// between attempts — a lock clearing, a different failure appearing —
+	// that sequence is the evidence, and summarising it away is how two
+	// rounds of diagnosis went to the wrong cause.
+	for attempt := 1; ; attempt++ {
 		if lastErr = os.Rename(from, to); lastErr == nil {
+			if attempt > 1 {
+				log.Printf("repoimport[%s]: taşıma %d. denemede başarılı", id, attempt)
+			}
 			return nil
 		}
+		log.Printf("repoimport[%s]: taşıma denemesi %d başarısız: %v", id, attempt, lastErr)
+
 		// Re-checked every round rather than once: a racing creation is
 		// not something waiting will fix, and retrying for 90 seconds
 		// against it wastes a minute and a half to reach a worse message.

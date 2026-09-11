@@ -36,9 +36,16 @@ func (f *fakeCloner) Clone(_ context.Context, source, token, destDir string) err
 // waitFor polls until the job leaves StatusRunning. Imports are
 // asynchronous by design, so every test that cares about the outcome has
 // to wait for one.
+//
+// The deadline is generous because some of these tests drive a real git
+// clone: ten seconds was enough when each ran alone and not enough with
+// the rest of the suite competing for the machine, which made a real test
+// fail for no reason anybody could act on. A stuck import is the only
+// thing this timeout should ever catch, and that is worth waiting a
+// minute to be sure of.
 func waitFor(t *testing.T, s *Store, id string) Job {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		job, err := s.Get(id)
 		if err != nil {

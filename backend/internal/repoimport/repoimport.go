@@ -25,6 +25,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -159,6 +160,11 @@ func (GitCloner) Clone(ctx context.Context, source, token, destDir string) error
 	// has no stdin to answer with.
 	args = append(args, "-c", "core.askPass=")
 	args = append(args, "clone", "--bare", "--quiet", clean, destDir)
+
+	// The resolved binary and the credential-free URL, so the log shows
+	// exactly what ran. The token is in a file, never in these arguments.
+	log.Printf("repoimport: git klonlanıyor — %s %s (anahtar: %s)",
+		gitBin, clean, map[bool]string{true: "var", false: "yok"}[token != ""])
 
 	cmd := exec.CommandContext(ctx, gitBin, args...)
 	cmd.Env = append(os.Environ(),
