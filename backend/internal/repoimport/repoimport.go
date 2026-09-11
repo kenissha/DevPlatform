@@ -99,21 +99,43 @@ type Cloner interface {
 
 // GitCloner shells out to the real git binary.
 //
-// go-git could clone this itself, but git is already a hard dependency of
-// every deployment (the deploy pipeline shells out to it too) and it is
-// the implementation every forge is tested against — for a one-off import
-// of somebody's real history, "behaves exactly like git" is worth more
-// than one less dependency.
+// This is the only place the server process does. Everything else talks to
+// repositories through go-git — internal/deploy checks out that way
+// deliberately — so before imports existed, running this platform required
+// no git installation at all. Choosing the binary here gives that up, and
+// it was first written down as "git is already a dependency anyway", which
+// was simply wrong: production said so, with
+// "exec: git: executable file not found in %PATH%".
+//
+// The choice still stands, for a reason that survives being checked: an
+// import copies somebody's real history once, and git is the
+// implementation every forge is actually tested against. go-git's own
+// clone would have to be trusted to bring every branch and tag of a
+// several-hundred-megabyte private repository faithfully, on the one
+// occasion where getting it wrong is expensive and hard to notice.
+//
+// What the mistake cost was the error message, so that is what got fixed:
+// see gitpath.go, which finds git where it really is and, failing that,
+// says what to install or set.
 type GitCloner struct{}
 
 func (GitCloner) Clone(ctx context.Context, source, token, destDir string) error {
+	// Resolved before anything else so a missing git is reported as the
+	// one sentence that fixes it, rather than as exec's
+	// "executable file not found in %PATH%" — which is true, unhelpful,
+	// and the first thing this feature hit in production.
+	gitBin, err := GitPath()
+	if err != nil {
+		return err
+	}
+
 	clean := sanitiseURL(source)
 
 	// A per-clone temp directory so the credential file cannot collide
 	// with a concurrent import's.
-	credDir, err := os.MkdirTemp("", "devplatform-import-")
-	if err != nil {
-		return err
+	credDir, mkErr := os.MkdirTemp("", "devplatform-import-")
+	if mkErr != nil {
+		return mkErr
 	}
 	defer os.RemoveAll(credDir)
 
@@ -138,7 +160,7 @@ func (GitCloner) Clone(ctx context.Context, source, token, destDir string) error
 	args = append(args, "-c", "core.askPass=")
 	args = append(args, "clone", "--bare", "--quiet", clean, destDir)
 
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, gitBin, args...)
 	cmd.Env = append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_ASKPASS=",
@@ -164,7 +186,7 @@ func (GitCloner) Clone(ctx context.Context, source, token, destDir string) error
 	// later `git fetch` that nobody asked for — and if the person pasted a
 	// URL with a token in it, sanitiseURL is the only thing that kept the
 	// token out of this file. Removing the remote closes both.
-	rm := exec.Command("git", "-C", destDir, "remote", "remove", "origin")
+	rm := exec.Command(gitBin, "-C", destDir, "remote", "remove", "origin")
 	if out, err := rm.CombinedOutput(); err != nil {
 		return fmt.Errorf("kaynak bağlantısı kaldırılamadı: %s",
 			strings.TrimSpace(scrub(string(out), token, tokenIn(source))))
@@ -175,8 +197,12 @@ func (GitCloner) Clone(ctx context.Context, source, token, destDir string) error
 // countRefs reports how many commits and branches an imported repository
 // holds, for the panel's "621 commit, 9 dal" line.
 func countRefs(dir string) (commits, branches int) {
-	commits = countLines(exec.Command("git", "-C", dir, "rev-list", "--count", "--all"), true)
-	branches = countLines(exec.Command("git", "-C", dir, "for-each-ref", "--format=%(refname)", "refs/heads"), false)
+	gitBin, err := GitPath()
+	if err != nil {
+		return 0, 0
+	}
+	commits = countLines(exec.Command(gitBin, "-C", dir, "rev-list", "--count", "--all"), true)
+	branches = countLines(exec.Command(gitBin, "-C", dir, "for-each-ref", "--format=%(refname)", "refs/heads"), false)
 	return commits, branches
 }
 

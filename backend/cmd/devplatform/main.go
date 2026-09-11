@@ -119,6 +119,16 @@ func main() {
 		Store: repoimport.NewStore(cfg.DataDir, nil),
 		Audit: auditLogger,
 	}
+	// Reported at startup rather than discovered by whoever first tries an
+	// import. Under IIS the service's PATH routinely lacks git even though
+	// it is installed on the machine, and a warning in the log at boot is
+	// a great deal cheaper than a failed import an hour later. Not fatal:
+	// every other feature works without it.
+	if gitBin, err := repoimport.GitPath(); err != nil {
+		log.Printf("git bulunamadı — depo içe aktarma çalışmayacak: %v", err)
+	} else {
+		log.Printf("git hazır: %s (depo içe aktarma için)", gitBin)
+	}
 	gitTokenHandlers := &gittoken.Handlers{Store: gitTokenStore}
 	gitEmailHandlers := &gitemails.Handlers{Store: gitEmailStore}
 	taskHandlers := &taskboard.Handlers{
