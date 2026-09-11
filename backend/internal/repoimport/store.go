@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -120,7 +119,18 @@ func (s *Store) run(id, name, source, token string) {
 		s.fail(id, name, err.Error())
 		return
 	}
-	defer os.RemoveAll(staging) // no-op once the rename below succeeds
+
+	// Cleared once the clone is safely in place. Kept as a flag rather
+	// than an unconditional defer because a failed *move* must leave the
+	// staged clone alone — see describeMoveFailure for why throwing away
+	// a few hundred megabytes that already downloaded is the wrong
+	// response to a rename that needs retrying by hand.
+	discardStaging := true
+	defer func() {
+		if discardStaging {
+			os.RemoveAll(staging)
+		}
+	}()
 
 	if err := s.cloner.Clone(ctx, source, token, staging); err != nil {
 		s.fail(id, name, scrub(err.Error(), token, tokenIn(source)))
@@ -137,8 +147,10 @@ func (s *Store) run(id, name, source, token string) {
 	// without its findings already recorded.
 	findings := ScanHistory(staging)
 
-	if err := os.Rename(staging, s.repoPath(name)); err != nil {
-		s.fail(id, name, fmt.Sprintf("depo yerine taşınamadı: %v", err))
+	target := s.repoPath(name)
+	if err := moveIntoPlace(staging, target); err != nil {
+		discardStaging = false
+		s.fail(id, name, describeMoveFailure(err, staging, target))
 		return
 	}
 

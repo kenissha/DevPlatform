@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -163,4 +164,95 @@ func TestImport_LeavesNothingBehindWhenTheCloneFails(t *testing.T) {
 	for _, e := range entries {
 		t.Errorf("geride kaldı: %s", e.Name())
 	}
+}
+
+// racingCloner clones for real, then creates the destination — reproducing
+// the one case Start's own pre-check cannot catch: minutes pass between
+// claiming a name and finishing the clone, and somebody can create that
+// repository from the panel in between.
+type racingCloner struct {
+	source      string
+	destination string
+}
+
+func (c racingCloner) Clone(ctx context.Context, _, token, destDir string) error {
+	if err := (GitCloner{}).Clone(ctx, c.source, token, destDir); err != nil {
+		return err
+	}
+	return os.MkdirAll(c.destination, 0o750)
+}
+
+// The clone is the expensive part — potentially hundreds of megabytes
+// already pulled over the network. A rename that needs retrying by hand
+// must not cost that download a second time.
+func TestImport_KeepsTheDownloadWhenTheMoveFails(t *testing.T) {
+	requireGit(t)
+
+	root := t.TempDir()
+	source := buildRepo(t)
+	s := NewStore(root, racingCloner{source: source, destination: filepath.Join(root, "cakisan.git")})
+
+	job, err := s.Start("cakisan", "https://github.com/x/y.git", "")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	done := waitFor(t, s, job.ID)
+	if done.Status != StatusFailed {
+		t.Fatalf("status = %q, want failed", done.Status)
+	}
+
+	var staged string
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".import-") {
+			staged = e.Name()
+		}
+	}
+	if staged == "" {
+		t.Fatal("indirilen kopya silinmiş — yeniden indirmek gerekirdi")
+	}
+	// And the message has to say where it is, or keeping it helps nobody.
+	if !strings.Contains(done.Error, staged) {
+		t.Fatalf("hata mesajı kopyanın yerini söylemiyor: %s", done.Error)
+	}
+}
+
+// The mirror of the above: a successful import leaves no staging
+// directory behind.
+func TestImport_LeavesNoStagingDirectoryOnSuccess(t *testing.T) {
+	requireGit(t)
+
+	root := t.TempDir()
+	source := buildRepo(t)
+	s := NewStore(root, localCloner{source: source})
+
+	job, err := s.Start("basarili", "https://github.com/x/y.git", "")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	done := waitFor(t, s, job.ID)
+	if done.Status != StatusDone {
+		t.Fatalf("status = %q (%s)", done.Status, done.Error)
+	}
+
+	entries, _ := os.ReadDir(root)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".import-") {
+			t.Errorf("geride kaldı: %s", e.Name())
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, "basarili.git")); err != nil {
+		t.Fatalf("depo yerine konmamış: %v", err)
+	}
+}
+
+// localCloner ignores the URL and clones a local path, so a Store test can
+// exercise the real GitCloner without a network.
+type localCloner struct{ source string }
+
+func (c localCloner) Clone(ctx context.Context, _, token, destDir string) error {
+	return (GitCloner{}).Clone(ctx, c.source, token, destDir)
 }
