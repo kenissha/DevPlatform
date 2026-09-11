@@ -59,6 +59,29 @@ func ScanHistory(dir string) []Finding {
 	if err != nil {
 		return nil
 	}
+	// go-git keeps the packfiles it reads open in a descriptor cache and
+	// nothing above ever asks for them back, so this scan would otherwise
+	// leak a handle per pack. Closed because leaking descriptors is a bug
+	// on its own terms, and because this runs on the staged clone that the
+	// very next step renames — on Windows an open handle inside a
+	// directory can stop it being renamed.
+	//
+	// Honesty about what this did NOT fix: it was the first suspect for the
+	// "Access is denied" failure on the deployment machine, and the test
+	// written to catch it passes with or without this defer. So the leak
+	// was real and this closes it, but the production failure has another
+	// cause — see diagnoseRename, which makes the server work it out
+	// instead of guessing again.
+	//
+	// Asserted through an interface rather than importing
+	// storage/filesystem: what matters is that whatever storer PlainOpen
+	// chose gets closed if it can be.
+	defer func() {
+		if closer, ok := repo.Storer.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+	}()
+
 	blobs, err := repo.BlobObjects()
 	if err != nil {
 		return nil

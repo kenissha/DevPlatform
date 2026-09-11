@@ -83,10 +83,52 @@ func TestDescribeMoveFailure_SaysWhereTheCloneIsAndWhatToDo(t *testing.T) {
 		t.Errorf("var olan hedef mesajı: %s", exists)
 	}
 
+	// The message no longer guesses at a cause — it carries the probe's
+	// answer instead, which is the whole point of diagnoseRename.
 	denied := describeMoveFailure(ErrMoveDenied, staging, target)
-	for _, want := range []string{staging, target, "kaybolmadı", "virüs"} {
+	for _, want := range []string{staging, target, "kaybolmadı", "Tanı:"} {
 		if !strings.Contains(denied, want) {
 			t.Errorf("mesajda %q geçmiyor: %s", want, denied)
 		}
+	}
+}
+
+// The diagnostic has to distinguish a permission problem from a held
+// handle, because those need opposite responses: one is fixed by an
+// administrator changing an ACL, the other by moving a directory.
+func TestDiagnoseRename_ReportsAWorkingDirectoryAsWorking(t *testing.T) {
+	msg := diagnoseRename(t.TempDir())
+
+	if !strings.Contains(msg, "çalışıyor") {
+		t.Fatalf("çalışan dizin sorunlu bildirildi: %s", msg)
+	}
+	// Naming virus scanning here would send somebody after the wrong
+	// thing — the point of the probe is that it already ruled that in or
+	// out.
+	if strings.Contains(msg, "NTFS") {
+		t.Fatalf("çalışan dizin için yetki hatası bildirildi: %s", msg)
+	}
+}
+
+// The probe must not leave anything behind — it runs in the directory
+// every repository lives in.
+func TestDiagnoseRename_CleansUpAfterItself(t *testing.T) {
+	root := t.TempDir()
+	diagnoseRename(root)
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	for _, e := range entries {
+		t.Errorf("geride kaldı: %s", e.Name())
+	}
+}
+
+func TestDiagnoseRename_MissingDirectoryIsReportedNotPanicked(t *testing.T) {
+	msg := diagnoseRename(filepath.Join(t.TempDir(), "olmayan"))
+
+	if !strings.Contains(msg, "Tanı:") {
+		t.Fatalf("tanı üretmedi: %s", msg)
 	}
 }

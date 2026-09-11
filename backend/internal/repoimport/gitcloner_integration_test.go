@@ -256,3 +256,31 @@ type localCloner struct{ source string }
 func (c localCloner) Clone(ctx context.Context, _, token, destDir string) error {
 	return (GitCloner{}).Clone(ctx, c.source, token, destDir)
 }
+
+// The regression that broke every import on the deployment machine.
+//
+// ScanHistory runs on the staged clone and the very next step renames
+// that directory into place. go-git caches the packfiles it reads, so
+// leaving the storage open holds handles inside the directory — and on
+// Windows a directory with an open handle inside it cannot be renamed.
+// The failure is permanent, which is why the retry loop added for virus
+// scanners could not recover from it.
+func TestScanHistory_ReleasesTheDirectorySoItCanBeMoved(t *testing.T) {
+	requireGit(t)
+
+	root := t.TempDir()
+	source := buildRepo(t)
+	staged := filepath.Join(root, ".import-abc")
+	if err := (GitCloner{}).Clone(context.Background(), source, "", staged); err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+
+	// Reads the packfiles — which is what opens the handles.
+	if findings := ScanHistory(staged); len(findings) == 0 {
+		t.Fatal("tarama bir şey bulmalıydı; paket dosyaları okunmamış olabilir")
+	}
+
+	if err := os.Rename(staged, filepath.Join(root, "depo.git")); err != nil {
+		t.Fatalf("tarama sonrası dizin taşınamıyor — açık handle kalmış: %v", err)
+	}
+}

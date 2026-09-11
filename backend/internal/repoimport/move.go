@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -93,7 +95,54 @@ func describeMoveFailure(err error, staging, target string) string {
 	}
 	return fmt.Sprintf(
 		"depo yerine taşınamadı (%v). Depo indirildi ve %s dizininde duruyor — "+
-			"kaybolmadı. Genellikle sebebi virüs taramasının dosyaları hâlâ açık "+
-			"tutması; sunucuda bu dizini elle %s adına taşımak yeterli.",
-		err, staging, target)
+			"kaybolmadı; sunucuda bu dizini elle %s adına taşımak yeterli.\n\n%s",
+		err, staging, target, diagnoseRename(filepath.Dir(staging)))
+}
+
+// diagnoseRename finds out what this process can actually do in rootDir.
+//
+// Written after guessing twice and being wrong twice. "Access is denied"
+// on a directory rename has several possible causes and Windows names
+// none of them, so the two that matter are separated here by trying them:
+//
+//   - if creating a directory works but renaming it does not, the service
+//     account can add to this folder but not delete from it. That is an
+//     NTFS permission (rename needs DELETE on the object, which "Write"
+//     grants and "Modify" is usually needed for), and no amount of
+//     retrying will ever fix it.
+//   - if the probe renames cleanly, the problem is specific to the staged
+//     clone — something holding a handle inside it — and retrying or
+//     moving it by hand will work.
+//
+// The probe is tiny and cleans up after itself. It runs only on the
+// failure path, so it costs nothing when imports work.
+func diagnoseRename(rootDir string) string {
+	probe := filepath.Join(rootDir, ".probe-"+strconv.FormatInt(time.Now().UnixNano(), 36))
+	moved := probe + "-moved"
+
+	if err := os.Mkdir(probe, 0o750); err != nil {
+		return fmt.Sprintf(
+			"Tanı: bu dizinde klasör bile oluşturulamıyor (%v). Uygulama havuzunun "+
+				"kimliğine %s üzerinde yazma yetkisi verilmeli.", err, rootDir)
+	}
+
+	if err := os.Rename(probe, moved); err != nil {
+		_ = os.Remove(probe)
+		return fmt.Sprintf(
+			"Tanı: bu dizinde klasör oluşturulabiliyor ama yeniden adlandırılamıyor (%v). "+
+				"Bu bir NTFS yetki sorunu — uygulama havuzunun kimliğine %s üzerinde "+
+				"\"Modify\" (Değiştir) yetkisi ver; sadece \"Write\" yetmiyor, yeniden "+
+				"adlandırma silme yetkisi istiyor. Virüs taramasıyla ilgisi yok.",
+			err, rootDir)
+	}
+
+	if err := os.Remove(moved); err != nil {
+		return fmt.Sprintf(
+			"Tanı: klasör oluşturulup adlandırılabiliyor ama silinemiyor (%v). "+
+				"Yetkiler büyük ölçüde doğru; sorun kopyalanan depoya özgü görünüyor.", err)
+	}
+
+	return "Tanı: bu dizinde klasör oluşturmak, adlandırmak ve silmek çalışıyor — " +
+		"yani yetkiler doğru ve sorun kopyalanan depoya özgü. Büyük ihtimalle bir " +
+		"program o dizindeki dosyaları açık tutuyor; elle taşımak çalışacaktır."
 }
