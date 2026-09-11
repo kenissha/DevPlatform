@@ -7,6 +7,8 @@ backend/bin/
 backend/data/
 backend/data.bak/
 backend/deploydemo-data/
+# scratch data dirs from seeddemo runs (backend/data-faz3 and friends)
+backend/data-*/
 
 # Node / React
 frontend/node_modules/

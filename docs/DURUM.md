@@ -882,6 +882,99 @@ verildiğinde kişiye haber veren bir şeydi.
   bakmadığın bir şeyi temizlemek, bir isteğin sessizce cevapsız kalma
   yoludur.
 
+- **2026-09-11 güncelleme — Faz 3: etiketler, liste görünümü + filtreler,
+  repolar arası pano, ve commit mesajından görev bağlama.**
+
+  **Etiketler sabit bir sözlük.** hata / özellik / iyileştirme / teknik
+  borç / doküman / araştırma. Repo başına yönetilen bir etiket listesi
+  bilerek yapılmadı: kim oluşturabilir, ne renk alır, silinince o
+  etiketteki görevlere ne olur — hepsi gerçek makine, ve bu boyuttaki bir
+  ekipte bir kere girilip bir daha açılmayacak bir ekran. Sözlüğü
+  büyütmek `labels.go`'ya bir satır eklemek; bunun maliyeti alternatifin
+  maliyetinden küçük, üstelik her pano aynı kelimeleri kullanıyor.
+
+  Değerler ASCII (`teknik-borc`), Türkçesi arayüzde. Sebep tek başına
+  yeterli: etiket panonun filtre sorgu dizesine giriyor, ve "teknik borç"
+  ömrünün geri kalanını yüzde-kodlanmış geçirirdi.
+
+  `Create` altıncı bir konumsal parametre yerine **variadic** aldı: elli
+  çağrı yerinin neredeyse hepsi etiketsiz görev açıyor, ve arka arkaya
+  beş string alan bir imzaya altıncıyı eklemek — ikisini yer değiştirsen
+  hâlâ derlenen türden — beklemeye yatırılmış bir hata.
+
+  Boş küme `nil` olarak saklanıyor, `[]` olarak değil: alan `omitempty`
+  ile yazılıyor, yani boş dilim kayıtta düşer ve `nil` olarak geri
+  okunurdu — bellekteki görev diskten okunan göreve eşit olmazdı. Bu, çok
+  sonra ve bambaşka bir yerde ortaya çıkan cinsten bir fark; testte
+  yakalandı.
+
+  **Liste görünümü panonun diğer yarısı.** Pano "her şey nerede?"
+  sorusunu, liste "tam olarak önümde ne var, hangi sırayla?" sorusunu
+  cevaplıyor — iki soru iki farklı biçim istiyor, o yüzden liste daraltılmış
+  bir pano değil, gerçek bir tablo. Filtreler ortak: atanan (bana
+  atananlar / atanmamış / kişi), durum, öncelik, etiket, gecikenler, ve
+  serbest metin.
+
+  **Filtreler URL'de duruyor, bileşen durumunda değil.** Filtrelenmiş bir
+  pano insanların birbirine gönderdiği bir şey ("bak, gecikenler bunlar"),
+  ve filtresiz açılan bir bağlantı hiçbir şey söylememiş olur. Yenilemeden
+  de bedavaya sağ çıkıyor. "Bana atananlar" için URL'ye kişinin kendi
+  subject'i değil `me` sabiti yazılıyor: yoksa bağlantı başkasına
+  gönderildiğinde "Ahmet'in görevleri" anlamına gelirdi.
+
+  Tanınmayan değerler URL'den okunurken atılıyor, korunmuyor: elle
+  düzenlenmiş ya da eskimiş bir bağlantı boş bir görünüme değil daha geniş
+  bir görünüme düşüyor. Hiçbir şeyin eşleşmediği bir filtre, ekranda "bu
+  repoda görev yok"tan ayırt edilemiyor.
+
+  **Repolar arası pano `/tasks`.** Bilerek liste, kanban değil: dört repo
+  boyunca bir pano aynı dört durum için dört katı sütun demek. `GET
+  /api/tasks` zaten `internal/access` ile erişilebilen repolara daraldığı
+  için sayfanın kendine ait bir yetki mantığı yok.
+
+  **Commit mesajından görev bağlama — Faz 3'ün asıl işi.** Commit mesajına
+  `DEN-14 tarih filtresi düzeltildi` yazınca commit o görevin sayfasında
+  görünüyor. Kimse elle bir şey bağlamıyor; Jira'nın kurup ayarladığın ve
+  gözettiğin bir entegrasyon olarak sattığı şey burada neredeyse bedava,
+  çünkü **git sunucusu gelen her commit'i zaten açıyordu** (yazar adresini
+  okumak için, bkz. `internal/gitemails`).
+
+  Bu yüzden `authorLoader` → `commitLoader` oldu: **bir dekoratör, iki
+  gözlemci.** Bir commit'i okumak nesnenin tamamını tamponlamak demek, ve
+  aynı baytları iki soru için iki kere tamponlamak karşılığı olmayan bir
+  israf. Gözlemciler birbirinden bağımsız, ikisi de `nil` olabilir, ve
+  biri hata verirse diğerini — ya da push'u — düşürmüyor.
+
+  Hash go-git'ten okunmuyor, **hesaplanıyor**: `RawObjectWriter`'a tür ve
+  boyut veriliyor, nesne adı değil; git nesne adı da zaten
+  `sha1("commit <uzunluk>\0" + gövde)`. Bunu doğrulayan test hash'i git'in
+  kendi `rev-parse HEAD` çıktısıyla karşılaştırıyor — bu kayarsa her
+  bağlantı kimsenin bulamayacağı bir commit'i gösterir.
+
+  **Sadece o reponun kendi öneki eşleşiyor.** Anahtarlar repo başına, erişim
+  de öyle: bir repoya atılan commit'i başka bir repodaki göreve bağlamak,
+  insanlara görmeye yetkili olmadıkları bir repodaki işi göstermek olurdu.
+  "DEN-14 onların DEN'i miydi bizim DEN mi?" belirsizliğini de tamamen
+  kaldırıyor.
+
+  Önek kayıttan okunuyor, yeniden hesaplanmıyor: `resolvePrefix` çakışmada
+  öneki uzatmış olabilir (INT → INTR), ve burada yeniden hesaplamak sessizce
+  yanlış reponun anahtarlarını eşleştirirdi.
+
+  Bağlama **hash'e göre idempotent**: yeniden push, mirror, ya da aynı
+  commit'in ikinci bir dalda gelmesi görevi iki kere çalışılmış
+  göstermemeli. Tanınmayan anahtar, yazım hatası, silinmiş görev — hepsi
+  sessizce geçiliyor; bu kod birinin push'unun içinde çalışıyor ve hiçbiri
+  push'a mal olmamalı.
+
+  Commit dosyaları `<repo>/commits/<görev>.json` altında — yorumlarla aynı
+  kısıt: `List` o klasördeki her `*.json`'ı görev sanıp çözüyor, kardeş
+  dosya bütün panoyu düşürürdü. Regresyon testi var.
+
+  Mesajın sadece ilk satırı saklanıyor: görev sayfası tek satırlık özeti
+  istiyor, ve tüm gövdeleri saklamak her sayfa görüntülemesinde okunan bir
+  dosyaya sınırsız metin koymak olurdu. Görev başına en fazla 100 commit.
+
 ## Sıradaki iş
 
 **2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`

@@ -53,7 +53,14 @@ func main() {
 	// address belongs to whom (see internal/gitemails).
 	gitEmailStore := gitemails.NewStore(filepath.Join(cfg.DataDir, "git-emails.json"))
 
-	gitHandler := gitserver.NewHandler(cfg.DataDir, gitEmailStore)
+	// Declared here, well above the handlers that use it, for the same
+	// reason: the git handler reports every pushed commit into it, so a
+	// commit whose message names a task ("DEN-14 tarih filtresi
+	// düzeltildi") shows up on that task without anybody linking it by
+	// hand (see internal/taskboard's CommitLink).
+	taskStore := taskboard.NewStore(filepath.Join(cfg.DataDir, "tasks"))
+
+	gitHandler := gitserver.NewHandler(cfg.DataDir, gitEmailStore, taskStore)
 	jwtSecret := []byte(cfg.JWTSecret)
 	authMiddleware := func(next http.Handler) http.Handler {
 		return auth.RequireAuth(jwtSecret, next)
@@ -107,7 +114,7 @@ func main() {
 	gitTokenHandlers := &gittoken.Handlers{Store: gitTokenStore}
 	gitEmailHandlers := &gitemails.Handlers{Store: gitEmailStore}
 	taskHandlers := &taskboard.Handlers{
-		Store:  taskboard.NewStore(filepath.Join(cfg.DataDir, "tasks")),
+		Store:  taskStore,
 		Repos:  store,
 		Audit:  auditLogger,
 		Notify: notifyStore,

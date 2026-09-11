@@ -4,6 +4,7 @@ import { AppLayout } from './components/AppLayout'
 import { RequireAuth } from './components/RequireAuth'
 import { NotificationsProvider } from './notifications/NotificationsContext'
 import { AccessPage } from './pages/AccessPage'
+import { AllTasksPage } from './pages/AllTasksPage'
 import { AuditPage } from './pages/AuditPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { DeployTargetsPage } from './pages/DeployTargetsPage'
@@ -48,6 +49,7 @@ export default function App() {
               >
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/repos" element={<ReposPage />} />
+                <Route path="/tasks" element={<AllTasksPage />} />
                 <Route path="/audit" element={<AuditPage />} />
                 <Route path="/access" element={<AccessPage />} />
                 <Route path="/deploy-targets" element={<DeployTargetsPage />} />

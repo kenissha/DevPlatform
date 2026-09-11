@@ -32,7 +32,7 @@ func TestPush_DirectlyToMain_IsRejected(t *testing.T) {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 
-	srv := httptest.NewServer(NewHandler(dataDir, nil))
+	srv := httptest.NewServer(NewHandler(dataDir, nil, nil))
 	defer srv.Close()
 
 	work := t.TempDir()
@@ -88,7 +88,7 @@ func TestPush_DirectlyToMainCaseVariant_IsRejected(t *testing.T) {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 
-	srv := httptest.NewServer(NewHandler(dataDir, nil))
+	srv := httptest.NewServer(NewHandler(dataDir, nil, nil))
 	defer srv.Close()
 
 	work := t.TempDir()
@@ -157,7 +157,7 @@ func TestPush_DeleteMain_IsRejected(t *testing.T) {
 	// where "delete main" has an existing ref to actually try deleting.
 	runGit(t, work, "push", bareRepoPath, "main")
 
-	srv := httptest.NewServer(NewHandler(dataDir, nil))
+	srv := httptest.NewServer(NewHandler(dataDir, nil, nil))
 	defer srv.Close()
 	runGit(t, work, "remote", "add", "origin", srv.URL+"/protected3.git")
 
@@ -189,7 +189,7 @@ func TestPush_ToFeatureBranch_StillSucceeds(t *testing.T) {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 
-	srv := httptest.NewServer(NewHandler(dataDir, nil))
+	srv := httptest.NewServer(NewHandler(dataDir, nil, nil))
 	defer srv.Close()
 
 	work := t.TempDir()
@@ -223,7 +223,7 @@ func TestPush_DirectlyToMain_AdminContextAllowsIt(t *testing.T) {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 
-	srv := httptest.NewServer(withAdminContext(NewHandler(dataDir, nil)))
+	srv := httptest.NewServer(withAdminContext(NewHandler(dataDir, nil, nil)))
 	defer srv.Close()
 
 	work := t.TempDir()
@@ -285,7 +285,7 @@ func TestPush_DeleteMain_AdminContextAllowsIt(t *testing.T) {
 	// that test's comment for why this has to bypass the HTTP server.
 	runGit(t, work, "push", bareRepoPath, "main")
 
-	srv := httptest.NewServer(withAdminContext(NewHandler(dataDir, nil)))
+	srv := httptest.NewServer(withAdminContext(NewHandler(dataDir, nil, nil)))
 	defer srv.Close()
 	runGit(t, work, "remote", "add", "origin", srv.URL+"/adminpushdelete.git")
 

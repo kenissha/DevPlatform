@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -541,5 +542,72 @@ func TestUpdate_RejectsAnEmptyTitleThroughTheAPI(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400, body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Creating with a label the server does not know is the caller's mistake,
+// not the server's — it reaches the store, so the handler has to map it
+// rather than report a flat 500.
+func TestCreate_RejectsAnUnknownLabelWith400(t *testing.T) {
+	h := newTestHandlers(t)
+	mux := newMux(h)
+
+	body, _ := json.Marshal(map[string]any{"title": "Görev", "labels": []string{"acil"}})
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/tasks", bytes.NewReader(body))
+	req = addAuth(req, t, "dev-1", "developer")
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreate_StoresLabelsInTheKnownOrder(t *testing.T) {
+	h := newTestHandlers(t)
+	mux := newMux(h)
+
+	body, _ := json.Marshal(map[string]any{
+		"title":  "Görev",
+		"labels": []string{"arastirma", "hata"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/sample/tasks", bytes.NewReader(body))
+	req = addAuth(req, t, "dev-1", "developer")
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201, body: %s", rec.Code, rec.Body.String())
+	}
+	var task Task
+	if err := json.Unmarshal(rec.Body.Bytes(), &task); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	// KnownLabels' order, not the caller's.
+	if !reflect.DeepEqual(task.Labels, []Label{LabelBug, LabelResearch}) {
+		t.Fatalf("labels = %v, want [hata arastirma]", task.Labels)
+	}
+}
+
+func TestUpdate_RejectsAnUnknownLabelWith400(t *testing.T) {
+	h := newTestHandlers(t)
+	mux := newMux(h)
+
+	created, err := h.Store.Create("sample", "Görev", "", "", "dev-1")
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{"labels": []string{"kritik"}})
+	req := httptest.NewRequest(http.MethodPatch, "/api/repos/sample/tasks/"+created.ID, bytes.NewReader(body))
+	req = addAuth(req, t, "dev-1", "developer")
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400, body: %s", rec.Code, rec.Body.String())
 	}
 }

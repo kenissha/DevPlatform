@@ -175,6 +175,7 @@ func NewRouter(deps Deps) *http.ServeMux {
 	mux.Handle("GET /api/repos/{repo}/tasks", repoScoped(http.HandlerFunc(tasks.List)))
 	mux.Handle("GET /api/repos/{repo}/tasks/{id}", repoScoped(http.HandlerFunc(tasks.Get)))
 	mux.Handle("GET /api/repos/{repo}/tasks/{id}/history", repoScoped(http.HandlerFunc(tasks.History)))
+	mux.Handle("GET /api/repos/{repo}/tasks/{id}/commits", repoScoped(http.HandlerFunc(tasks.Commits)))
 	// Comments are open to everyone with repo access; the store enforces
 	// "only your own" for edit, and the handler adds "or admin" for delete.
 	mux.Handle("GET /api/repos/{repo}/tasks/{id}/comments", repoScoped(http.HandlerFunc(tasks.Comments)))

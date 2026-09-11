@@ -39,9 +39,10 @@ type Handlers struct {
 }
 
 type createRequest struct {
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	AssignedTo  string `json:"assignedTo"`
+	Title       string  `json:"title"`
+	Description string  `json:"description"`
+	AssignedTo  string  `json:"assignedTo"`
+	Labels      []Label `json:"labels"`
 }
 
 // Create handles POST /api/repos/{repo}/tasks.
@@ -68,9 +69,13 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	task, err := h.Store.Create(repo, req.Title, req.Description, req.AssignedTo, user.Subject)
+	task, err := h.Store.Create(repo, req.Title, req.Description, req.AssignedTo, user.Subject, req.Labels...)
 	if err != nil {
-		http.Error(w, "500 Internal Server Error", http.StatusInternalServerError)
+		// Routed through writeStoreError rather than a flat 500: creating
+		// can now reject what the caller sent (an unknown label), and
+		// "Internal Server Error" for a value the person chose in a picker
+		// tells them the server broke when in fact they did.
+		h.writeStoreError(w, err)
 		return
 	}
 
@@ -170,6 +175,7 @@ type updateRequest struct {
 	Status      *Status   `json:"status"`
 	Priority    *Priority `json:"priority"`
 	DueDate     *string   `json:"dueDate"`
+	Labels      *[]Label  `json:"labels"`
 	AssignedTo  *string   `json:"assignedTo"`
 }
 
@@ -180,6 +186,7 @@ func (r updateRequest) changes() Changes {
 		Status:      r.Status,
 		Priority:    r.Priority,
 		DueDate:     r.DueDate,
+		Labels:      r.Labels,
 		AssignedTo:  r.AssignedTo,
 	}
 }
@@ -556,6 +563,28 @@ func (h *Handlers) History(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, events)
 }
 
+// Commits handles GET /api/repos/{repo}/tasks/{id}/commits — the commits
+// whose message named this task, newest first.
+//
+// Same access rule as History: anyone who can read the task can read what
+// was done for it. Nothing is exposed that the repository's own log does
+// not already show to the same people.
+func (h *Handlers) Commits(w http.ResponseWriter, r *http.Request) {
+	repo := r.PathValue("repo")
+	id := r.PathValue("id")
+	if !h.repoExists(repo) {
+		http.Error(w, "404 repository not found", http.StatusNotFound)
+		return
+	}
+
+	links, err := h.Store.Commits(repo, id)
+	if err != nil {
+		h.writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, links)
+}
+
 // statusLabels renders a Status the way the audit log reads it out. The
 // rest of the summary is Turkish prose, so the raw enum value ("awaiting_test")
 // would be the one untranslated token in the sentence.
@@ -610,6 +639,17 @@ func describeUpdate(req updateRequest) string {
 			parts = append(parts, "bitiş tarihi → "+*req.DueDate)
 		}
 	}
+	if req.Labels != nil {
+		if len(*req.Labels) == 0 {
+			parts = append(parts, "etiketler kaldırıldı")
+		} else {
+			names := make([]string, 0, len(*req.Labels))
+			for _, l := range *req.Labels {
+				names = append(names, string(l))
+			}
+			parts = append(parts, "etiketler → "+strings.Join(names, ", "))
+		}
+	}
 	if req.AssignedTo != nil {
 		if *req.AssignedTo == "" {
 			parts = append(parts, "atama kaldırıldı")
@@ -639,6 +679,8 @@ func (h *Handlers) writeStoreError(w http.ResponseWriter, err error) {
 		// Covers both rules without overstating either: editing is
 		// author-only, deleting is author-or-admin.
 		http.Error(w, "403 bu yorum sana ait değil", http.StatusForbidden)
+	case errors.Is(err, ErrInvalidLabel):
+		http.Error(w, "400 geçersiz etiket", http.StatusBadRequest)
 	case errors.Is(err, ErrEmptySubtask):
 		http.Error(w, "400 alt görev başlığı boş olamaz", http.StatusBadRequest)
 	case errors.Is(err, ErrTooManySubtasks):

@@ -117,28 +117,29 @@ type demoTask struct {
 	// overdue and upcoming rather than a fixed date that ages into the
 	// past.
 	DueDate string
+	Labels  []taskboard.Label
 }
 
 // Deliberately lopsided: more waiting than finished, a couple unassigned,
 // two urgent. A board with one card per column looks designed rather than
 // used, and tells you nothing about how it holds up when it fills.
 var demoTasks = []demoTask{
-	{"deneme", "Rapor filtrelerini tasarla", "Tarih aralığı, hakem ve durum filtresi.", me, me, taskboard.StatusTodo, taskboard.PriorityNormal, dueIn(9)},
-	{"deneme", "Excel dışa aktarım", "Liste ekranındaki veriyi xlsx olarak indir.", ahmet, ahmet, taskboard.StatusTodo, taskboard.PriorityLow, ""},
-	{"deneme", "PDF şablonunu güncelle", "Yeni antet ve imza alanı eklenecek.", me, elif, taskboard.StatusInProgress, taskboard.PriorityNormal, dueIn(3)},
-	{"deneme", "Hakem atama ekranı", "Toplu atama da olmalı.", ahmet, ahmet, taskboard.StatusAwaitingTest, taskboard.PriorityHigh, ""},
-	{"deneme", "Giriş zaman aşımı", "VPN üzerinden AD 22 saniye sürüyor.", me, me, taskboard.StatusDone, taskboard.PriorityNormal, ""},
+	{"deneme", "Rapor filtrelerini tasarla", "Tarih aralığı, hakem ve durum filtresi.", me, me, taskboard.StatusTodo, taskboard.PriorityNormal, dueIn(9), []taskboard.Label{taskboard.LabelFeature}},
+	{"deneme", "Excel dışa aktarım", "Liste ekranındaki veriyi xlsx olarak indir.", ahmet, ahmet, taskboard.StatusTodo, taskboard.PriorityLow, "", []taskboard.Label{taskboard.LabelFeature}},
+	{"deneme", "PDF şablonunu güncelle", "Yeni antet ve imza alanı eklenecek.", me, elif, taskboard.StatusInProgress, taskboard.PriorityNormal, dueIn(3), []taskboard.Label{taskboard.LabelImprovement}},
+	{"deneme", "Hakem atama ekranı", "Toplu atama da olmalı.", ahmet, ahmet, taskboard.StatusAwaitingTest, taskboard.PriorityHigh, "", []taskboard.Label{taskboard.LabelFeature}},
+	{"deneme", "Giriş zaman aşımı", "VPN üzerinden AD 22 saniye sürüyor.", me, me, taskboard.StatusDone, taskboard.PriorityNormal, "", []taskboard.Label{taskboard.LabelBug}},
 
-	{"oasrapor-frontend", "Mobil görünüm", "Tablo dar ekranda taşıyor.", me, elif, taskboard.StatusTodo, taskboard.PriorityLow, ""},
-	{"oasrapor-frontend", "Yükleme göstergesi", "Uzun sorgularda boş ekran görünüyor.", me, person{}, taskboard.StatusTodo, taskboard.PriorityNormal, ""},
-	{"oasrapor-frontend", "Üretimde 500 hatası", "Rapor detayında aralıklı olarak patlıyor.", elif, elif, taskboard.StatusInProgress, taskboard.PriorityCritical, dueIn(-2)},
-	{"oasrapor-frontend", "Karanlık mod", "Panel ile aynı token seti kullanılacak.", me, me, taskboard.StatusInProgress, taskboard.PriorityNormal, dueIn(14)},
-	{"oasrapor-frontend", "Erişilebilirlik taraması", "Klavye ile gezinme çalışmıyor.", elif, elif, taskboard.StatusAwaitingTest, taskboard.PriorityHigh, ""},
-	{"oasrapor-frontend", "Bağımlılık güncellemesi", "Vite 8 geçişi.", me, me, taskboard.StatusDone, taskboard.PriorityLow, ""},
+	{"oasrapor-frontend", "Mobil görünüm", "Tablo dar ekranda taşıyor.", me, elif, taskboard.StatusTodo, taskboard.PriorityLow, "", []taskboard.Label{taskboard.LabelBug, taskboard.LabelImprovement}},
+	{"oasrapor-frontend", "Yükleme göstergesi", "Uzun sorgularda boş ekran görünüyor.", me, person{}, taskboard.StatusTodo, taskboard.PriorityNormal, "", []taskboard.Label{taskboard.LabelImprovement}},
+	{"oasrapor-frontend", "Üretimde 500 hatası", "Rapor detayında aralıklı olarak patlıyor.", elif, elif, taskboard.StatusInProgress, taskboard.PriorityCritical, dueIn(-2), []taskboard.Label{taskboard.LabelBug}},
+	{"oasrapor-frontend", "Karanlık mod", "Panel ile aynı token seti kullanılacak.", me, me, taskboard.StatusInProgress, taskboard.PriorityNormal, dueIn(14), []taskboard.Label{taskboard.LabelFeature}},
+	{"oasrapor-frontend", "Erişilebilirlik taraması", "Klavye ile gezinme çalışmıyor.", elif, elif, taskboard.StatusAwaitingTest, taskboard.PriorityHigh, "", []taskboard.Label{taskboard.LabelResearch, taskboard.LabelImprovement}},
+	{"oasrapor-frontend", "Bağımlılık güncellemesi", "Vite 8 geçişi.", me, me, taskboard.StatusDone, taskboard.PriorityLow, "", []taskboard.Label{taskboard.LabelTechDebt}},
 
-	{"intranet-servis", "AD bağlantı havuzu", "Her istekte yeni bind açılıyor.", me, ahmet, taskboard.StatusInProgress, taskboard.PriorityCritical, dueIn(-5)},
-	{"intranet-servis", "Servis sağlık ucu", "/healthz eklenecek.", ahmet, ahmet, taskboard.StatusTodo, taskboard.PriorityNormal, dueIn(6)},
-	{"intranet-servis", "Log formatını birleştir", "JSON satır formatı.", me, me, taskboard.StatusDone, taskboard.PriorityNormal, ""},
+	{"intranet-servis", "AD bağlantı havuzu", "Her istekte yeni bind açılıyor.", me, ahmet, taskboard.StatusInProgress, taskboard.PriorityCritical, dueIn(-5), []taskboard.Label{taskboard.LabelBug, taskboard.LabelTechDebt}},
+	{"intranet-servis", "Servis sağlık ucu", "/healthz eklenecek.", ahmet, ahmet, taskboard.StatusTodo, taskboard.PriorityNormal, dueIn(6), []taskboard.Label{taskboard.LabelFeature}},
+	{"intranet-servis", "Log formatını birleştir", "JSON satır formatı.", me, me, taskboard.StatusDone, taskboard.PriorityNormal, "", []taskboard.Label{taskboard.LabelTechDebt}},
 }
 
 var demoRequests = []struct {
@@ -299,7 +300,7 @@ func main() {
 	}
 
 	for _, t := range demoTasks {
-		task, err := tasks.Create(t.Repo, t.Title, t.Description, t.AssignedTo.Subject, t.Author.Subject)
+		task, err := tasks.Create(t.Repo, t.Title, t.Description, t.AssignedTo.Subject, t.Author.Subject, t.Labels...)
 		if err != nil {
 			log.Fatalf("görev oluşturulamadı (%s): %v", t.Title, err)
 		}

@@ -180,6 +180,31 @@ export interface Subtask {
   done: boolean
 }
 
+// What kind of work a task is — the axis status and priority do not
+// cover. A fixed vocabulary shared by every board, mirroring
+// backend/internal/taskboard/labels.go; values are ASCII because they
+// travel in the board's filter query string.
+export type TaskLabel =
+  | 'hata'
+  | 'ozellik'
+  | 'iyilestirme'
+  | 'teknik-borc'
+  | 'dokuman'
+  | 'arastirma'
+
+// A commit whose message named a task. Recorded on the way in by the git
+// server (backend/internal/gitserver), so nobody links anything by hand —
+// writing "DEN-14 ..." in the message is the whole interaction.
+export interface TaskCommit {
+  hash: string
+  // The message's first line only.
+  subject: string
+  // The name from the commit's author line — what git was configured
+  // with, not a platform account.
+  author: string
+  at: string
+}
+
 export interface Task {
   id: string
   // The readable name — "DEN-14". Absent on tasks created before keys
@@ -198,6 +223,8 @@ export interface Task {
   dueDate?: string
   // Absent on tasks created before checklists existed.
   subtasks?: Subtask[]
+  // Absent on tasks created before labels existed.
+  labels?: TaskLabel[]
   createdAt: string
 }
 

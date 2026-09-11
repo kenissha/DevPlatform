@@ -35,6 +35,18 @@
   --warn: #d9a441;
   --warn-soft: rgba(217, 164, 65, 0.14);
 
+  /* Label hues. One token per label instead of a fg/bg pair: .tag derives
+   * its wash and its border from this single colour with color-mix, so a
+   * theme only ever restates six values. Chosen to stay distinguishable
+   * from each other AND from the status badges above, which is why none
+   * of them is the accent. */
+  --tag-red: #f4736c;
+  --tag-green: #3fb950;
+  --tag-blue: #58a6ff;
+  --tag-amber: #d9a441;
+  --tag-slate: #9aa4b2;
+  --tag-violet: #b18cf0;
+
   --diff-add-bg: rgba(63, 185, 80, 0.12);
   --diff-del-bg: rgba(244, 115, 108, 0.12);
 
@@ -93,6 +105,15 @@
     --warn: #9a6700;
     --warn-soft: rgba(154, 103, 0, 0.11);
 
+    /* Same six hues, darkened for a light ground — see the dark :root
+     * block for why there is one token per label. */
+    --tag-red: #c73832;
+    --tag-green: #1a7f37;
+    --tag-blue: #0b5cad;
+    --tag-amber: #8a5d00;
+    --tag-slate: #5b6673;
+    --tag-violet: #6f42c1;
+
     --diff-add-bg: rgba(26, 127, 55, 0.09);
     --diff-del-bg: rgba(199, 56, 50, 0.08);
 
@@ -133,6 +154,15 @@
   --danger-soft: rgba(199, 56, 50, 0.09);
   --warn: #9a6700;
   --warn-soft: rgba(154, 103, 0, 0.11);
+
+  /* Same six hues, darkened for a light ground — see the dark :root
+   * block for why there is one token per label. */
+  --tag-red: #c73832;
+  --tag-green: #1a7f37;
+  --tag-blue: #0b5cad;
+  --tag-amber: #8a5d00;
+  --tag-slate: #5b6673;
+  --tag-violet: #6f42c1;
 
   --diff-add-bg: rgba(26, 127, 55, 0.09);
   --diff-del-bg: rgba(199, 56, 50, 0.08);
@@ -609,6 +639,254 @@ code,
   background: var(--warn-soft);
   border-color: var(--warn);
   color: var(--warn);
+}
+
+/* A label tag. Deliberately quieter than .badge: a card can carry three
+ * of them plus a priority badge, and six saturated pills would turn the
+ * board into confetti. Lower weight, no letter-spacing, square-ish
+ * corners so tags read as a group and badges read as state. */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  color: var(--tag-color);
+  background: color-mix(in srgb, var(--tag-color) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tag-color) 32%, transparent);
+}
+
+.tag-red { --tag-color: var(--tag-red); }
+.tag-green { --tag-color: var(--tag-green); }
+.tag-blue { --tag-color: var(--tag-blue); }
+.tag-amber { --tag-color: var(--tag-amber); }
+.tag-slate { --tag-color: var(--tag-slate); }
+.tag-violet { --tag-color: var(--tag-violet); }
+
+/* The picker: the same tags, but pressable. Unselected sits colourless so
+ * the selected ones are readable at a glance rather than by shade. */
+.tag-pick {
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text-muted);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+}
+.tag-pick:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.tag-pick[aria-pressed='true'] {
+  color: var(--tag-color);
+  background: color-mix(in srgb, var(--tag-color) 13%, transparent);
+  border-color: color-mix(in srgb, var(--tag-color) 45%, transparent);
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+/* ------------------------------------------------- görev filtre + liste */
+
+/* One wrapping row of controls above the board. Wrapping rather than
+   scrolling: on a narrow window the filters become two rows and stay
+   readable, whereas a horizontal scroller hides the ones you forgot were
+   on — and a filter you can't see is how a board ends up looking empty
+   for no reason. */
+/* The right-hand side of a page header when it holds more than one
+   control. baseline rather than center so the switch and the button sit
+   on the same line as the title's descenders, not floating above it. */
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.filter-bar select {
+  width: auto;
+  min-width: 0;
+  font-size: 12.5px;
+  padding: 6px 26px 6px 10px;
+}
+
+.filter-search {
+  flex: 1 1 220px;
+  min-width: 160px;
+  font-size: 12.5px;
+  padding: 6px 10px;
+}
+
+.filter-toggle {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-muted);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+}
+.filter-toggle:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.filter-toggle.is-on {
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-color: var(--warn);
+}
+
+.filter-count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* Pano / Liste. A segmented control rather than two buttons: the two
+   views are alternatives, and the control should look like a switch with
+   a current position, not like two things you can do. */
+.view-switch {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+}
+
+.view-switch button {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 14px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: transparent;
+}
+.view-switch button:hover {
+  color: var(--text);
+}
+.view-switch button[aria-pressed='true'] {
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+/* The table can outgrow a narrow window; it scrolls inside its own card
+   so the page body never scrolls sideways. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+.task-table td {
+  vertical-align: top;
+}
+
+.task-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 260px;
+  color: inherit;
+  text-decoration: none;
+}
+.task-cell:hover .task-cell-title {
+  color: var(--accent);
+}
+
+.task-cell-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.task-cell-title {
+  font-weight: 550;
+}
+
+.repo-cell {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.repo-cell:hover {
+  color: var(--accent);
+}
+
+/* Utility, used where a cell has nothing to show: an em dash in muted
+   grey reads as "nothing here", where an empty cell reads as a bug. */
+.text-muted {
+  color: var(--text-muted);
+}
+
+/* The commit list on a task page. A three-part row — hash, subject,
+   who/when — laid out so the subjects line up and the eye can run down
+   them; the hash is monospace and dimmed because it is an identifier you
+   copy, not something you read. */
+.commit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.commit-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.commit-list li:last-child {
+  border-bottom: none;
+}
+
+.commit-hash {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  flex: none;
+}
+
+.commit-subject {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.commit-meta {
+  flex: none;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.status-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 
 .branch-chip {

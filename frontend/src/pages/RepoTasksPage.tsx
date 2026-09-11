@@ -1,10 +1,21 @@
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../auth/AuthContext'
-import type { Person, Task, TaskPriority, TaskStatus } from '../api/types'
+import type { Person, Task, TaskLabel, TaskPriority, TaskStatus } from '../api/types'
 import { PlusIcon } from '../components/icons'
 import { Modal } from '../components/Modal'
+import { TaskFilterBar } from '../components/TaskFilterBar'
+import { TaskLabelPicker, TaskLabelTags } from '../components/TaskLabels'
+import { TaskList } from '../components/TaskList'
+import {
+  filterFromParams,
+  filterToParams,
+  isOverdue,
+  matchesFilter,
+  sortTasks,
+  type TaskFilter,
+} from '../tasks/filters'
 import {
   TASK_PRIORITIES,
   TASK_PRIORITY_BADGE,
@@ -28,6 +39,33 @@ export function RepoTasksPage() {
   const [openTask, setOpenTask] = useState<Task | null>(null)
   const [creatingOpen, setCreatingOpen] = useState(false)
   const draggingRef = useRef(false)
+
+  // Filters and the chosen view live in the URL, not in component state:
+  // a filtered board is a thing people send each other ("bak, gecikenler
+  // bunlar"), and a link that opens on an unfiltered board is a link that
+  // didn't say anything. It also survives a refresh for free.
+  const [params, setParams] = useSearchParams()
+  const filter = filterFromParams(params)
+  const view = params.get('view') === 'list' ? 'list' : 'board'
+
+  function setFilter(next: TaskFilter) {
+    // keep carries `view` through, so changing a filter doesn't bounce
+    // somebody out of the list and back onto the board.
+    setParams(filterToParams(next, new URLSearchParams(view === 'list' ? { view: 'list' } : {})), {
+      replace: true,
+    })
+  }
+
+  function setView(next: 'board' | 'list') {
+    // Switching to the board drops any status filter. The board has no
+    // status control — status IS the columns — so keeping one would leave
+    // a filter running that nothing on screen admits to: three empty
+    // columns and no way to see why.
+    const carried = next === 'board' ? { ...filter, status: '' as const } : filter
+    const p = filterToParams(carried)
+    if (next === 'list') p.set('view', 'list')
+    setParams(p, { replace: true })
+  }
 
   function reload() {
     api
@@ -82,8 +120,8 @@ export function RepoTasksPage() {
 
   const today = todayKey()
   const openCount = tasks?.filter((t) => t.status !== 'done').length ?? 0
-  const overdueCount =
-    tasks?.filter((t) => t.dueDate && t.status !== 'done' && t.dueDate < today).length ?? 0
+  const overdueCount = tasks?.filter((t) => isOverdue(t, today)).length ?? 0
+  const visible = (tasks ?? []).filter((t) => matchesFilter(t, filter, user?.subject ?? '', today))
 
   return (
     <div className="page board-page">
@@ -96,21 +134,55 @@ export function RepoTasksPage() {
               : `${openCount} açık görev` + (overdueCount > 0 ? ` · ${overdueCount} geciken` : '')}
           </p>
         </div>
-        <button type="button" className="btn-primary" onClick={() => setCreatingOpen(true)}>
-          <PlusIcon /> Yeni görev
-        </button>
+        <div className="page-header-actions">
+          <div className="view-switch">
+            <button type="button" aria-pressed={view === 'board'} onClick={() => setView('board')}>
+              Pano
+            </button>
+            <button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}>
+              Liste
+            </button>
+          </div>
+          <button type="button" className="btn-primary" onClick={() => setCreatingOpen(true)}>
+            <PlusIcon /> Yeni görev
+          </button>
+        </div>
       </div>
 
       {error && <p className="error">{error}</p>}
 
-      {tasks === null && <p className="empty-state">Yükleniyor...</p>}
       {tasks && (
+        <TaskFilterBar
+          filter={filter}
+          onChange={setFilter}
+          people={people}
+          showStatus={view === 'list'}
+          matched={visible.length}
+          total={tasks.length}
+        />
+      )}
+
+      {tasks === null && <p className="empty-state">Yükleniyor...</p>}
+
+      {tasks && view === 'list' && (
+        <TaskList
+          tasks={sortTasks(visible)}
+          people={people}
+          today={today}
+          emptyMessage={
+            tasks.length === 0
+              ? 'Bu repoda henüz görev yok.'
+              : 'Filtreye uyan görev yok. Filtreyi temizleyip tekrar bak.'
+          }
+        />
+      )}
+      {tasks && view === 'board' && (
         <div className="kanban-board">
           {TASK_STATUSES.map((status) => {
             // Highest priority first, then oldest first inside a level:
             // the thing that matters should never be three cards down,
             // and among equals the one that has waited longest wins.
-            const columnTasks = tasks
+            const columnTasks = visible
               .filter((t) => t.status === status)
               .sort(
                 (a, b) =>
@@ -178,6 +250,7 @@ export function RepoTasksPage() {
                         )}
                       </div>
                       <p className="kanban-card-title">{task.title}</p>
+                      <TaskLabelTags labels={task.labels} />
                       {task.subtasks && task.subtasks.length > 0 && (
                         <p className="kanban-card-subtasks">
                           ☑ {task.subtasks.filter((st) => st.done).length}/{task.subtasks.length}
@@ -262,6 +335,7 @@ function NewTaskModal({
   const [assignee, setAssignee] = useState('')
   const [priority, setPriority] = useState<TaskPriority>('normal')
   const [dueDate, setDueDate] = useState('')
+  const [labels, setLabels] = useState<TaskLabel[]>([])
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
@@ -271,7 +345,13 @@ function NewTaskModal({
     setCreating(true)
     setCreateError(null)
     try {
-      const created = await api.createTask(repo, title.trim(), description.trim(), assignee.trim())
+      const created = await api.createTask(
+        repo,
+        title.trim(),
+        description.trim(),
+        assignee.trim(),
+        labels,
+      )
       // Create fixes status and priority; anything the person chose here
       // is applied as an edit, which also puts it in the task's history.
       if (priority !== 'normal' || dueDate) {
@@ -334,6 +414,13 @@ function NewTaskModal({
             ))}
           </select>
         </label>
+
+        <div className="field">
+          <span className="field-label">
+            Etiketler <span className="field-optional">— isteğe bağlı</span>
+          </span>
+          <TaskLabelPicker value={labels} onChange={setLabels} disabled={creating} />
+        </div>
 
         {createError && <p className="error">{createError}</p>}
 
@@ -537,6 +624,7 @@ function TaskEditForm({
 }) {
   const [title, setTitle] = useState(task.title)
   const [description, setDescription] = useState(task.description)
+  const [labels, setLabels] = useState<TaskLabel[]>(task.labels ?? [])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -549,9 +637,10 @@ function TaskEditForm({
       // Only what actually changed is sent. An omitted field is left alone
       // server-side, so this cannot clobber an edit somebody else made to
       // the other field while this form sat open.
-      const changes: Partial<{ title: string; description: string }> = {}
+      const changes: Partial<{ title: string; description: string; labels: TaskLabel[] }> = {}
       if (title.trim() !== task.title) changes.title = title.trim()
       if (description.trim() !== task.description) changes.description = description.trim()
+      if (!sameLabels(labels, task.labels ?? [])) changes.labels = labels
       if (Object.keys(changes).length > 0) {
         await api.updateTask(repo, task.id, changes)
       }
@@ -575,6 +664,11 @@ function TaskEditForm({
         <textarea rows={5} value={description} onChange={(e) => setDescription(e.target.value)} />
       </label>
 
+      <div className="field">
+        <span className="field-label">Etiketler</span>
+        <TaskLabelPicker value={labels} onChange={setLabels} disabled={saving} />
+      </div>
+
       {error && <p className="error">{error}</p>}
 
       <div className="modal-actions">
@@ -587,4 +681,11 @@ function TaskEditForm({
       </div>
     </form>
   )
+}
+
+// Both sides come out of TASK_LABELS' order — the picker rebuilds the set
+// that way and so does the backend — so comparing position by position is
+// enough and there is no need to sort first.
+function sameLabels(a: TaskLabel[], b: TaskLabel[]): boolean {
+  return a.length === b.length && a.every((label, i) => label === b[i])
 }

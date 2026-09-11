@@ -23,6 +23,8 @@ import type {
   Repo,
   Task,
   TaskComment,
+  TaskCommit,
+  TaskLabel,
   TaskPriority,
   TaskStatus,
   User,
@@ -134,10 +136,16 @@ export const api = {
     ),
 
   listTasks: (repo: string) => request<Task[]>(`/api/repos/${encodeURIComponent(repo)}/tasks`),
-  createTask: (repo: string, title: string, description: string, assignedTo: string) =>
+  createTask: (
+    repo: string,
+    title: string,
+    description: string,
+    assignedTo: string,
+    labels: TaskLabel[] = [],
+  ) =>
     request<Task>(`/api/repos/${encodeURIComponent(repo)}/tasks`, {
       method: 'POST',
-      body: JSON.stringify({ title, description, assignedTo }),
+      body: JSON.stringify({ title, description, assignedTo, labels }),
     }),
   // Every field is optional and an omitted one is left alone server-side,
   // so a caller that only means to move a card doesn't have to echo the
@@ -152,6 +160,8 @@ export const api = {
       priority: TaskPriority
       // '' clears the date; omitting the field leaves it alone.
       dueDate: string
+      // Replaces the whole set; [] clears it, omitting leaves it alone.
+      labels: TaskLabel[]
       assignedTo: string
     }>,
   ) =>
@@ -206,6 +216,10 @@ export const api = {
     ),
   // The task's own audit trail — who changed what, when. Reads the same
   // append-only log the Denetim kaydı page shows, narrowed to one task.
+  taskCommits: (repo: string, id: string) =>
+    request<TaskCommit[]>(
+      `/api/repos/${encodeURIComponent(repo)}/tasks/${encodeURIComponent(id)}/commits`,
+    ),
   taskHistory: (repo: string, id: string) =>
     request<AuditEvent[]>(
       `/api/repos/${encodeURIComponent(repo)}/tasks/${encodeURIComponent(id)}/history`,
@@ -411,6 +425,7 @@ export type {
   Repo,
   Task,
   TaskComment,
+  TaskLabel,
   TaskPriority,
   User,
 }

@@ -75,14 +75,17 @@ func SubjectFromContext(ctx context.Context) string {
 //
 // authors, if non-nil, is told the author signature on each commit an
 // authenticated push delivers — the only point at which the platform can
-// observe which git address belongs to whom (see AuthorRecorder). Pass
-// nil to disable; pushing is otherwise unaffected either way.
+// observe which git address belongs to whom (see AuthorRecorder). links,
+// if non-nil, is told about each commit so one naming a task key in its
+// message shows up on that task (see CommitLinker). Both share a single
+// pass over the commit. Pass nil for either to disable; pushing is
+// unaffected either way.
 //
 // The loader/backend chain is built fresh for every request (rather than
 // once at startup) so both protection and attribution can depend on that
 // request's own caller (IsAdmin, SubjectFromContext) — none of
 // transport.NewFilesystemLoader, newProtectingLoader, newScanningLoader,
-// newAuthorLoader, or backend.New do any I/O of their own at
+// newCommitLoader, or backend.New do any I/O of their own at
 // construction time, so this costs no more per request than the git
 // operation itself already does.
 //
@@ -91,13 +94,13 @@ func SubjectFromContext(ctx context.Context) string {
 // — it stays regardless of DevPlatform's own auth, since this constructor
 // has no guarantee callers wrap it with gittoken.RequireTokenAndAccess
 // (this package's own tests call it directly, unwrapped).
-func NewHandler(dataDir string, authors AuthorRecorder) http.Handler {
+func NewHandler(dataDir string, authors AuthorRecorder, links CommitLinker) http.Handler {
 	return withReceivePackAuthShim(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		admin := IsAdmin(r.Context())
 		loader := transport.NewFilesystemLoader(osfs.New(dataDir), false)
 		protected := newProtectingLoader(loader, admin)
 		scanned := newScanningLoader(protected)
-		observed := newAuthorLoader(scanned, authors, SubjectFromContext(r.Context()))
+		observed := newCommitLoader(scanned, authors, links, SubjectFromContext(r.Context()))
 		b := backend.New(observed)
 		b.Prefix = Prefix
 		b.ServeHTTP(w, r)

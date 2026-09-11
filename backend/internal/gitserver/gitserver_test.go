@@ -67,7 +67,7 @@ func TestClone_AfterInitialPush(t *testing.T) {
 	// the content directly on disk instead of exercising the protected path.
 	runGit(t, seed, "push", bareRepoPath, "main")
 
-	srv := httptest.NewServer(NewHandler(dataDir, nil))
+	srv := httptest.NewServer(NewHandler(dataDir, nil, nil))
 	defer srv.Close()
 
 	cloneDir := t.TempDir()
@@ -88,7 +88,7 @@ func TestPushAndClone_RoundTrip(t *testing.T) {
 		t.Fatalf("failed to create test repo: %v", err)
 	}
 
-	srv := httptest.NewServer(NewHandler(dataDir, nil))
+	srv := httptest.NewServer(NewHandler(dataDir, nil, nil))
 	defer srv.Close()
 
 	// Prepare a local repo with one commit, on a non-default branch name

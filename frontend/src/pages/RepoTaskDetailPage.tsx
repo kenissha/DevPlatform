@@ -4,7 +4,9 @@ import { api, ApiError } from '../api/client'
 import type { AuditEvent, Person, Task, TaskPriority, TaskStatus } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { AuditIcon, TaskIcon } from '../components/icons'
+import { TaskCommits } from '../components/TaskCommits'
 import { TaskComments } from '../components/TaskComments'
+import { TaskLabelPicker, TaskLabelTags } from '../components/TaskLabels'
 import { TaskSubtasks } from '../components/TaskSubtasks'
 import {
   TASK_PRIORITIES,
@@ -124,6 +126,7 @@ export function RepoTaskDetailPage() {
           ) : (
             <>
               <h1>{task.title}</h1>
+              <TaskLabelTags labels={task.labels} />
               {task.description ? (
                 <p className="task-desc">{task.description}</p>
               ) : (
@@ -139,6 +142,8 @@ export function RepoTaskDetailPage() {
       <div className="task-split">
         <div className="task-main">
           <TaskSubtasks repo={repo} task={task} onChanged={setTask} />
+
+          <TaskCommits repo={repo} taskId={id} taskKey={task.key} />
 
           <TaskComments repo={repo} taskId={id} people={people} />
 
@@ -229,6 +234,19 @@ export function RepoTaskDetailPage() {
                   onChange={(e) => patch({ dueDate: e.target.value })}
                 />
               </label>
+
+              {/* Saved on click like the selects around it, not behind a
+                  Save button: the sidebar is where a task's facts get
+                  corrected in passing, and a form that must be submitted
+                  turns a one-click correction into a three-click one. */}
+              <div className="field">
+                <span className="field-label">Etiketler</span>
+                <TaskLabelPicker
+                  value={task.labels ?? []}
+                  disabled={busy}
+                  onChange={(labels) => patch({ labels })}
+                />
+              </div>
 
               <label className="field">
                 <span className="field-label">Atanan</span>

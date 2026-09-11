@@ -2,6 +2,7 @@ import type {
   AuditAction,
   DeploymentStatus,
   MergeRequestStatus,
+  TaskLabel,
   TaskPriority,
   TaskStatus,
 } from './api/types'
@@ -52,6 +53,42 @@ export const TASK_PRIORITY_RANK: Record<TaskPriority, number> = {
   high: 1,
   normal: 2,
   low: 3,
+}
+
+// Turkish spelling for the ASCII values the API stores. The two differ on
+// purpose: a label ends up in the board's filter query string, and
+// "teknik borç" would spend the rest of its life percent-encoded.
+export const TASK_LABEL_LABELS: Record<TaskLabel, string> = {
+  hata: 'Hata',
+  ozellik: 'Özellik',
+  iyilestirme: 'İyileştirme',
+  'teknik-borc': 'Teknik borç',
+  dokuman: 'Doküman',
+  arastirma: 'Araştırma',
+}
+
+// Picker order, most-used first rather than alphabetical. Mirrors
+// KnownLabels on the backend so a set renders the same way round in both.
+export const TASK_LABELS: TaskLabel[] = [
+  'hata',
+  'ozellik',
+  'iyilestirme',
+  'teknik-borc',
+  'dokuman',
+  'arastirma',
+]
+
+// Every label gets its own hue. Unlike priority — where "normal" is
+// deliberately colourless — a label always means something, and telling
+// two of them apart at a glance is the whole point of putting them on a
+// card.
+export const TASK_LABEL_TONE: Record<TaskLabel, string> = {
+  hata: 'tag-red',
+  ozellik: 'tag-green',
+  iyilestirme: 'tag-blue',
+  'teknik-borc': 'tag-amber',
+  dokuman: 'tag-slate',
+  arastirma: 'tag-violet',
 }
 
 export const MR_STATUS_LABELS: Record<MergeRequestStatus, string> = {

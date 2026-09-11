@@ -89,7 +89,10 @@ type Task struct {
 	// Subtasks is a checklist, not a set of child tasks — see subtasks.go
 	// for why. Absent on tasks written before it existed, which decode as
 	// an empty list.
-	Subtasks  []Subtask `json:"subtasks,omitempty"`
+	Subtasks []Subtask `json:"subtasks,omitempty"`
+	// Labels say what kind of work this is — the axis status and priority
+	// do not cover. Absent on tasks created before labels existed.
+	Labels    []Label   `json:"labels,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
 }
 
@@ -128,9 +131,18 @@ func NewStore(rootDir string) *Store {
 // Create persists a new task for repo, always starting StatusTodo, and
 // returns it with its generated ID and CreatedAt populated. Moving it on
 // from there is a deliberate act — see Status.
-func (s *Store) Create(repo, title, description, assignedTo, author string) (Task, error) {
+// labels is variadic rather than a sixth positional string because almost
+// every caller creates a task without one, and a sixth argument on a
+// signature that already takes five strings in a row is a bug waiting to
+// happen — swap two of them and it still compiles.
+func (s *Store) Create(repo, title, description, assignedTo, author string, labels ...Label) (Task, error) {
 	if !validRepoName.MatchString(repo) {
 		return Task{}, ErrInvalidRepo
+	}
+
+	normalised, err := normaliseLabels(labels)
+	if err != nil {
+		return Task{}, err
 	}
 
 	s.mu.Lock()
@@ -157,6 +169,7 @@ func (s *Store) Create(repo, title, description, assignedTo, author string) (Tas
 		Author:      author,
 		Status:      StatusTodo,
 		Priority:    PriorityNormal,
+		Labels:      normalised,
 		CreatedAt:   time.Now().UTC(),
 	}
 
@@ -276,7 +289,11 @@ type Changes struct {
 	Priority    *Priority
 	// DueDate accepts "YYYY-MM-DD" to set one and "" to clear it — the
 	// pointer distinguishes "leave alone" (nil) from "remove" (empty).
-	DueDate    *string
+	DueDate *string
+	// Labels replaces the whole set when non-nil — a partial add/remove
+	// API would need its own endpoints for a field people edit by ticking
+	// boxes and saving once.
+	Labels     *[]Label
 	AssignedTo *string
 }
 
@@ -296,6 +313,13 @@ func (s *Store) Update(repo, id string, c Changes) (Task, error) {
 	}
 	if c.DueDate != nil && *c.DueDate != "" && !validDueDate(*c.DueDate) {
 		return Task{}, ErrInvalidDueDate
+	}
+	var labels []Label
+	if c.Labels != nil {
+		var err error
+		if labels, err = normaliseLabels(*c.Labels); err != nil {
+			return Task{}, err
+		}
 	}
 
 	s.mu.Lock()
@@ -322,6 +346,9 @@ func (s *Store) Update(repo, id string, c Changes) (Task, error) {
 	}
 	if c.DueDate != nil {
 		task.DueDate = *c.DueDate
+	}
+	if c.Labels != nil {
+		task.Labels = labels
 	}
 	if c.AssignedTo != nil {
 		task.AssignedTo = *c.AssignedTo

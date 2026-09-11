@@ -14,6 +14,7 @@ import {
   OverviewIcon,
   RepoIcon,
   SunIcon,
+  TaskIcon,
 } from './icons'
 import { RepoTabBar } from './RepoTabBar'
 
@@ -89,6 +90,12 @@ export function AppLayout() {
                 <NavLink end to="/repos" className={navClass}>
                   <RepoIcon />
                   <span className="nav-label">Tüm repolar</span>
+                </NavLink>
+              </li>
+              <li>
+                <NavLink end to="/tasks" className={navClass}>
+                  <TaskIcon />
+                  <span className="nav-label">Tüm görevler</span>
                 </NavLink>
               </li>
               <li>
