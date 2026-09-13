@@ -1,4 +1,18 @@
-package main
+// Package logincache is the credential devplatform-login leaves on the
+// machine, and the one place that knows how to read it.
+//
+// It was a private file inside cmd/devplatform-login until a second
+// program needed the same credential: cmd/devplatform-mcp acts as the
+// person who logged in, and the whole point of that design is that it
+// mints nothing of its own (see internal/apiauth). Two copies of a DPAPI
+// call and a file path is exactly the kind of duplication that drifts —
+// one side gains a field, the other silently reads the old shape.
+//
+// Windows-only, deliberately: DPAPI ties the file to one Windows account
+// on one machine, so copying it elsewhere yields nothing. That is the
+// property worth having, and there is no portable equivalent to fall back
+// to — this platform runs on Windows.
+package logincache
 
 import (
 	"encoding/json"
@@ -11,14 +25,14 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// cachedCredential is what's persisted (DPAPI-encrypted) between runs.
-type cachedCredential struct {
+// Credential is what's persisted (DPAPI-encrypted) between runs.
+type Credential struct {
 	Subject  string    `json:"subject"`
 	Token    string    `json:"token"`
 	CachedAt time.Time `json:"cachedAt"`
 }
 
-func cachePath() (string, error) {
+func Path() (string, error) {
 	dir := os.Getenv("LOCALAPPDATA")
 	if dir == "" {
 		return "", fmt.Errorf("LOCALAPPDATA is not set")
@@ -26,10 +40,10 @@ func cachePath() (string, error) {
 	return filepath.Join(dir, "devplatform", "credential"), nil
 }
 
-// loadCache returns the cached credential, or (nil, nil) if there is
+// Load returns the cached credential, or (nil, nil) if there is
 // none yet (missing file — the normal first-run state, not an error).
-func loadCache() (*cachedCredential, error) {
-	path, err := cachePath()
+func Load() (*Credential, error) {
+	path, err := Path()
 	if err != nil {
 		return nil, err
 	}
@@ -48,16 +62,16 @@ func loadCache() (*cachedCredential, error) {
 		// this tool refusing to work at all.
 		return nil, nil
 	}
-	var cred cachedCredential
+	var cred Credential
 	if err := json.Unmarshal(plaintext, &cred); err != nil {
 		return nil, nil
 	}
 	return &cred, nil
 }
 
-// saveCache encrypts and persists cred, replacing any previous cache.
-func saveCache(cred cachedCredential) error {
-	path, err := cachePath()
+// Save encrypts and persists cred, replacing any previous cache.
+func Save(cred Credential) error {
+	path, err := Path()
 	if err != nil {
 		return err
 	}
@@ -75,12 +89,12 @@ func saveCache(cred cachedCredential) error {
 	return os.WriteFile(path, encrypted, 0o600)
 }
 
-// clearCache removes the cached credential, if any — called on
+// Clear removes the cached credential, if any — called on
 // `erase` (git told us the credential it tried failed), so the next
 // `get` starts a fresh login instead of handing out the same bad
 // token again.
-func clearCache() error {
-	path, err := cachePath()
+func Clear() error {
+	path, err := Path()
 	if err != nil {
 		return err
 	}

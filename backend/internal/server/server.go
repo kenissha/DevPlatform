@@ -35,6 +35,17 @@ type Deps struct {
 	// AuthMiddleware wraps routes requiring a valid JWT (see internal/auth).
 	// /healthz and the git routes are deliberately outside it.
 	AuthMiddleware func(http.Handler) http.Handler
+	// TokenAuthMiddleware wraps the routes a git token may ALSO reach, on
+	// top of the JWT (see internal/apiauth). It is deliberately not applied
+	// everywhere: the rule is that a git token gets its owner's ordinary,
+	// non-admin-gated API access, and nothing more. Creating a repository,
+	// changing who may see one, approving a deploy — those keep requiring
+	// the panel's own credential, so a token that leaks off somebody's
+	// laptop cannot do them.
+	//
+	// Optional: nil leaves every route JWT-only, which is what a
+	// deployment that has not wired the token store should get.
+	TokenAuthMiddleware func(http.Handler) http.Handler
 
 	MergeRequests *mergerequest.Handlers // merge request review API
 	Repos         *repoapi.Handlers      // repository listing/creation/branches
@@ -98,6 +109,13 @@ type Deps struct {
 func NewRouter(deps Deps) *http.ServeMux {
 	gitHandler := deps.GitHandler
 	authMiddleware := deps.AuthMiddleware
+	// Falls back to the JWT-only middleware so a nil TokenAuthMiddleware
+	// narrows access rather than opening it — the safe direction for a
+	// field somebody might forget to wire.
+	tokenAuth := deps.TokenAuthMiddleware
+	if tokenAuth == nil {
+		tokenAuth = authMiddleware
+	}
 	mr := deps.MergeRequests
 	repos := deps.Repos
 	imports := deps.Imports
@@ -117,7 +135,7 @@ func NewRouter(deps Deps) *http.ServeMux {
 	// deps.Access means nobody is restricted, so this is a no-op until an
 	// admin actually configures one — see access.Store's doc comment).
 	repoScoped := func(h http.Handler) http.Handler {
-		return authMiddleware(access.RequireRepoAccess(deps.Access, h))
+		return tokenAuth(access.RequireRepoAccess(deps.Access, h))
 	}
 	// repoScopedAdmin is repoScoped plus an Admin-only check, for
 	// repo-scoped actions that were already Admin-gated (approving a merge
@@ -147,14 +165,14 @@ func NewRouter(deps Deps) *http.ServeMux {
 	// them in the people registry (see internal/users) — that just-in-time
 	// provisioning is what keeps the assignee picker's list of colleagues
 	// accurate without anyone maintaining it by hand.
-	mux.Handle("GET /api/me", authMiddleware(handleMe(deps.Users, deps.DisplayNames)))
-	mux.Handle("GET /api/users", authMiddleware(handleUsers(deps.Users, deps.DisplayNames)))
+	mux.Handle("GET /api/me", tokenAuth(handleMe(deps.Users, deps.DisplayNames)))
+	mux.Handle("GET /api/users", tokenAuth(handleUsers(deps.Users, deps.DisplayNames)))
 
 	// Any authenticated user can list repos (List narrows the result to
 	// what they're allowed to see itself — no {repo} in this path for
 	// repoScoped to check); creating a repo is an administrative action
 	// (project setup), so it's Admin-only. Branches is repo-scoped.
-	mux.Handle("GET /api/repos", authMiddleware(http.HandlerFunc(repos.List)))
+	mux.Handle("GET /api/repos", tokenAuth(http.HandlerFunc(repos.List)))
 	mux.Handle("POST /api/repos", authMiddleware(auth.RequireRole(auth.RoleAdmin, http.HandlerFunc(repos.Create))))
 	// Importing is creating a repository, so it carries repo creation's
 	// admin requirement.
@@ -214,7 +232,7 @@ func NewRouter(deps Deps) *http.ServeMux {
 	// the client fanning out a request per repo. No {repo} in these paths
 	// for repoScoped to check; each handler narrows its own result via its
 	// Access field instead (see taskboard.Handlers.Access's doc comment).
-	mux.Handle("GET /api/tasks", authMiddleware(http.HandlerFunc(tasks.ListAll)))
+	mux.Handle("GET /api/tasks", tokenAuth(http.HandlerFunc(tasks.ListAll)))
 	mux.Handle("GET /api/merge-requests", authMiddleware(http.HandlerFunc(mr.ListAll)))
 
 	// Repository insight: read-only, so not role-gated (still repo-scoped).

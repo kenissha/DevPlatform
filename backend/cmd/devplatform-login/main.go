@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"github.com/kenissha/DevPlatform/backend/internal/logincache"
 	"io"
 	"os"
 	"os/exec"
@@ -48,7 +49,7 @@ func drainProtocolInput() {
 func runGet() {
 	drainProtocolInput()
 
-	cred, err := loadCache()
+	cred, err := logincache.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "devplatform-login: önbellek okunamadı: %v\n", err)
 		os.Exit(1)
@@ -89,7 +90,7 @@ func runLogin() {
 // git operation prompts again, which is an inconvenience, not a error
 // worth discarding a working credential over.
 func cacheCredential(s session) {
-	if err := saveCache(cachedCredential{Subject: s.Subject, Token: s.Token, CachedAt: time.Now()}); err != nil {
+	if err := logincache.Save(logincache.Credential{Subject: s.Subject, Token: s.Token, CachedAt: time.Now()}); err != nil {
 		fmt.Fprintf(os.Stderr, "devplatform-login: uyarı: anahtar önbelleğe yazılamadı: %v\n", err)
 	}
 }
@@ -116,7 +117,7 @@ func runStore() {
 
 func runErase() {
 	drainProtocolInput()
-	if err := clearCache(); err != nil {
+	if err := logincache.Clear(); err != nil {
 		fmt.Fprintf(os.Stderr, "devplatform-login: önbellek temizlenemedi: %v\n", err)
 		os.Exit(1)
 	}

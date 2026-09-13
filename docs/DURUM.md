@@ -1057,6 +1057,78 @@ verildiğinde kişiye haber veren bir şeydi.
   ile eşleşiyor, hiçbiri diğerinden daha özel değil, ve `net/http` kayıt
   anında panikliyor. Önce yanlış yazıldı, mux uyardı.
 
+- **2026-09-13 güncelleme — görev panosu Claude Code'a araç olarak
+  bağlandı (`cmd/devplatform-mcp`).**
+
+  **Ne olduğu.** Kimsenin kurduğu bir sunucu değil: Claude Code oturum
+  açtığında bu süreci kendisi başlatıyor, stdin/stdout üzerinden
+  konuşuyor, oturum bitince kapatıyor. Hiçbir port dinlenmiyor, IIS'e
+  hiçbir şey kurulmuyor. Amaç, konuşma sırasında ortaya çıkan işin panoya
+  elle girilmesini gerektirmemesi — ve yöneticiye sunulacak özetin ham
+  verisini tek çağrıyla vermesi.
+
+  **Kimlik: var olan git anahtarı, yeni bir sır değil.** Boşluk şurada
+  çıktı: `devplatform-login` makinede `{subject, token}` saklıyor ama o
+  **git anahtarı** — panel API'si SSO'dan gelen **JWT** istiyor. Yani MCP
+  sunucusu elindeki kimlikle görev API'sini çağıramıyordu.
+
+  `internal/apiauth` bunu kapatıyor: bir rota artık iki kimlikten birini
+  kabul edebiliyor — JWT (Bearer) ya da git anahtarı (Basic). Yeni bir
+  "API anahtarı" üretmek yerine var olanı kullanmanın gerekçesi:
+
+  - Zaten var ve zaten yönetiliyor. `devplatform-login` üretiyor, DPAPI
+    koruyor, panel listeliyor ve iptal ediyor. İkinci bir anahtar bunların
+    hepsini yeniden isterdi, üstüne saklanacak bir yer ve var olduğu
+    hatırlanacak bir şey daha.
+  - Daha zayıf bir kimlik değil. Git anahtarı zaten sahibinin görebildiği
+    **her repoya push** yetkisi veriyor — yani deploy edilen kodu
+    değiştirme yetkisi. Görev yazmak bundan kesinlikle dar; burada
+    genişletmek sızan bir anahtarın yapabileceklerini anlamlı biçimde
+    büyütmüyor.
+  - Kişinin AD şifresi değil. Şifre diske hiç yazılmıyor
+    (`cmd/devplatform-login/login.go`), anahtar rastgele bayt, sunucuda
+    yalnızca SHA-256'sı duruyor. Çalınan anahtar kimse şifre
+    değiştirmeden panelden iptal edilebiliyor.
+
+  **İki kimlik iki ayrı şemada geliyor** — JWT Bearer, anahtar Basic — o
+  yüzden hiçbir şey tahmin edilmiyor: bozuk bir JWT anahtar aramasına
+  düşmüyor, yanlış bir anahtar JWT olarak ikinci şans bulmuyor. Testi var;
+  bir şemadaki başarısızlığın ötekini yoklamak için kullanılamaması önemli.
+
+  **Kural: git anahtarı sahibinin sıradan, yönetici-korumalı olmayan API
+  erişimini verir, fazlasını değil.** Repo oluşturmak, kimin neyi
+  göreceğini değiştirmek, deploy onaylamak — hepsi panelin kendi
+  kimliğini istemeye devam ediyor. Canlıda doğrulandı: aynı kişinin
+  yönetici hesabıyla bile git anahtarı `POST /api/repos`'a 401 alıyor,
+  aynı kişi JWT ile 201 alıyor.
+
+  **Protokol elle yazıldı, SDK alınmadı.** MCP, stdin/stdout üzerinde
+  JSON-RPC 2.0; yalnızca araç sunan bir sunucunun cevaplaması gereken üç
+  metot var. Yüz satırlık ve yazılı şartnamesi olan bir yüzey için
+  bağımlılık almanın karşılığı yok — bu kod tabanı o takasın ters yönünün
+  bedelini zaten ödüyor: go-git v6 bir alfa, ve `PackfileWriter` hızlı
+  yolunun bir dekoratörü sessizce atlaması yazdığın değil miras aldığın
+  cinsten bir hata.
+
+  **Araçlar metin döndürüyor, JSON değil.** Bir araç sonucunu okuyan şey
+  bir model, ve hazırlanmış bir pano aynı verinin JSON hâlinin çok altında
+  bağlam harcıyor — alan adları her kayıtta tekrarlıyor. Anahtar ve tarih
+  gibi birebir önemli olan şeyler metinde, iç kimlikler gibi olmayanlar
+  dışarıda.
+
+  **Silme aracı bilerek yok.** Yanlışlıkla silinen bir görev yorumlarını
+  ve geçmişini de götürüyor, ve "işi elle yazmaktan kurtulmak" bunu
+  gerektirmiyor. Bitmek, burada kapatmak demek.
+
+  **`internal/logincache`.** Kimlik önbelleği `cmd/devplatform-login`
+  içinde özel bir dosyaydı; ikinci bir programın aynı kimliği okuması
+  gerekince ortak pakete çıkarıldı. Bir DPAPI çağrısının ve bir dosya
+  yolunun iki kopyası tam olarak zamanla ayrışan türden: bir taraf alan
+  ekliyor, öteki sessizce eski şekli okumaya devam ediyor.
+
+  **Ops notu:** exe'yi AV yine sildi. `-trimpath -ldflags="-s -w"` ile
+  derlenmesi gerekiyor — `devplatform-login` için zaten yapılan şey.
+
 ## Sıradaki iş
 
 **2026-08-14 — gerçek sunucuya ilk kurulum yapıldı.** `devplatform.exe`

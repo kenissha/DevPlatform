@@ -1,4 +1,4 @@
-package main
+package logincache
 
 import (
 	"testing"
@@ -28,12 +28,12 @@ func TestDPAPI_ProtectThenUnprotect_RoundTrips(t *testing.T) {
 func TestSaveCache_ThenLoadCache_RoundTrips(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", t.TempDir())
 
-	want := cachedCredential{Subject: "dev-1", Token: "abc123", CachedAt: time.Now().UTC().Truncate(time.Second)}
-	if err := saveCache(want); err != nil {
+	want := Credential{Subject: "dev-1", Token: "abc123", CachedAt: time.Now().UTC().Truncate(time.Second)}
+	if err := Save(want); err != nil {
 		t.Fatalf("saveCache returned error: %v", err)
 	}
 
-	got, err := loadCache()
+	got, err := Load()
 	if err != nil {
 		t.Fatalf("loadCache returned error: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestSaveCache_ThenLoadCache_RoundTrips(t *testing.T) {
 func TestLoadCache_MissingFileReturnsNilNotError(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", t.TempDir())
 
-	got, err := loadCache()
+	got, err := Load()
 	if err != nil {
 		t.Fatalf("loadCache returned error: %v", err)
 	}
@@ -59,15 +59,15 @@ func TestLoadCache_MissingFileReturnsNilNotError(t *testing.T) {
 
 func TestClearCache_ThenLoadCache_ReturnsNil(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", t.TempDir())
-	if err := saveCache(cachedCredential{Subject: "dev-1", Token: "abc123", CachedAt: time.Now()}); err != nil {
+	if err := Save(Credential{Subject: "dev-1", Token: "abc123", CachedAt: time.Now()}); err != nil {
 		t.Fatalf("saveCache returned error: %v", err)
 	}
 
-	if err := clearCache(); err != nil {
+	if err := Clear(); err != nil {
 		t.Fatalf("clearCache returned error: %v", err)
 	}
 
-	got, err := loadCache()
+	got, err := Load()
 	if err != nil {
 		t.Fatalf("loadCache returned error: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestClearCache_ThenLoadCache_ReturnsNil(t *testing.T) {
 func TestClearCache_NoCacheFileIsNotAnError(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", t.TempDir())
 
-	if err := clearCache(); err != nil {
+	if err := Clear(); err != nil {
 		t.Errorf("clearCache with no cache file returned error: %v", err)
 	}
 }

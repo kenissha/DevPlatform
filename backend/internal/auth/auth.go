@@ -84,6 +84,19 @@ func withUser(ctx context.Context, user *User) context.Context {
 	return context.WithValue(ctx, userContextKey, user)
 }
 
+// WithUser attaches user to ctx exactly as RequireAuth does, for callers
+// that authenticated the person some other way.
+//
+// internal/apiauth is the reason this exists: it accepts a git token in
+// place of a JWT and must produce a request indistinguishable from an
+// authenticated one, so that every downstream check — RequireRole,
+// access.RequireRepoAccess, every handler calling UserFromContext — keeps
+// working without knowing which credential arrived. A middleware that
+// could not populate the context would have had to duplicate all of them.
+func WithUser(ctx context.Context, user User) context.Context {
+	return withUser(ctx, &user)
+}
+
 // RequireAuth returns middleware that validates a Bearer JWT in the
 // Authorization header against secret, and attaches the resulting User to
 // the request context for downstream handlers (see UserFromContext) and

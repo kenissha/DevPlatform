@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/kenissha/DevPlatform/backend/internal/access"
+	"github.com/kenissha/DevPlatform/backend/internal/apiauth"
 	"github.com/kenissha/DevPlatform/backend/internal/audit"
 	"github.com/kenissha/DevPlatform/backend/internal/auth"
 	"github.com/kenissha/DevPlatform/backend/internal/backup"
@@ -81,6 +82,17 @@ func main() {
 	// docs/superpowers/specs/2026-08-17-per-user-git-access-design.md.
 	gitTokenStore := gittoken.NewStore(filepath.Join(cfg.DataDir, "git-tokens.json"))
 	authedGitHandler := gittoken.RequireTokenAndAccess(gitTokenStore, accessStore, usersStore, gitHandler)
+
+	// tokenAuthMiddleware additionally accepts the git token
+	// devplatform-login already put on the caller's machine, so a program
+	// running there — cmd/devplatform-mcp — can act as them without a
+	// third credential to mint, store and revoke. Applied only to the
+	// routes in internal/server that are not admin-gated; see
+	// internal/apiauth for why reusing the git token is the right call
+	// rather than a widening.
+	tokenAuthMiddleware := func(next http.Handler) http.Handler {
+		return apiauth.Require(jwtSecret, gitTokenStore, usersStore, next)
+	}
 
 	// SMTPHost is the switch: empty means NoopEmailSender-equivalent
 	// behavior (notifications stay panel-only), exactly as before this was
@@ -217,24 +229,25 @@ func main() {
 	}
 
 	router := server.NewRouter(server.Deps{
-		GitHandler:      authedGitHandler,
-		AuthMiddleware:  authMiddleware,
-		MergeRequests:   mrHandlers,
-		Repos:           repoHandlers,
-		Imports:         importHandlers,
-		Tasks:           taskHandlers,
-		Stats:           statsHandlers,
-		Audit:           auditHandlers,
-		Notifications:   notifyHandlers,
-		Deployments:     deploymentHandlers,
-		Users:           usersStore,
-		Access:          accessStore,
-		DisplayNames:    displayNamesStore,
-		SecretsVault:    secretsStore,
-		GitTokens:       gitTokenHandlers,
-		GitEmails:       gitEmailHandlers,
-		LoginCLIPath:    cfg.LoginCLIPath,
-		LoginCLIBaseURL: cfg.BaseURL,
+		GitHandler:          authedGitHandler,
+		AuthMiddleware:      authMiddleware,
+		TokenAuthMiddleware: tokenAuthMiddleware,
+		MergeRequests:       mrHandlers,
+		Repos:               repoHandlers,
+		Imports:             importHandlers,
+		Tasks:               taskHandlers,
+		Stats:               statsHandlers,
+		Audit:               auditHandlers,
+		Notifications:       notifyHandlers,
+		Deployments:         deploymentHandlers,
+		Users:               usersStore,
+		Access:              accessStore,
+		DisplayNames:        displayNamesStore,
+		SecretsVault:        secretsStore,
+		GitTokens:           gitTokenHandlers,
+		GitEmails:           gitEmailHandlers,
+		LoginCLIPath:        cfg.LoginCLIPath,
+		LoginCLIBaseURL:     cfg.BaseURL,
 	})
 
 	if cfg.FrontendDir != "" {
